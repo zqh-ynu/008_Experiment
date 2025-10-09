@@ -1,0 +1,7 @@
+﻿  EntityDefinition.cpp
+E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.h(165,27): warning C4042: “user_file”: 有坏的存储类
+  (编译源文件“EntityDefinition.cpp”)
+  
+E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.cpp(439,15): warning C4267: “=”: 从“size_t”转换到“int”，可能丢失数据
+E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.cpp(387,1): warning C4715: “Channel::cal_SNR_th”: 不是所有的控件路径都返回值
+  UAVBandwidthAllocation.vcxproj -> E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\x64\Debug\UAVBandwidthAllocation.exe

@@ -1,0 +1,11 @@
+﻿  main.cpp
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\filesystem(12): warning STL4038: The contents of <filesystem> are available only with C++17 or later.
+E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\LP_for_SAP\MixedUtilityTest.h(50,36): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+  (编译源文件“main.cpp”)
+  
+  正在生成代码
+  1 of 482 functions ( 0.2%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    1 functions had inline decision re-evaluated but remain unchanged
+  已完成代码的生成
+  LP_for_SAP.vcxproj -> E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\LP_for_SAP\x64\Release\LP_for_SAP.exe

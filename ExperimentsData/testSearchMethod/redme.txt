@@ -1,0 +1,5 @@
+项目：UAVBandwidthAllocation\test.h\void test_RP_based_subproblem_allocation()
+笔记：ResearchBrain\000-工作日志-讨论日志-9月\2.1 作图：在x变化时的问题目标函数值变化
+相关论文：Knapsack problems with sigmoid utilities: Approximation algorithms via hybrid optimization
+数据内容：
+	列：第一列：连续效用用户所占带宽比例		第二列：总效用值

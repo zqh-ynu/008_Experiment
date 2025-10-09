@@ -1,0 +1,847 @@
+﻿#include "EntityDefinition.h"
+
+Point::Point(double x, double y, double z)
+{
+	X = x;
+	Y = y;
+	Z = z;
+}
+
+Point::Point(int id, double x, double y, double z)
+{
+	ID = id;
+	X = x;
+	Y = y;
+	Z = z;
+}
+
+/*
+* 函数功能：计算点s与点t的水平距离
+* @param s：点s
+* @param t：点t
+* @returns：点s与点t的水平距离
+* 备注：静态函数，通过类名调用
+*/
+double Point::cal_distance(const Point& s, const Point& t)
+{
+	return sqrt((s.X - t.X) * (s.X - t.X) + (s.Y - t.Y) * (s.Y - t.Y) + (s.Z - t.Z) * (s.Z - t.Z));
+}
+
+/*
+* 函数功能：计算点s与点t的水平距离
+* @param s：点s
+* @param t：点t
+* @returns：点s与点t的水平距离
+* 备注：静态函数，通过类名调用
+*/
+double Point::cal_horizontal_distance(const Point& s, const Point& t)
+{
+	return sqrt((s.X - t.X) * (s.X - t.X) + (s.Y - t.Y) * (s.Y - t.Y));
+}
+
+void Point::print_point()
+{
+}
+
+
+/*
+* 
+*/
+double User::hard_utility(double bandwidth_, double capacity_)
+{
+	if (bandwidth_ * capacity_ >= rMin)
+		return weight * 1.0;
+	else
+		return 0.0;
+}
+
+/*
+* 函数功能：右半边软效用函数
+* @param r：分配给用户的速率
+* @returns：用户的效用值
+
+*/
+double User::elastic_utility(double bandwidth_, double capacity_)
+{
+	double r = bandwidth_ * capacity_;
+	// 参数p的选取会影响函数的增长速度，p越大，函数增长越快
+	// 备注：当r < rMin时，效用为0；当r >= rMin时，
+	// 具体定义参见tanUtilityMaximizationResource2015
+	/*double p = 0.2;
+	if(r < rMin)
+		return 0.0;
+	else
+		return weight * (1 - exp(-p * (r - rMin)));*/
+
+	// 定义2：参见shiNetworkUtilityMaximization2008 公式(4)
+	// u(r) = w * log(1 + r) / log(1 + rMin)
+	return weight * log(1 + r) / log(1 + rMin);
+}
+
+/*
+* 函数功能：右半边软效用函数
+* @param r：分配给用户的速率
+* @returns：用户的效用值
+* 备注：当r < rMin时，效用为0；当r >= rMin时，
+* 具体定义参见tanUtilityMaximizationResource2015
+*/
+double User::halfsoft_utility(double bandwidth_, double capacity_)
+{
+	double p = 0.2;
+	double beta = 0.6;
+	double r = bandwidth_ * capacity_;
+	if (r < rMin)
+		return 0.0;
+	else
+		return weight * (1 - (1- beta) * exp(-p * (r - rMin)));
+}
+
+double User::utility(double bandwidth_, double capacity_)
+{
+
+	if(uType == HARD_UTILITY)
+		return hard_utility(bandwidth_, capacity_);
+	else if(uType == ELASTIC_UTILITY)
+		return elastic_utility(bandwidth_, capacity_);
+	else if(uType == HALFSOFT_UTILITY)
+		return halfsoft_utility(bandwidth_, capacity_);
+	else
+	{
+		cout << "Error: undefined user utility type!" << endl;
+		return -1;
+	}
+}
+
+
+
+double User::elastic_utility_derivative(double bandwidth_, double capacity_)
+{
+	double r = bandwidth_ * capacity_;
+	return weight * (capacity_ / ((1 + r) * log(1 + rMin)));
+}
+
+void User::print_user()
+{
+	cout << "User ID: " << ID << ", Type: " << uType << ", Weight: " << weight << ", Location: (" << X << ", " << Y << ", " << Z << "), rData: " << rData << ", rMin: " << rMin << ", pOut: " << pOut << endl;
+}
+
+void UAV::print_UAV()
+{
+	cout << "UAV ID: " << ID << ", Location: (" << X << ", " << Y << ", " << Z << "), Bandwidth: " << total_bandwidth << "MHz, pTrans: " << pTrans << "W" << endl;
+}
+
+Channel::Channel(UAV& p_tr_, User& p_re_)
+{
+	set_P(p_tr_, p_re_);
+	d = User::cal_distance(P_tr, P_re); // 计算发送者p1到接受者p2之间的距离
+
+	theta = cal_theta();   // 计算低点p2到高点p1的仰角
+	P_LoS = cal_P_LoS(); // 计算发送者p1到接受者p2之间的视距概率
+	P_NLoS = 1 - P_LoS;
+	M = cal_Nakagami_M();
+	L_LoS = cal_L_LoS(); // 计算发送者p1到接受者p2之间的L_LoS
+	L_NLoS = cal_L_NLoS(); // 计算发送者p1到接受者p2之间的L_NLoS
+	PL = cal_PL();    // 计算发送者p1到接受者p2之间的大范围衰减系数PL
+	SNRa_dB = cal_average_SNR(); // 计算发送者p1到接受者p2之间的平均信噪比SNR
+	SNRt_dB = cal_SNR_th(); // 信噪比阈值
+	total_bandwidth = cal_capacity(); // 信道容量
+
+}
+
+/*
+* 函数功能：计算低点p2到高点p1的仰角
+* @param P_tr：高点
+* @param P_re：低点
+* @returns：P_re到P_tr的仰角，单位为度
+* 备注：theta = arctan((z1 - z2) / sqrt((x1 - x2)^2 + (y1 - y2)^2))
+*/
+double Channel::cal_theta()
+{
+	double x1 = P_tr.X;
+	double y1 = P_tr.Y;
+	double z1 = P_tr.Z;
+
+	double x2 = P_re.X;
+	double y2 = P_re.Y;
+	double z2 = P_re.Z;
+
+	double fenzi = abs(z1 - z2);
+	double fenmu = sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2));
+	// cout << "fenzi = " << fenzi << "\tfenmu = " << fenmu << '\n';
+	double theta_ = atan(fenzi / fenmu);
+	double rad_to_deg = 180.0 / pi;
+	theta_ = theta_ * rad_to_deg;
+	// cout << "theta_ = " << theta_ << '\n';
+	return theta_;
+}
+
+/*
+* 函数功能：计算发送者p1到接受者p2之间的视距概率
+* @param P_tr：发送者p1
+* @param P_re：接受者p2
+* @returns：P_tr到P_re的视距概率
+* 备注：P_LoS = 1 / (1 + a * exp(-b * (theta - a)))
+*/
+double Channel::cal_P_LoS()
+{
+	double P_LoS_ = pow(1 + a * exp(-b * (theta - a)), -1);
+	// 将P_LoS保留3位小数
+	// P_LoS_ = ((int)(P_LoS_ * 1000)) / 1000.0;
+	// cout << "P_LOS = " << P_LoS_ << '\n';
+	return P_LoS_;
+}
+
+/*
+* 函数功能：计算发送者p1到接受者p2之间的L_LoS
+* @param P_tr：发送者p1
+* @param P_re：接受者p2
+* @returns：P_tr到P_re的L_LoS，单位为dB
+* 备注：L_LoS = 20log10(4πfd/c) + η_LoS
+*/
+double Channel::cal_L_LoS()
+{
+	// in dB
+	double L_LoS_ = 20 * log10((4 * pi * f * d) / c) + eta_LoS;
+	return L_LoS_;
+}
+
+/*
+* 函数功能：计算发送者p1到接受者p2之间的L_NLoS
+* @param P_tr：发送者p1
+* @param P_re：接受者p2
+* @returns：P_tr到P_re的L_NLoS，单位为dB
+* 备注：L_NLoS = 20log10(4πfd/c) + η_NLoS
+*/
+double Channel::cal_L_NLoS()
+{
+	double L_NLoS_ = 20 * log10((4 * pi * f * d) / c) + eta_NLoS;
+	return L_NLoS_;
+}
+
+/*
+* 函数功能：计算发送者p1到接受者p2之间的大范围衰减系数PL
+* @param P_tr：发送者p1
+* @param P_re：接受者p2
+* @returns：P_tr到P_re的大范围衰减系数PL，单位为dB
+* 备注：PL = P_LoS * L_LoS + P_NLoS * L_NLoS
+*/
+double Channel::cal_PL()
+{
+	// 将dB转换为线性值计算
+	double L_LoS_ = pow(10, L_LoS / 10.0);
+	double L_NLoS_ = pow(10, L_NLoS / 10.0);
+	double PL_ = P_LoS * L_LoS_ + P_NLoS * L_NLoS_;
+	// 将PL转换为dB值
+	PL_ = 10 * log10(PL_);
+	return PL_;
+}
+
+
+
+double Channel::cal_h()
+{
+	double g_ = 0;
+	/*if (P_tr.Type == IBS)
+		g_ = pow(10, g_BS / 10.0);
+	else
+		g_ = pow(10, g_UAV / 10.0);*/
+	g_ = pow(10, g_UAV / 10.0);
+	double h_ = PL * g_;
+	// cout << "h_ = " << h_ << endl;
+	return h_;
+}
+
+double Channel::cal_eta()
+{
+	double eta_ = P_LoS * eta_LoS + P_NLoS * eta_NLoS;
+	return eta_;
+}
+
+/*
+* 函数功能：计算发送者p1到接受者p2之间的平均信噪比SNR
+* @param P_tr：发送者p1
+* @param P_re：接受者p2
+* @returns：P_tr到P_re的平均信噪比SNR，单位为dB
+* 备注：SNR = (P_tr.pTrans * g^2) / (P_N * PL)
+*/
+double Channel::cal_average_SNR()
+{
+	// 将各个变量转换为线性值计算
+	double P_tr_linear = P_tr.pTrans; // W
+	double P_N_linear = pow(10, P_N / 10.0); // W
+	double g_UAV_linear = pow(10, g_UAV / 10.0);
+	double PL_linear = pow(10, PL / 10.0);
+	double SNR_linear = (P_tr_linear * g_UAV_linear) / (P_N_linear * PL_linear);
+	double SNR_ = 10 * log10(SNR_linear);
+	// cout << "SNR_ = " << SNR_ << endl;
+	return SNR_;
+}
+
+
+double Channel::cal_beta()
+{
+	double beta_ = pow(10, -PL / 10.0);
+	return beta_;
+}
+
+double Channel::cal_h_old()
+{
+	cal_h_miu_sigma();
+	double h_ = 0;
+	/*if (P_tr.Type == "UAV")
+		h_ = cal_Rice();
+	else
+		h_ = cal_Rayleigh();*/
+	return h_;
+}
+
+double Channel::cal_g()
+{
+	double g_ = pow(beta, 0.5) * h;
+	return g_;
+}
+
+double Channel::cal_SNR_old()
+{
+	double SNR_ = (P_tr.pTrans * pow(g, 2)) / pow(10, P_N / 10);
+	return SNR_;
+}
+
+double Channel::cal_Rayleigh()
+{
+	return pi / 2.0;
+}
+
+//double Channel::cal_Rice()
+//{
+//	double x = (-pow(h_miu, 2) / (2 * pow(h_sigma, 2)));
+//	double h_ = h_sigma * pow(pi / 2, 0.5) * cal_Rice_L1_2(x);
+//	return h_;
+//}
+
+//double Channel::cal_Rice_L1_2(double x)
+//{
+//
+//	double I0 = cyl_bessel_i(0, -x / 2.0);
+//	double I1 = cyl_bessel_i(1, -x / 2.0);
+//	double L1_2 = exp(x / 2.0) * ((1 - x) * I0 - x * I1);
+//	return L1_2;
+//}
+
+/*
+* 函数功能：计算小规模Nakagami-M的参数M
+* @returns：Nakagami-M的参数M
+*/
+double Channel::cal_Nakagami_M()
+{
+	double K = 0;
+	if (P_NLoS != 0)
+		K = P_LoS / P_NLoS;
+
+	double M_ = pow(K + 1, 2) / (2 * K + 1.0);
+	//cout << "P_LoS = " << P_LoS << ", P_NLoS = " << P_NLoS << endl;
+	//cout << "K = " << K << ", M_ = " << M_ << endl;
+	//M_ = 4;
+	return M_;
+}
+
+double Channel::cal_capacity()
+{
+	// 计算信道容量
+	double SNR_th_linear = pow(10, SNRt_dB / 10.0);
+	double capacity_ = (1 - P_re.pOut) * log2(1 + SNR_th_linear);
+	return capacity_;
+}
+
+/*
+* 函数功能：根据用户的最大中断概率pOut，
+* 计算信噪比阈值SNR_th。
+* 根据Nakagami衰落中的中断概率公式，
+* 通过求解反函数得到SNR_th。
+*/
+double Channel::cal_SNR_th()
+{
+	// 已知中断概率公式，通过数值方法求解反函数
+	// pOut = 1/Γ(M) * γ(M, (M * SNR_th) / SNR_avg)
+	auto f = [&](double SNR_th_dB) {
+		// 将SNR_th_dB转换为线性值
+		double SNR_th_linear = pow(10, SNR_th_dB / 10.0);
+		double SNR_avg_linear = pow(10, SNRa_dB / 10.0);
+		double term = boost::math::gamma_p(M, (M * SNR_th_linear) / SNR_avg_linear);
+		return term - P_re.pOut;
+		};
+	// 设置搜索区间和最大迭代次数
+	double a = 0;  // 搜索结果范围的下限
+	double b = 100;  // 搜索结果范围的上限	10Mbps
+	boost::uintmax_t max_iter = 100;  // 最大迭代次数
+
+	// 使用 toms748_solve 函数求解方程 f(x) = 0
+	try {
+		auto result = boost::math::tools::toms748_solve(
+			f, a, b, boost::math::tools::eps_tolerance<double>(std::numeric_limits<double>::digits10), max_iter
+		);
+
+		// 计算根的中点
+		double root = (result.first + result.second) / 2;
+		// 将根转换为dB值
+		root = 10 * log10(root);
+
+		//// 输出求解结果
+		//std::cout << "根的区间为： [" << result.first << ", " << result.second << "]" << std::endl;
+		//std::cout << "根的近似值为： " << root << std::endl;
+
+		//// 输出方程在根处的值，理论上应该接近于零
+		//std::cout << "在根处的函数值： " << f(root) << std::endl;
+
+		//// 输出迭代次数
+		//std::cout << "迭代次数： " << max_iter << std::endl;
+
+		return root;
+
+	}
+	catch (const std::exception& e) {
+		// 捕获异常并输出错误信息
+		std::cerr << "错误： " << e.what() << std::endl;
+	}
+	return 0.0;
+}
+
+void Channel::cal_h_miu_sigma()
+{
+	h_miu = 0.0;
+	h_sigma = 1.0;
+	//if (P_tr.Type == "UAV")
+	//{
+	//	double K_r = P_LoS / P_NLoS;
+	//	h_miu = pow(K_r / (K_r + 1), 0.5);
+	//	h_sigma = pow(1 / (K_r + 1), 0.5);
+	//	// cout << "\ncal_h_miu_sigma_test\n";
+	//	// cout << "K_r: " << K_r << "\thmiu: " << h_miu << "\thsigma: " << h_sigma << '\n';
+	//}
+}
+
+
+void Channel::print_all()
+{
+	cout << "++++++++++++++++++++++++++++++++++++++++++++\n";
+	P_tr.print_point();
+	cout << "--------------------------------------------\n";
+	P_re.print_point();
+	cout << "--------------------------------------------\n";
+	// 输出类的所有属性，每行输出4个属性
+	cout << "Distance (m): " << d << "\tTheta (deg): " << theta << "\n";
+	cout << "P_LoS: " << P_LoS << "\tP_NLoS: " << P_NLoS << "\n";
+	cout << "L_LoS (dB): " << L_LoS << "\tL_NLoS (dB): " << L_NLoS << "\n";
+	cout << "PL (dB): " << PL << "\tK_R: " << K_R << "\n";
+	cout << "Nakagami-M: " << M << "\tBeta: " << beta << "\n";
+	cout << "h_miu: " << h_miu << "\th_sigma: " << h_sigma << "\n";
+	cout << "h: " << h << "\tg: " << g << "\n";
+	cout << "SNRa (dB): " << SNRa_dB << "\tSNRt (dB): " << SNRt_dB << "\n";
+	cout << "Capacity (bit/s/Hz): " << total_bandwidth << "\tpOut: " << P_re.pOut << "\n";
+	cout << "++++++++++++++++++++++++++++++++++++++++++++\n";
+}
+
+BAProblem::BAProblem(vector<User>& u_, vector<UAV>& a_)
+{
+	users = u_;
+	uavs = a_;
+	n1 = 0;
+	n2 = 0;
+	for (auto& user : users)
+	{
+		if (user.uType == HARD_UTILITY)
+			n1++;
+		else
+			n2++;
+	}
+	m = uavs.size();
+
+	init_allocation();
+}
+
+BAProblem::BAProblem(string user_file, string uav_file)
+{
+	// 先要从文件中读取用户和无人机的信息
+
+	// 根据读取到的信息初始化信息
+	init_allocation();
+}
+
+void BAProblem::init_allocation()
+{
+	dis_list = vector<vector<double>>(m, vector<double>(n1 + n2, 0.0));
+	SNRa_list = vector<vector<double>>(m, vector<double>(n1 + n2, 0.0));
+	SNRt_list = vector<vector<double>>(m, vector<double>(n1 + n2, 0.0));
+	M_list = vector<vector<double>>(m, vector<double>(n1 + n2, 0.0));
+	cap_list = vector<vector<double>>(m, vector<double>(n1 + n2, 0.0));
+
+	alloc_matrix = vector<vector<double>>(m, vector<double>(n1 + n2, 0.0));
+	connect_matrix = vector<vector<int>>(m, vector<int>(n1 + n2, 0));
+
+	for (int i = 0; i < m; i++)
+	{
+		for (int j = 0; j < n1 + n2; j++)
+		{
+			Channel ch(uavs[i], users[j]);
+			dis_list[i][j] = ch.d;
+			SNRa_list[i][j] = ch.SNRa_dB;
+			SNRt_list[i][j] = ch.SNRt_dB;
+			M_list[i][j] = ch.M;
+			cap_list[i][j] = ch.total_bandwidth;
+			// cout << "i=" << i << "\tj=" << j << "\tdis=" << dis_list[i][j] << "\tSNR=" << SNR_list[i][j] << "\tM=" << M_list[i][j] << "\tcap=" << cap_list[i][j] << '\n';
+		}
+	}
+}
+
+
+
+
+
+map<double, KnapsackResult> BAProblem::RP_based_subproblem_allocation(int uav_id, double epsilon)
+{
+	map<double, KnapsackResult> result_list;
+	double max_utility_ratio = 1; // 效用最大时，对应的连续部分比例
+
+	double ratio_step = 0.01;		// 每次增加的比例
+	double continuous_ratio = 1; // 连续部分比例
+
+	while(continuous_ratio >= 0)
+	{
+		double discrete_ratio = 1 - continuous_ratio;
+		uavs[uav_id].soft_bandwidth = uavs[uav_id].total_bandwidth * continuous_ratio;
+		uavs[uav_id].hard_bandwidth = uavs[uav_id].total_bandwidth * discrete_ratio;
+		cout << "continuous_ratio = " << continuous_ratio << "\tdiscrete_ratio = " << discrete_ratio << '\n';
+
+		// 1. 离散部分：0-1背包问题
+		vector<double> weights;
+		vector<double> values;
+		for (int j = 0; j < n1; j++)
+		{
+			User& u = users[j];
+			weights.push_back(u.rMin / cap_list[uav_id][j]); // 物品的重量：用户j的最小速率需求转换为带宽需求
+			values.push_back(u.weight * 1.0); // 物品的价值：用户j的权重
+		}
+		KnapsackResult discrete_result = FPTAS_0_1_knapsack(weights, values, uavs[uav_id].hard_bandwidth, epsilon);
+
+		// 2. 连续部分：KKT条件
+		KnapsackResult continuous_result = KKT_based_elastic_utility(uav_id);
+		// 3. 合并结果
+		KnapsackResult current_result;
+		current_result.totalWeight = discrete_result.totalWeight + continuous_result.totalWeight;
+		current_result.totalValue = discrete_result.totalValue + continuous_result.totalValue;
+		current_result.allocatedList = discrete_result.allocatedList;
+
+		cout << "**soft_bandwidth = " << uavs[uav_id].soft_bandwidth << "\thard_bandwidth = " << uavs[uav_id].hard_bandwidth << '\n';
+		cout << "**Discrete Part: totalWeight = " << discrete_result.totalWeight << "\ttotalValue = " << discrete_result.totalValue << "\n";
+		cout << "**Continuous Part: totalWeight = " << continuous_result.totalWeight << "\ttotalValue = " << continuous_result.totalValue << "\n";
+		cout << "**totalWeight = " << current_result.totalWeight << "\totalValue = " << current_result.totalValue << '\n';
+
+
+
+
+
+		for (auto item : continuous_result.allocatedList)
+		{
+			current_result.allocatedList.insert(item);
+		}
+
+		result_list.insert({ continuous_ratio, current_result });
+
+		if( current_result.totalValue > result_list[max_utility_ratio].totalValue)
+			max_utility_ratio = continuous_ratio;
+
+		continuous_ratio -= ratio_step;
+	}
+	cout << "uav_id = " << uav_id << "\tmax_utility_ratio = " << max_utility_ratio << '\n';
+	
+	return result_list;
+}
+
+KnapsackResult BAProblem::FPTAS_0_1_knapsack(vector<double>& weights, vector<double>& values, double capacity, double epsilon)
+{
+    // 参考文献：A Fast Polynomial-Time Approximation Scheme for the 0-1 Knapsack Problem
+    // 该算法是一个针对0-1背包问题的快速多项式时间近似方案
+    // 输入：物品的价值和重量，背包的容量，误差参数ε
+    // 输出：近似最优解
+    // 获取当前UAV对应的用户列表
+    int n = weights.size();
+    KnapsackResult result;
+    if (n == 0 || capacity <= 0) return result;
+
+    // 1. 计算缩放因子K
+	int v_max = *max_element(values.begin(), values.end());
+    double K = max(1.0, (epsilon * v_max) / n); // 避免K=0
+
+    // 2. 缩放价值并计算新价值总和
+    vector<int> scaled_values(n);
+    int scaled_V = 0;
+    for (int i = 0; i < n; i++) {
+        scaled_values[i] = (int)floor(values[i] / K);
+        scaled_V += scaled_values[i];
+    }
+
+    if (scaled_V == 0) {
+        // 所有物品缩放价值为0，无法通过DP区分，返回空结果
+        return result;
+    }
+
+    // 3. 动态规划求解：dp[v] = 达到价值v的最小重量（使用double避免截断误差）
+    constexpr double INF = std::numeric_limits<double>::infinity();
+    vector<double> dp(scaled_V + 1, INF);
+    // selected[i][v] 表示在处理到第 i 件物品时，是否选择第 i 件以达到价值 v
+    vector<vector<char>> selected(n, vector<char>(scaled_V + 1, 0));
+    dp[0] = 0.0;
+
+    // 填充DP表并记录选择决策
+    for (int i = 0; i < n; i++) {
+        int sv = scaled_values[i];
+        if (sv <= 0) continue; // 缩放价值为0的物品对DP无影响，可跳过
+        // 遍历时从高到低，保证每件物品只使用一次
+        for (int v = scaled_V; v >= sv; v--) {
+            if (dp[v - sv] != INF) {
+                double new_weight = dp[v - sv] + weights[i];
+                // 仅当新的重量在容量范围内并且更优时更新
+                if (new_weight <= capacity && new_weight < dp[v]) {
+                    dp[v] = new_weight;
+                    selected[i][v] = 1; // 标记选择当前物品
+                }
+            }
+        }
+    }
+
+    // 4. 找到缩放价值最大的有效解
+    int max_scaled_value = 0;
+    for (int v = scaled_V; v >= 0; v--) {
+        if (dp[v] <= capacity) {
+            max_scaled_value = v;
+            break;
+        }
+    }
+
+    // 5. 回溯找出选择的物品
+    int current_value = max_scaled_value;
+    for (int i = n - 1; i >= 0 && current_value > 0; i--) {
+        int sv = scaled_values[i];
+        if (sv <= 0) continue;
+        if (current_value >= sv && selected[i][current_value]) {
+            // 选择了物品 i
+            result.allocatedList.insert({ i, weights[i] }); // 记录物品的重量
+            result.totalWeight += weights[i];
+            result.totalValue += values[i];
+            current_value -= sv;
+        }
+    }
+
+    // 最后做一次安全检查，确保总重量不超过容量
+    if (result.totalWeight > capacity + 1e-9) {
+        // 如果由于数值误差超过了容量，则移除一些物品直到符合容量限制
+        // 以最小价值密度优先移除（value/weight 最小）
+        vector<pair<int, double>> items;
+        for (auto &p : result.allocatedList) {
+            int idx = p.first;
+            double w = p.second;
+            double density = (values[idx] / (w > 0 ? w : 1e-12));
+            items.push_back({ idx, density });
+        }
+        // 按密度升序移除低密度物品（对总价值影响最小）
+        sort(items.begin(), items.end(), [](const pair<int,double>& a, const pair<int,double>& b){ return a.second < b.second; });
+        for (auto &it : items) {
+            if (result.totalWeight <= capacity + 1e-9) break;
+            int idx = it.first;
+            // remove
+            result.totalWeight -= weights[idx];
+            result.totalValue -= values[idx];
+            result.allocatedList.erase(idx);
+        }
+    }
+
+    return result;
+}
+
+KnapsackResult BAProblem::KKT_based_elastic_utility(int uav_id)
+{
+	// 根据obsidian笔记"000-工作日志-讨论日志-9月 对于连续部分：KKT条件找最优解"
+	// 当中推导出了最优拉格朗日乘子λ的表达式
+	double lambda = 0.0;
+	double sum_S = 0;
+	double sum_C = 0;
+
+	if(uavs[uav_id].soft_bandwidth <= 0)
+	{
+		KnapsackResult empty_result;
+		return empty_result;
+	}
+
+	map<int, double> allocated_users; // 记录被分配带宽的{用户ID, 带宽}
+	// 初始化allocated_users，假设所有用户都被分配带宽
+	for (int j = n1; j < n1 + n2; j++)
+	{
+		allocated_users.insert({ j, 0 });
+	}
+
+	int is_alloc = 0;	// 标记是否完成分配
+	while (!is_alloc)
+	{
+		for (auto entry : allocated_users)
+		{
+			int j = entry.first;
+			User& u = users[j];
+			sum_S += u.weight / log(u.rMin + 1);
+			sum_C += 1 / cap_list[uav_id][j];
+		}
+
+		lambda = sum_S / (uavs[uav_id].soft_bandwidth + sum_C);
+
+		// 记录最小的带宽值，初始化为无穷大
+		double min_bandwidth = numeric_limits<double>::max();
+		int min_user = -1; // 记录最小带宽对应的用户ID
+
+		for (auto entry : allocated_users)
+		{
+			int j = entry.first;
+			User& u = users[j];
+			double Sij = u.weight / log(u.rMin + 1);
+			double Cij = 1 / cap_list[uav_id][j];
+			double bandwidth_ij = (Sij / lambda - Cij);
+			if (bandwidth_ij < min_bandwidth)
+			{
+				min_bandwidth = bandwidth_ij;
+				min_user = j;
+			}
+			allocated_users[j] = bandwidth_ij;
+			cout << "j = " << j << "\tSij = " << Sij << "\tSij/lambda = " << Sij / lambda << "\tCij = " << Cij << "\tbandwidth_ij = " << bandwidth_ij << '\n';
+		}
+
+		if(min_bandwidth < 0)
+		{
+			// 将该用户从allocated_users中移除
+			allocated_users.erase(min_user);
+			// 重新计算sum_S和sum_C
+			sum_S = 0;
+			sum_C = 0;
+			cout << "User " << min_user << " removed from allocation due to negative bandwidth." << '\n';
+		}
+		else
+		{
+			is_alloc = 1; // 分配完成
+		}
+	}
+
+
+
+	// 根据λ的值计算每个用户的分配带宽
+	KnapsackResult alloc_result;
+	for (auto entry : allocated_users)
+	{
+		int j = entry.first;
+		double bandwidth_ij = entry.second;
+
+		alloc_result.allocatedList.insert({ j, bandwidth_ij });
+		alloc_result.totalWeight += bandwidth_ij;
+		alloc_result.totalValue += users[j].elastic_utility(bandwidth_ij, cap_list[uav_id][j]);
+		cout << "Final allocation - User " << j << ": Bandwidth = " << bandwidth_ij << ", Utility = " << users[j].elastic_utility(bandwidth_ij, cap_list[uav_id][j]) << '\n';
+	}
+	
+	
+	return alloc_result;
+}
+
+KnapsackResult BAProblem::CPLEX_based_elastic_utility(int uav_id)
+{
+    // The original implementation relied on CPLEX/Concert libraries. To make
+    // this function robust and runnable in environments without CPLEX, delegate
+    // to the KKT-based solver which computes an analytic optimal allocation
+    // for the separable concave utility used in this project.
+    return KKT_based_elastic_utility(uav_id);
+}
+
+void BAProblem::print_all_users()
+{
+	cout << ".................all users...................." << '\n';
+	for (auto& user : users)
+	{
+		user.print_user();
+	}
+	cout << ".............................................." << '\n';
+
+}
+
+void BAProblem::print_all_uavs()
+{
+	cout << ".................all UAVs....................." << '\n';
+	for (auto& uav : uavs)
+	{
+		uav.print_UAV();
+	}
+	cout << ".............................................." << '\n';
+}
+
+void BAProblem::print_dis_list()
+{
+	cout << ".................dis_list....................." << '\n';
+	for (int i = 0; i < m; i++)
+	{
+		for (int j = 0; j < n1 + n2; j++)
+		{
+			cout << dis_list[i][j] << "\t";
+		}
+		cout << '\n';
+	}
+	cout << ".............................................." << '\n';
+}
+
+void BAProblem::print_SNRa_list()
+{
+	cout << ".................SNRa_list...................." << '\n';
+	for (int i = 0; i < m; i++)
+	{
+		for (int j = 0; j < n1 + n2; j++)
+		{
+			cout << SNRa_list[i][j] << "\t";
+		}
+		cout << '\n';
+	}
+	cout << ".............................................." << '\n';
+}
+
+void BAProblem::print_SNRt_list()
+{
+	cout << ".................SNRt_list...................." << '\n';
+	for (int i = 0; i < m; i++)
+	{
+		for (int j = 0; j < n1 + n2; j++)
+		{
+			cout << SNRt_list[i][j] << "\t";
+		}
+		cout << '\n';
+	}
+	cout << ".............................................." << '\n';
+}
+
+void BAProblem::print_M_list()
+{
+	cout << ".................M_list...................." << '\n';
+	for (int i = 0; i < m; i++)
+	{
+		for (int j = 0; j < n1 + n2; j++)
+		{
+			cout << M_list[i][j] << "\t";
+		}
+		cout << '\n';
+	}
+	cout << ".............................................." << '\n';
+}
+
+void BAProblem::print_cap_list()
+{
+	cout << ".................cap_list...................." << '\n';
+	for (int i = 0; i < m; i++)
+	{
+		for (int j = 0; j < n1 + n2; j++)
+		{
+			cout << cap_list[i][j] << "\t";
+		}
+		cout << '\n';
+	}
+	cout << ".............................................." << '\n';
+}

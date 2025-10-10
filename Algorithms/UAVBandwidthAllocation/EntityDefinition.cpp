@@ -83,8 +83,8 @@ double User::utility(double bandwidth_, double capacity_)
 double User::marginal_utility(double bandwidth_, double capacity_, double existed_utility)
 {
 	double new_utility = utility(bandwidth_, capacity_) - existed_utility;
-	if (new_utility <0) 
-		return 0;
+	/*if (new_utility <0) 
+		return 0;*/
 	return new_utility;
 }
 
@@ -418,6 +418,7 @@ void SystemMd::init_SyetemModel()
 
 void SystemMd::print_all_users()
 {
+	cout << fixed << setprecision(2);
 	cout << ".................all users...................." << '\n';
 	for (auto& user : users)
 	{
@@ -428,6 +429,7 @@ void SystemMd::print_all_users()
 
 void SystemMd::print_all_uavs()
 {
+	cout << fixed << setprecision(2);
 	cout << ".................all UAVs....................." << '\n';
 	for (auto& uav : uavs)
 	{
@@ -438,6 +440,7 @@ void SystemMd::print_all_uavs()
 
 void SystemMd::print_dis_list() const
 {
+	cout << fixed << setprecision(2);
 	cout << ".................dis_list....................." << '\n';
 	for (int i = 0; i < m; i++)
 	{
@@ -454,6 +457,7 @@ void SystemMd::print_dis_list() const
 
 void SystemMd::print_SNRa_list() const
 {
+	cout << fixed << setprecision(2);
 	cout << ".................SNRa_list...................." << '\n';
 	for (int i = 0; i < m; i++)
 	{
@@ -470,6 +474,7 @@ void SystemMd::print_SNRa_list() const
 
 void SystemMd::print_SNRt_list() const
 {
+	cout << fixed << setprecision(2);
 	cout << ".................SNRt_list...................." << '\n';
 	for (int i = 0; i < m; i++)
 	{
@@ -486,6 +491,7 @@ void SystemMd::print_SNRt_list() const
 
 void SystemMd::print_M_list() const
 {
+	cout << fixed << setprecision(2);
 	cout << ".................M_list...................." << '\n';
 	for (int i = 0; i < m; i++)
 	{
@@ -502,6 +508,7 @@ void SystemMd::print_M_list() const
 
 void SystemMd::print_cap_list() const
 {
+	cout << fixed << setprecision(2);
 	cout << ".................cap_list...................." << '\n';
 	for (int i = 0; i < m; i++)
 	{
@@ -524,7 +531,7 @@ double BAProblem::get_total_utility(const vector<KnapsackResult>& allResult)
 	return total_utility;
 }
 
-std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAProblem::local_search_allocation(double epsilon_, double delta_)
+std::pair < std::vector<KnapsackResult>, std::vector<UserResult>> BAProblem::local_search_allocation(double epsilon_, double delta_)
 {
 	// 初始化算法输入
 	epsilon = epsilon_;
@@ -549,13 +556,15 @@ std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAP
 	vector<double> uti_max = vector<double>(users.size(), 0.0);
 	vector<KnapsackResult> allResult = vector<KnapsackResult>(uav_num);
 
-	// userResult<uav_id, bandwidth> 记录用户对应的无人机及被分配的带宽
-	vector<pair<int, double>> userResult = vector<pair<int, double>>(users.size());
+	// userResult<uav_id, <bandwidth, value>> 记录用户对应的无人机及被分配的带宽
+	vector<UserResult> user_results = vector<UserResult>(users.size());
 	// 对userResult进行初始化
 	for (int user_id = 0; user_id < users.size(); user_id ++)
 	{
-		userResult[user_id].first = -1;
-		userResult[user_id].second = 0;
+		user_results[user_id].uav_id = -1;
+
+		user_results[user_id].allocated_bandwidth = 0;
+		user_results[user_id].utility = 0.0;
 	}
 
 	// 通过递归调用GAP来对所有UAV进行分配
@@ -568,14 +577,18 @@ std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAP
 	for (int uav_id = 0; uav_id<uav_num; uav_id++)
 	{
 		KnapsackResult& uav_result = allResult[uav_id];
-		for (auto& entry : uav_result.allocatedList)
+		for (auto user_id : uav_result.allocatedList)
 		{
-			int user_id = entry.first;
-			double bandwidth = entry.second;
-			if (userResult[user_id].first == -1)
+			// 遍历被uav_id分配的用户
+			double bandwidth = uav_result.allocatedBandwidth[user_id];
+			double value = uav_result.allocatedValue[user_id];
+
+			if (user_results[user_id].uav_id == -1)
 			{
-				userResult[user_id].first = uav_id;
-				userResult[user_id].second = bandwidth;
+				// 说明用户user_id还没有被分配
+				user_results[user_id].uav_id = uav_id;
+				user_results[user_id].allocated_bandwidth = bandwidth;
+				user_results[user_id].utility = value;
 			}
 			else
 				cout << "user " << user_id << " 被重复分配。\n";
@@ -589,10 +602,14 @@ std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAP
 		bool is_allocated = false;
 		for (auto result : allResult)
 		{
-			if (result.allocatedList.find(j) != result.allocatedList.end())
+			// 如果用户j在result的allocatedList中，说明用户j已经被分配
+			for (auto user_id : result.allocatedList)
 			{
-				is_allocated = true;
-				break;
+				if (user_id == j)
+				{
+					is_allocated = true;
+					break;
+				}
 			}
 		}
 		if (!is_allocated)
@@ -607,21 +624,28 @@ std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAP
 		double remain_bw = uavs[uav_id].total_bandwidth - allResult[uav_id].totalWeight;
 		if (remain_bw > 0 and !unpro_users.empty())
 		{
+			// 如果UAV还有剩余资源，且存在未被分配的用户
+
 			// 用剩余资源对未服务的用户进行分配
 			KnapsackResult result = RP_based_subproblem_allocation(uav_id, remain_bw, unpro_users, uti_max);
 
-			// 在all_result[i]中添加此次分配结果
-			for (auto entry : result.allocatedList)
+			// 在allResult中添加此次分配结果
+			for (auto user_id : result.allocatedList)
 			{
-				allResult[uav_id].allocatedList.insert(entry);
+				allResult[uav_id].allocatedList.push_back(user_id);
 
 				// 更新userResult
-				int user_id = entry.first;
-				double bandwidth = entry.second;
-				if (userResult[user_id].first == -1)
+				double bandwidth = result.allocatedBandwidth[user_id];
+				double value = result.allocatedValue[user_id];
+
+				// 输出检查user_id
+				cout << "检查user_id: " << user_id << '\n';
+
+				if (user_results[user_id].uav_id == -1)
 				{
-					userResult[user_id].first = uav_id;
-					userResult[user_id].second = bandwidth;
+					user_results[user_id].uav_id = uav_id;
+					user_results[user_id].allocated_bandwidth = bandwidth;
+					user_results[user_id].utility = value;
 				}
 				else
 					cout << "user " << user_id << " 被重复分配。\n";
@@ -640,8 +664,14 @@ std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAP
 			auto it = unpro_users.begin();
 			while (it != unpro_users.end())
 			{
-				// 如果迭代器it所指向的user id在result.allocatedList中被找到，result.allocatedList.find(it->ID)返回的迭代器就会在result.allocatedList.end()之前停止
-				if (result.allocatedList.find(it->ID) != result.allocatedList.end())
+				
+				int find_user_id = it->ID;
+				bool is_find = false;
+
+				auto it_id = std::find(result.allocatedList.begin(), result.allocatedList.end(), find_user_id);
+				if (it_id != result.allocatedList.end()) is_find = true;
+
+				if (is_find)
 				{
 					// 说明it->ID对应的用户被分配
 					// 从unpro_users中删除
@@ -649,26 +679,33 @@ std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAP
 				}
 				else
 				{
-					// 如果没有删除元素，手动将 迭代器后一
+					// 如果没有删除元素，手动将 迭代器后移
 					++it;
 				}
 			}
 		}
 		else if (remain_bw > 0 and unpro_users.empty())
 		{
+			// 如果UAV还有剩余资源，但不存在未被分配的用户
+
+
 			// 将剩余资源分配给收益最高的软效用用户
 			double max_margin_utility = 0;
 			int max_user_id = -1;
 
-			for (auto& entry : allResult[uav_id].allocatedList)
+
+			for (auto user_id : allResult[uav_id].allocatedList)
 			{
-				int user_id = entry.first;
+				// 输出检查user_id
+				cout << "检查user_id: " << user_id << '\n';
 				User& user = users[user_id];
 				if (user.uType != HARD_UTILITY)
 				{
-					double allcated_band = userResult[user_id].second;	// 用户j已经被分配的带宽
+					double allcated_band = user_results[user_id].allocated_bandwidth;	// 用户j已经被分配的带宽
 					double margin_utility = user.utility(allcated_band + remain_bw, cap_list[uav_id][user_id]);
 
+					// 输出检查margin_utility
+					cout << "检查margin_utility: " << margin_utility << '\n';
 					if (max_margin_utility < margin_utility)
 					{
 						max_margin_utility = margin_utility;
@@ -677,47 +714,62 @@ std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAP
 				}
 			}
 
+			// 输出检查max_user_id
+			cout << "检查max_user_id: " << max_user_id << '\n';
+
 			// 将剩余带宽分配给带来边际效用最大的用户
 			// 更新结果allResult, userResult
-			allResult[uav_id].allocatedList[max_user_id] += remain_bw;
-			allResult[uav_id].softWeight += remain_bw;
-			allResult[uav_id].softValue += max_margin_utility;
-			allResult[uav_id].totalWeight += remain_bw;
-			allResult[uav_id].totalValue += max_margin_utility;
+			if (max_user_id != -1)
+			{
+				allResult[uav_id].allocatedBandwidth[max_user_id] += remain_bw;
+				allResult[uav_id].allocatedValue[max_user_id] += max_margin_utility;
+				allResult[uav_id].softWeight += remain_bw;
+				allResult[uav_id].softValue += max_margin_utility;
+				allResult[uav_id].totalWeight += remain_bw;
+				allResult[uav_id].totalValue += max_margin_utility;
 
-			userResult[max_user_id].second += remain_bw;
+				user_results[max_user_id].allocated_bandwidth += remain_bw;
+			}
 		}
 
 	}
 
-	allResult[0].totalValue += 0;
-
-	return { allResult, userResult };
+	return {allResult, user_results};
 }
 
 KnapsackResult BAProblem::GAP(int uav_id, vector<double>& uti_max, vector<KnapsackResult>& allResult)
 {
-	cout << "BAProblem::GAP : \n";
+	// 输出uti_max
+	cout << "uti_max: ";
+	for (auto uti : uti_max)
+		cout << uti << "\t";
+	cout << endl;
+
 	Uav& uav = sysModel.uavs[uav_id];
 	KnapsackResult temp_result = RP_based_subproblem_allocation(uav_id, uav.total_bandwidth, sysModel.users, uti_max);
-	// 检查参数
-	cout << "UAV " << uav_id << " : total_bandwidth = " << uav.total_bandwidth << "\n";
 
+	// 检查参数
+	cout << "BAProblem::GAP : \n";
+	cout << "UAV " << uav_id << " : total_bandwidth = " << uav.total_bandwidth << "\n";
 	// 输出temp_result
-    print_KnapsackResult(temp_result, uav_id);
+    PrintKnapsackResult(temp_result, uav_id);
 
 	// 更新用户的最大效用值
-	for (auto entry : temp_result.allocatedList)
+	for (auto user_id : temp_result.allocatedList)
 	{
-		int user_id = entry.first;
-		double bw = entry.second;
+		double bw = temp_result.allocatedBandwidth[user_id];
 		double cap = sysModel.cap_list[uav_id][user_id];
+		double new_utility = sysModel.users[user_id].utility(bw, cap);
+		temp_result.allocatedValue[user_id] = new_utility;
 
-		double new_uti = sysModel.users[user_id].utility(bw, cap);
-		if (new_uti > uti_max[user_id])
-			uti_max[user_id] = new_uti;
-		
+		if (new_utility > uti_max[user_id])
+		{
+			uti_max[user_id] = new_utility;
+		}
 	}
+	// 更新后
+	cout << "After updating user maximum utility:\n";
+	PrintKnapsackResult(temp_result, uav_id);
 
 	if (uav_id < sysModel.m - 1)
 	{
@@ -729,14 +781,17 @@ KnapsackResult BAProblem::GAP(int uav_id, vector<double>& uti_max, vector<Knapsa
 		// 从temp_result排除allResult[uav_id + 1]至allResult[sysModel.m - 1]中已经分配的用户
 		for(int i = uav_id + 1; i < sysModel.m; i++)
 		{
-			for (auto entry : allResult[i].allocatedList)
+
+			for (auto user_id : allResult[i].allocatedList)
 			{
-				int user_id = entry.first;
-				if (temp_result.allocatedList.find(user_id) != temp_result.allocatedList.end())
+				// 在temp_result中查找user_id
+				// 这里只删除用户，KnapsackResult中的其他属性不更新，在最后合并结果时更新
+				if (bool is_find = remove_first(temp_result.allocatedList, user_id))
 				{
-					// 找到，删除
-					temp_result.allocatedList.erase(user_id);
-					// 这里只删除用户，KnapsackResult中的其他属性不更新，在最后合并结果时更新
+					// 说明user_id在temp_result中被分配
+					// 删除该用户的分配
+					temp_result.allocatedBandwidth.erase(user_id);
+					temp_result.allocatedValue.erase(user_id);
 				}
 			}
 		}
@@ -745,20 +800,21 @@ KnapsackResult BAProblem::GAP(int uav_id, vector<double>& uti_max, vector<Knapsa
 		temp_result.softValue = 0.0;
 		temp_result.hardWeight = 0.0;
 		temp_result.softWeight = 0.0;
-		for (auto entry : temp_result.allocatedList)
+		for (auto user_id : temp_result.allocatedList)
 		{
-			int user_id = entry.first;
-			double bw = entry.second;
-			double cap = sysModel.cap_list[uav_id][user_id];
+			double bw = temp_result.allocatedBandwidth[user_id];
+			double value = temp_result.allocatedValue[user_id];
+
+			// 根据用户类型更新
 			if (sysModel.users[user_id].uType == HARD_UTILITY)
 			{
 				temp_result.hardWeight += bw;
-				temp_result.hardValue += sysModel.users[user_id].marginal_utility(bw, cap, uti_max[user_id]);
+				temp_result.hardValue += value;
 			}
 			else
 			{
 				temp_result.softWeight += bw;
-				temp_result.softValue += sysModel.users[user_id].marginal_utility(bw, cap, uti_max[user_id]);
+				temp_result.softValue += value;
 			}
 		}
 		temp_result.totalWeight = temp_result.hardWeight + temp_result.softWeight;
@@ -799,12 +855,12 @@ map<double, KnapsackResult> BAProblem::RP_based_subproblem_allocation_experiment
 		//cout << "continuous_ratio = " << continuous_ratio << "\tdiscrete_ratio = " << discrete_ratio << '\n';
 
 		// 1. 离散部分：0-1背包问题
-		KnapsackResult discrete_result = FPTAS_0_1_knapsack(uav, unproc_hard_users, uti_max);
+		KnapsackResult discrete_result = Fptas01Knapsack(uav, unproc_hard_users, uti_max);
 		double remain_resource = uav.hard_bandwidth - discrete_result.totalWeight;
 		uav.soft_bandwidth += remain_resource;
 		cout << "remain resource: " << remain_resource << '\n';
 		// 2. 连续部分：KKT条件
-		KnapsackResult continuous_result = KKT_based_elastic_utility(uav, unproc_soft_users, uti_max);
+		KnapsackResult continuous_result = KktBasedElasticUtility(uav, unproc_soft_users, uti_max);
 		// 3. 合并结果
 		KnapsackResult current_result;
 		current_result.softValue = continuous_result.totalValue;
@@ -814,16 +870,20 @@ map<double, KnapsackResult> BAProblem::RP_based_subproblem_allocation_experiment
 
 		current_result.totalWeight = discrete_result.totalWeight + continuous_result.totalWeight;
 		current_result.totalValue = discrete_result.totalValue + continuous_result.totalValue;
-		current_result.allocatedList = discrete_result.allocatedList;
 
 		/*cout << "**soft_bandwidth = " << uavs[uav_id].soft_bandwidth << "\thard_bandwidth = " << uavs[uav_id].hard_bandwidth << '\n';
 		cout << "**Discrete Part: totalWeight = " << discrete_result.totalWeight << "\ttotalValue = " << discrete_result.totalValue << "\n";
 		cout << "**Continuous Part: totalWeight = " << continuous_result.totalWeight << "\ttotalValue = " << continuous_result.totalValue << "\n";
 		cout << "**totalWeight = " << current_result.totalWeight << "\totalValue = " << current_result.totalValue << '\n';*/
-
-		for (auto item : continuous_result.allocatedList)
+		for (auto item_id : discrete_result.allocatedList)
 		{
-			current_result.allocatedList.insert(item);
+			current_result.allocatedList.push_back(item_id);
+			current_result.allocatedBandwidth[item_id] = discrete_result.allocatedBandwidth[item_id];
+		}
+		for (auto item_id : continuous_result.allocatedList)
+		{
+			current_result.allocatedList.push_back(item_id);
+			current_result.allocatedBandwidth[item_id] = continuous_result.allocatedBandwidth[item_id];
 		}
 
 		result_list.insert({ continuous_ratio, current_result });
@@ -867,7 +927,7 @@ map<double, KnapsackResult> BAProblem::RP_based_subproblem_allocation_experiment
 
 		// 1. 离散部分：0-1背包问题
 
-		KnapsackResult discrete_result = FPTAS_0_1_knapsack(uav, unproc_hard_users, uti_max);
+		KnapsackResult discrete_result = Fptas01Knapsack(uav, unproc_hard_users, uti_max);
 		// 输出离散部分的结果
 		/*cout << "**Discrete Part: totalWeight = " << discrete_result.totalWeight << "\ttotalValue = " << discrete_result.totalValue << "\n";
 		cout << "Allocated Users in Discrete Part: ";
@@ -883,7 +943,7 @@ map<double, KnapsackResult> BAProblem::RP_based_subproblem_allocation_experiment
 		// cout << "remain resource: " << remain_resource << '\n';
 
 		// 2. 连续部分：KKT条件
-		KnapsackResult continuous_result = KKT_based_elastic_utility(uav, unproc_soft_users, uti_max);
+		KnapsackResult continuous_result = KktBasedElasticUtility(uav, unproc_soft_users, uti_max);
 		// 输出连续部分的结果
 		/*cout << "**Continuous Part: totalWeight = " << continuous_result.totalWeight << "\ttotalValue = " << continuous_result.totalValue << "\n";
 		cout << "Allocated Users in Continuous Part: ";
@@ -902,11 +962,15 @@ map<double, KnapsackResult> BAProblem::RP_based_subproblem_allocation_experiment
 
 		current_result.totalWeight = discrete_result.totalWeight + continuous_result.totalWeight;
 		current_result.totalValue = discrete_result.totalValue + continuous_result.totalValue;
-		current_result.allocatedList = discrete_result.allocatedList;
-
-		for (auto item : continuous_result.allocatedList)
+		for (auto item_id : discrete_result.allocatedList)
 		{
-			current_result.allocatedList.insert(item);
+			current_result.allocatedList.push_back(item_id);
+			current_result.allocatedBandwidth[item_id] = discrete_result.allocatedBandwidth[item_id];
+		}
+		for (auto item_id : continuous_result.allocatedList)
+		{
+			current_result.allocatedList.push_back(item_id);
+			current_result.allocatedBandwidth[item_id] = continuous_result.allocatedBandwidth[item_id];
 		}
 
 		result_list.insert({ hard_bandwidth, current_result });
@@ -954,7 +1018,7 @@ KnapsackResult BAProblem::RP_based_subproblem_allocation(int uav_id, double capa
 
 		// 1. 离散部分：0-1背包问题
 
-		KnapsackResult discrete_result = FPTAS_0_1_knapsack(uav, unproc_hard_users, uti_max);
+		KnapsackResult discrete_result = Fptas01Knapsack(uav, unproc_hard_users, uti_max);
 		// 输出离散部分的结果
 		/*cout << "\t\t unproc_hard_users num = " << unproc_hard_users.size() << endl;
 		cout << "\t\t**Discrete Part: totalWeight = " << discrete_result.totalWeight << "\ttotalValue = " << discrete_result.totalValue << "\n";
@@ -971,7 +1035,7 @@ KnapsackResult BAProblem::RP_based_subproblem_allocation(int uav_id, double capa
 		// cout << "remain resource: " << remain_resource << '\n';
 
 		// 2. 连续部分：KKT条件
-		KnapsackResult continuous_result = KKT_based_elastic_utility(uav, unproc_soft_users, uti_max);
+		KnapsackResult continuous_result = KktBasedElasticUtility(uav, unproc_soft_users, uti_max);
 		// 输出连续部分的结果
 		/*cout << "**Continuous Part: totalWeight = " << continuous_result.totalWeight << "\ttotalValue = " << continuous_result.totalValue << "\n";
 		cout << "Allocated Users in Continuous Part: ";
@@ -993,12 +1057,18 @@ KnapsackResult BAProblem::RP_based_subproblem_allocation(int uav_id, double capa
 
 			current_result.totalWeight = discrete_result.totalWeight + continuous_result.totalWeight;
 			current_result.totalValue = discrete_result.totalValue + continuous_result.totalValue;
-			current_result.allocatedList = discrete_result.allocatedList;
 
-			// 插入连续部分的分配结果
-			for (auto item : continuous_result.allocatedList)
+			for (auto item_id : discrete_result.allocatedList)
 			{
-				current_result.allocatedList.insert(item);
+				current_result.allocatedList.push_back(item_id);
+				current_result.allocatedBandwidth[item_id] = discrete_result.allocatedBandwidth[item_id];
+				current_result.allocatedValue[item_id] = discrete_result.allocatedValue[item_id];
+			}
+			for (auto item_id : continuous_result.allocatedList)
+			{
+				current_result.allocatedList.push_back(item_id);
+				current_result.allocatedBandwidth[item_id] = continuous_result.allocatedBandwidth[item_id];
+				current_result.allocatedValue[item_id] = continuous_result.allocatedValue[item_id];
 			}
 
 			max_result = current_result;
@@ -1015,7 +1085,7 @@ KnapsackResult BAProblem::RP_based_subproblem_allocation(int uav_id, double capa
 
 }
 
-KnapsackResult BAProblem::FPTAS_0_1_knapsack(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max)
+KnapsackResult BAProblem::Fptas01Knapsack(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max)
 {
 	//cout << "\t\t\t\t in BAProblem::FPTAS_0_1_knapsack \n";
 
@@ -1126,8 +1196,9 @@ KnapsackResult BAProblem::FPTAS_0_1_knapsack(Uav& uav, vector<User>& unproc_user
 		if (sv <= 0) continue;
 		if (current_value >= sv && selected[i][current_value]) {
 			// 选择了物品 i
-
-			knapsack_result.allocatedList.insert({ i, weights[i] }); // 记录物品的重量
+			knapsack_result.allocatedList.push_back(i); // 记录物品的重量
+			knapsack_result.allocatedBandwidth.insert({ i, weights[i] });
+			knapsack_result.allocatedValue.insert({ i, values[i] });
 			knapsack_result.totalWeight += weights[i];
 			knapsack_result.totalValue += values[i];
 			current_value -= sv;
@@ -1139,10 +1210,10 @@ KnapsackResult BAProblem::FPTAS_0_1_knapsack(Uav& uav, vector<User>& unproc_user
 		// 如果由于数值误差超过了容量，则移除一些物品直到符合容量限制
 		// 以最小价值密度优先移除（value/weight 最小）
 		vector<pair<int, double>> items;
-		for (auto& p : knapsack_result.allocatedList) {
-			int idx = p.first;
-			double w = p.second;
-			double density = (values[idx] / (w > 0 ? w : 1e-12));
+		for (auto& idx : knapsack_result.allocatedList) {
+			double w = knapsack_result.allocatedBandwidth[idx];
+			double v = knapsack_result.allocatedValue[idx];
+			double density = (v / (w > 0 ? w : 1e-12));
 			items.emplace_back(idx, density);
 		}
 		// 按密度升序移除低密度物品（对总价值影响最小）
@@ -1153,18 +1224,28 @@ KnapsackResult BAProblem::FPTAS_0_1_knapsack(Uav& uav, vector<User>& unproc_user
 			// remove
 			knapsack_result.totalWeight -= weights[idx];
 			knapsack_result.totalValue -= values[idx];
-			knapsack_result.allocatedList.erase(idx);
+
+			bool is_removed = remove_first(knapsack_result.allocatedList, idx);
 		}
 	}
 
 	KnapsackResult result;
 	// 将物品索引转换回用户ID
-	for (auto& p : knapsack_result.allocatedList) {
-		int item_idx = p.first;
+	for (auto item_idx : knapsack_result.allocatedList) {
 		int user_id = user_indices[item_idx];
-		double weight = p.second;
-		result.allocatedList.insert({ user_id, weight });
+		double weight = knapsack_result.allocatedBandwidth[item_idx];
+		double value = knapsack_result.allocatedValue[item_idx];
+		result.allocatedList.push_back(user_id);
+		result.allocatedBandwidth.insert({ user_id, weight });
+		result.allocatedValue.insert({ user_id, value });
 	}
+	if (result.allocatedList.size() != knapsack_result.allocatedList.size())
+	{
+		cout << "Error in BAProblem::FPTAS_0_1_knapsack: allocatedList size mismatch!\n";
+	}
+	// 重新计算总重量和总价值，确保准确
+	result.hardWeight = knapsack_result.totalWeight;
+	result.hardValue = knapsack_result.totalValue;
 	result.totalWeight = knapsack_result.totalWeight;
 	result.totalValue = knapsack_result.totalValue;
 
@@ -1174,7 +1255,7 @@ KnapsackResult BAProblem::FPTAS_0_1_knapsack(Uav& uav, vector<User>& unproc_user
 	return result;
 }
 
-KnapsackResult BAProblem::KKT_based_elastic_utility(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max)
+KnapsackResult BAProblem::KktBasedElasticUtility(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max)
 {
 	// 根据obsidian笔记"000-工作日志-讨论日志-9月 对于连续部分：KKT条件找最优解"
 	// 当中推导出了最优拉格朗日乘子λ的表达式
@@ -1202,7 +1283,7 @@ KnapsackResult BAProblem::KKT_based_elastic_utility(Uav& uav, vector<User>& unpr
 	for (auto& user : unproc_users)
 	{
 		int user_id = user.ID;
-		if (cap_list[uav_id][user_id] == 0)
+		if (cap_list[uav_id][user_id] < 1e-10)
 			continue; // 避免除以0
 
 		allocated_users.insert({ user_id, 0 });
@@ -1266,18 +1347,43 @@ KnapsackResult BAProblem::KKT_based_elastic_utility(Uav& uav, vector<User>& unpr
 	{
 		int user_id = entry.first;
 		double bandwidth_ij = entry.second;
+		double value = allusers[user_id].marginal_utility(bandwidth_ij, cap_list[uav_id][user_id], uti_max[user_id]);
 
-		alloc_result.allocatedList.insert({ user_id, bandwidth_ij });
+		alloc_result.allocatedList.push_back(user_id);
+		alloc_result.allocatedBandwidth.insert({ user_id, bandwidth_ij });
+		alloc_result.allocatedValue.insert({ user_id, value });
+
 		alloc_result.totalWeight += bandwidth_ij;
 		// 在多背包问题中，用户若已被其它UAV分配资源，则其效用函数需调整为边际效用函数 
-		alloc_result.totalValue += allusers[user_id].marginal_utility(bandwidth_ij, cap_list[uav_id][user_id], uti_max[user_id]);
+		alloc_result.totalValue += value;
 		// cout << "Final allocation - User " << j << ": Bandwidth = " << bandwidth_ij << ", Utility = " << users[j].elastic_utility(bandwidth_ij, cap_list[uav_id][j]) << '\n';
 	}
 
 	return alloc_result;
 }
 
-KnapsackResult BAProblem::CPLEX_based_elastic_utility(int uav_id)
+
+KnapsackResult BAProblem::PeggingAlgorithm(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max)
+{
+	KnapsackResult result;
+	// 实现Pegging算法的具体步骤
+
+	int uav_id = uav.ID;
+	double capacity = uav.hard_bandwidth;
+	vector<User>& allusers = sysModel.users;
+	vector<vector<double>>& cap_list = sysModel.cap_list;
+	int n1 = sysModel.n1;
+	int n2 = sysModel.n2;
+
+
+
+
+
+	return result;
+}
+
+
+KnapsackResult BAProblem::CplexBasedElasticUtility(int uav_id)
 {
 	vector<Uav>& uavs = sysModel.uavs;
 	vector<User>& users = sysModel.users;
@@ -1319,11 +1425,13 @@ KnapsackResult BAProblem::CPLEX_based_elastic_utility(int uav_id)
 		}
 
 		// 读取解
-		for (int j = n1; j < n1 + n2; ++j) {
-			double bandwidth_ij = cplex.getValue(bij[j - n1]);
-			alloc_result.allocatedList.insert({ j, bandwidth_ij });
+		for (int user_id = n1; user_id < n1 + n2; ++user_id) {
+			double bandwidth_ij = cplex.getValue(bij[user_id - n1]);
+			alloc_result.allocatedList.push_back(user_id);
+			alloc_result.allocatedBandwidth[user_id] = bandwidth_ij;
+			alloc_result.allocatedValue[user_id] = users[user_id].elastic_utility(bandwidth_ij, cap_list[uav_id][user_id]);
 			alloc_result.totalWeight += bandwidth_ij;
-			alloc_result.totalValue += users[j].elastic_utility(bandwidth_ij, cap_list[uav_id][j]);
+			alloc_result.totalValue += alloc_result.allocatedValue[user_id];
 		}
 		env.end();
 		return alloc_result;
@@ -1341,7 +1449,7 @@ KnapsackResult BAProblem::CPLEX_based_elastic_utility(int uav_id)
 	}
 }
 
-void BAProblem::print_KnapsackResult(const KnapsackResult& knapsackResult, int uav_id)
+void BAProblem::PrintKnapsackResult(KnapsackResult& knapsackResult, int uav_id)
 {
 	if (uav_id!=-1)
         cout << "---------------UAV " << uav_id << "--------------- " << endl;
@@ -1356,8 +1464,8 @@ void BAProblem::print_KnapsackResult(const KnapsackResult& knapsackResult, int u
 	cout << "Hard Value: " << knapsackResult.hardValue << endl;
 	cout << "Hard Weight: " << knapsackResult.hardWeight << endl;
     cout << "Allocated List: " << endl;
-    for (auto entry : knapsackResult.allocatedList) {
-        cout << "User ID: " << entry.first << ", Bandwidth: " << entry.second << endl;
+    for (const auto user_id : knapsackResult.allocatedList) {
+        cout << "User ID: " << user_id << ", Bandwidth: " << knapsackResult.allocatedBandwidth[user_id] << ", Utility: " << knapsackResult.allocatedValue[user_id] << endl;
     }
     cout << endl;
     

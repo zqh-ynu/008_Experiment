@@ -1,17 +1,17 @@
 ﻿  EntityDefinition.cpp
-E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.h(304,25): warning C4042: “user_file”: 有坏的存储类
+E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.h(363,25): warning C4042: “user_file”: 有坏的存储类
   (编译源文件“EntityDefinition.cpp”)
   
-E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.h(334,34): warning C4042: “sys_”: 有坏的存储类
+E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.h(393,34): warning C4042: “sys_”: 有坏的存储类
   (编译源文件“EntityDefinition.cpp”)
   
 E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.cpp(376,15): warning C4267: “=”: 从“size_t”转换到“int”，可能丢失数据
-E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.cpp(535,14): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
-E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.cpp(1065,8): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
-E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.cpp(1073,12): warning C4244: “初始化”: 从“double”转换到“int”，可能丢失数据
+E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.cpp(542,14): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.cpp(1135,8): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\EntityDefinition.cpp(1143,12): warning C4244: “初始化”: 从“double”转换到“int”，可能丢失数据
   正在生成代码
-  1 of 1546 functions (<0.1%) were compiled, the rest were copied from previous compilation.
+  6 of 1611 functions ( 0.4%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    4 functions had inline decision re-evaluated but remain unchanged
+    8 functions had inline decision re-evaluated but remain unchanged
   已完成代码的生成
   UAVBandwidthAllocation.vcxproj -> E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\x64\Release\UAVBandwidthAllocation.exe

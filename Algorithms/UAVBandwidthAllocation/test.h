@@ -100,11 +100,9 @@ void test_KKT_based_elastic_utility() {
 
 	vector<double> existed_utilitys = { 0.0, 0.0, 0.0 }; // 假设所有用户初始效用为0
 
-	KnapsackResult result = ba.KKT_based_elastic_utility(uavs[0], users, existed_utilitys);
+	KnapsackResult result = ba.KktBasedElasticUtility(uavs[0], users, existed_utilitys);
 	cout << "Allocated bandwidths: ";
-	for (auto item : result.allocatedList) {
-		cout << "User " << item.first << ": " << item.second << " MHz; ";
-	}
+	ba.PrintKnapsackResult(result, 0);
 	cout << "\nTotal allocated bandwidth: " << result.totalWeight << " MHz" << endl;
 	cout << "Total utility: " << result.totalValue << endl;
 	cout << "KKT_based_elastic_utility function test completed." << endl << endl;
@@ -218,17 +216,8 @@ void test_RP_based_subproblem_allocation() {
 	for (const auto& entry : result_map) {
 		double ratio = entry.first;
 		KnapsackResult result = entry.second;
-		cout << "Ratio: " << ratio << ", Total Utility: " << result.totalValue << ", Total Allocated Bandwidth: " << result.totalWeight << " MHz" << endl;
-		// 输出分配的用户
-		cout << "Allocated Users:\n";
-		// 每行输出5个用户
-		for(int count = 0, i = 0; i < 20; i++) {
-			if(result.allocatedList.find(i) != result.allocatedList.end()) {
-				cout << "\tUser " << i << ": " << result.allocatedList[i] << " MHz; ";
-				count++;
-				if(count % 5 == 0) cout << '\n';
-			}
-		}
+		cout << "Ratio: " << ratio << endl;
+		ba.PrintKnapsackResult(result);
 		cout << '\n';
 
 
@@ -325,17 +314,7 @@ void test_RP_based_subproblem_allocation2() {
 	for (auto& entry : result_map) {
 		double hard_bandwidth = entry.first;
 		KnapsackResult result = entry.second;
-		cout << "Hard Bandwidth: " << hard_bandwidth << ", Total Utility: " << result.totalValue << ", Total Allocated Bandwidth: " << result.totalWeight << " MHz" << endl;
-		// 输出分配的用户
-		cout << "Allocated Users:\n";
-		// 每行输出5个用户
-		for (int count = 0, i = 0; i < hard_user_num + elastic_user_num; i++) {
-			if (result.allocatedList.find(i) != result.allocatedList.end()) {
-				cout << "\tUser " << i << ": " << result.allocatedList[i] << " MHz; ";
-				count++;
-				if (count % 5 == 0) cout << '\n';
-			}
-		}
+		ba.PrintKnapsackResult(result);
 		cout << '\n';
 		if (result.totalValue > max_utility) {
 			max_utility = result.totalValue;
@@ -408,17 +387,7 @@ void test_RP_based_subproblem() {
 	KnapsackResult result = ba.RP_based_subproblem_allocation(0, uavs[0].total_bandwidth, users, existed_utilitys);
 	// 输出result
 	cout << "Results of RP_based_subproblem_allocation:" << endl;
-	cout << "Total Utility: " << result.totalValue << ", Total Allocated Bandwidth: " << result.totalWeight << " MHz" << endl;
-	// 输出分配的用户
-	cout << "Allocated Users:\n";
-	// 每行输出5个用户
-	for (int count = 0, i = 0; i < 20; i++) {
-		if (result.allocatedList.find(i) != result.allocatedList.end()) {
-			cout << "\tUser " << i << ": " << result.allocatedList[i] << " MHz; ";
-			count++;
-			if (count % 5 == 0) cout << '\n';
-		}
-	}
+	ba.PrintKnapsackResult(result);
 	cout << '\n';
 	cout << "RP_based_subproblem_allocation function test completed." << endl << endl;
 	
@@ -458,11 +427,11 @@ void test_local_search_allocation() {
         int weight = rand() % 5 + 1; // (1, 5)
         double rMin = (static_cast<double>(rand()) / RAND_MAX) * 9.5 + 0.5; // (0.5, 10)
         double pOut = pow(10, -(rand() % 3 + 1)); // (10e-1, 10e-3)
-        users.emplace_back(i, HALFSOFT_UTILITY, weight, x, y, 0, rMin, pOut);
+        users.emplace_back(i, ELASTIC_UTILITY, weight, x, y, 0, rMin, pOut);
     }
     
     vector<Uav> uavs;
-    uavs.emplace_back(0, 125, 0, uav_H, 20);
+    uavs.emplace_back(0, 125, 0, uav_H, 10);
     uavs.emplace_back(1, -125, 0, uav_H, 20);
 
     SystemMd sysModel(users, uavs);
@@ -479,21 +448,70 @@ void test_local_search_allocation() {
     BAProblem ba(sysModel);
 
 
-    std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > result = ba.local_search_allocation();
-	vector<KnapsackResult>& knapsack_result = result.first;	// 记录每个UAV服务的用户
-    vector<std::pair<int,double>>& allocation_result = result.second; // 记录每个uesr被分配的带宽
+    auto LS_result = ba.local_search_allocation();
+	vector<KnapsackResult>& knapsack_result_list = LS_result.first;	// 记录每个UAV服务的用户
+    vector<UserResult>& allocation_result = LS_result.second; // 记录每个uesr被分配的带宽
 	cout << "Results of local_search_allocation:" << endl;
-    cout << "Total Utility: " << BAProblem::get_total_utility(knapsack_result) << endl;
+    cout << "Total Utility: " << BAProblem::get_total_utility(knapsack_result_list) << endl;
     cout << "Allocated Users:\n";
     for (int user_id = 0; user_id < hard_user_num + soft_user_num; user_id++) {
-        cout << "\tUser " << user_id << ": " << "UAV " << allocation_result[user_id].first << ", " <<  allocation_result[user_id].second << " MHz;\n";
+		int uav_id = allocation_result[user_id].uav_id;
+		double bandwidth = allocation_result[user_id].allocated_bandwidth;
+		double user_utility = allocation_result[user_id].utility;
+		// 保留5位小数
+		cout << fixed << setprecision(5);
+		cout << "\tUser " << user_id << ": UAV " << uav_id << ", " << bandwidth << " MHz, Utility: " << user_utility << '\n';
     }
     cout << '\n';
 
 	// 输出每个无人机服务的用户
     cout << "Allocated Users by UAV:\n";
     for (int uav_id = 0; uav_id < uavs.size(); uav_id++) {
-		BAProblem::print_KnapsackResult(knapsack_result[uav_id], uav_id);
+		BAProblem::PrintKnapsackResult(knapsack_result_list[uav_id], uav_id);
     }
     cout << "local_search_allocation function test completed." << endl << endl;
+
+
+
+	// 验证 LS_result 中每个用户的效用是否正确
+	// 通过将分配给用户的带宽代入其效用函数计算得到
+	cout << "Verifying user utilities..." << endl;
+	for (int uav_id = 0; uav_id < uavs.size(); uav_id++) {
+		auto& kr = knapsack_result_list[uav_id];
+		for (auto user_id : kr.allocatedList)
+		{
+			User& user = users[user_id];
+			double bandwidth = kr.allocatedBandwidth[user_id];
+			double alg_value = kr.allocatedValue[user_id];	// 算法计算的效用
+
+			double channel_cap = sysModel.cap_list[uav_id][user_id]; // 信道容量
+
+			double cal_value = user.utility(bandwidth, channel_cap);
+
+			if (abs(alg_value - cal_value) > 1e-5) {
+				cout << "Mismatch for User " << user_id << ": alg_value = " << alg_value << ", cal_value = " << cal_value << endl;
+			}
+			else {
+				cout << "Match for User " << user_id << ": utility = " << alg_value << endl;
+			}
+		}
+	}
+
+	// 输出所有与用户id=12的用户相关的信息，包括用户信息，所有UAV与该用户的信道容量，分配结果
+	int test_user_id = 12;
+	cout << "Details for User " << test_user_id << ":\n";
+	users[test_user_id].print_user();
+	for (int uav_id = 0; uav_id < uavs.size(); uav_id++) {
+		double channel_cap = sysModel.cap_list[uav_id][test_user_id];
+		cout << "UAV " << uav_id << " Channel Capacity: " << channel_cap << " Mbps\n";
+	}
+	// 查找该用户被分配的UAV及带宽，效用
+	int assigned_uav_id = allocation_result[test_user_id].uav_id;
+	double assigned_bandwidth = allocation_result[test_user_id].allocated_bandwidth;
+	double assigned_utility = allocation_result[test_user_id].utility;
+	cout << "Assigned UAV: " << assigned_uav_id << ", Bandwidth: " << assigned_bandwidth << " MHz, Utility: " << assigned_utility << endl;
+
+
+	cout << "local_search_allocation verification completed." << endl << endl;
+
 }

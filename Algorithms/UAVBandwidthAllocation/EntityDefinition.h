@@ -13,7 +13,9 @@ class BAProblem;    // 带宽分配问题类
 /// 包含了背包问题的分配结果，包括选中的物品列表及其对应的分配值，总价值，总重量，连续部分的总价值和总重量，离散部分的总价值和总重量。
 /// </summary>
 struct KnapsackResult {
-	map<int, double> allocatedList; // 选中的物品ID列表，及其对应的分配值
+	vector<int> allocatedList; // 选中的物品ID列表
+	map<int, double> allocatedBandwidth; // 选中的物品对应的分配值（带宽）
+	map<int, double> allocatedValue; // 选中的物品对应的价值
 	double totalValue = 0;         // 总价值
 	double totalWeight = 0;        // 总重量
 	double softValue = 0;         // 仅连续部分的总价值
@@ -21,6 +23,63 @@ struct KnapsackResult {
 	double softWeight = 0;        // 仅连续部分的总重量
 	double hardWeight = 0;        // 仅离散部分的总重量
 };
+struct UserResult {
+	int uav_id = -1;
+	double allocated_bandwidth = 0; // 分配的带宽
+	double utility = 0; // 用户效用
+};
+
+
+
+
+
+// 删除 vector 中第一个等于 value 的元素，找到返回 true，否则返回 false
+template<typename T>
+bool remove_first(std::vector<T>& vec, const T& value) {
+	auto it = std::find(vec.begin(), vec.end(), value);
+	if (it == vec.end()) return false;
+	vec.erase(it);
+	return true;
+}
+
+// 删除 vector 中所有等于 value 的元素，返回删除的数量
+template<typename T>
+size_t remove_all(std::vector<T>& vec, const T& value) {
+	auto new_end = std::remove(vec.begin(), vec.end(), value);
+	size_t removed = std::distance(new_end, vec.end());
+	vec.erase(new_end, vec.end());
+	return removed;
+}
+
+// 按谓词删除（更通用），返回删除的数量
+template<typename T, typename Pred>
+size_t remove_if_pred(std::vector<T>& vec, Pred pred) {
+	auto new_end = std::remove_if(vec.begin(), vec.end(), pred);
+	size_t removed = std::distance(new_end, vec.end());
+	vec.erase(new_end, vec.end());
+	return removed;
+}
+
+/* 使用示例：
+   vector<int> v = {1,2,3,2,4};
+   remove_first(v, 2);        // v -> {1,3,2,4}
+   remove_all(v, 2);          // v -> {1,3,4}
+   remove_if_pred(v, [](int x){ return x % 2 == 0; }); // 删除偶数
+*/
+
+/* 注意事项：
+ - 使用 erase-remove 惯用法（remove_all/remove_if_pred）是高效且安全的方式。
+ - 如果 vector 元素不是可用 operator== 比较的类型，提供相应的谓词。
+ - 若要同时从与之配套的 map/数组 中移除对应关联数据，需要先保存要删除的 key 列表，再统一删除，避免在遍历时修改容器导致未定义行为。
+*/
+
+
+
+
+
+
+
+
 
 class Point {
 public:
@@ -354,7 +413,7 @@ public:
 	/// <param name="epsilon_"> 子问题FPTAS精度参数</param>
 	/// <param name="delta_"> 搜索算法步长</param>
 	/// <returns> 算法结果</returns>
-	std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int, double>> >  local_search_allocation(double epsilon_ = 0.1, double delta_ = 0.5);
+	std::pair< std::vector<KnapsackResult>, std::vector<UserResult> > local_search_allocation(double epsilon_ = 0.1, double delta_ = 0.5);
 
 	/// <summary>
 	/// 确定无人机uav_id的临时分配结果，是一个递归函数
@@ -422,7 +481,7 @@ public:
 	/// <param name="unproc_users">待处理的硬效用用户集合.</param>
 	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
 	/// <returns>背包问题的分配结果，KnapsackResult 类型</returns>
-	KnapsackResult FPTAS_0_1_knapsack(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
+	KnapsackResult Fptas01Knapsack(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
 	/// 对于elastic_utility类型的用户，带宽分配问题是一个凸优化问题，直接根据KKT条件求解 给定无人机uav_id，用该算法为该无人机分配带宽	
@@ -432,19 +491,28 @@ public:
 	/// <param name="unproc_users">待处理的软效用用户集合.</param>
 	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
 	/// <returns>背包问题的分配结果，KnapsackResult 类型</returns>
-	KnapsackResult KKT_based_elastic_utility(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
+	KnapsackResult KktBasedElasticUtility(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
+
+	/// <summary>
+	/// Pegging算法，算法参考论文："The nonlinear knapsack problem – algorithms and applications"
+	/// </summary>
+	/// <param name="uav">为uav进行分配决策，其中包含了容量信息.</param>
+	/// <param name="unproc_users">待处理的用户集合.</param>
+	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
+	/// <returns>背包问题的分配结果，KnapsackResult 类型</returns>
+	KnapsackResult PeggingAlgorithm(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
 	/// 用CPLEX求解凸优化问题，验证KKT_based_elastic_utility的正确性	
 	/// </summary>
 	/// <param name="uav_id">当前求解的UAV的ID.</param>
 	/// <returns>背包问题的分配结果，KnapsackResult 类型</returns>
-	KnapsackResult CPLEX_based_elastic_utility(int uav_id);
+	KnapsackResult CplexBasedElasticUtility(int uav_id);
 	
 	/// <summary>
 	/// Prints the knapsack result.
 	/// </summary>
 	/// <param name="knapsackResult">The knapsack result.</param>
 	/// <param name="uav_id">id of uav</param>
-	static void print_KnapsackResult(const KnapsackResult& knapsackResult, int uav_id = -1);
+	static void PrintKnapsackResult(KnapsackResult& knapsackResult, int uav_id = -1);
 };

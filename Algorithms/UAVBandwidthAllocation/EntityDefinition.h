@@ -1,6 +1,40 @@
 #pragma once
 #include "predefine.h"
 
+
+/// @brief SADA算法: 基于连续近似与对偶分解的联合资源分配算法的配置参数
+struct SADAConfig {
+	// Sigmoid参数
+	double m_init = 5.0;     // Sigmoid初始陡峭因子
+	double m_scale = 1.5;     // 每轮外层迭代的放大系数
+	double m_max = 100.0;   // Sigmoid陡峭因子上限
+
+	// 外层循环参数
+	int    max_outer_iter = 30;    // 最大外层迭代次数
+	double theta_tol = 1e-8;  // theta收敛阈值
+
+	// 内层对偶分解参数
+	int    max_inner_iter = 200;   // 最大内层迭代次数
+	double alpha_init = 0.1;   // 对偶变量初始步长
+	double mu_init = 1.0;   // 对偶变量初始值
+	double dual_tol = 1e-8;  // 对偶收敛阈值
+
+	// 二分法参数 (用于求解UE用户KKT方程)
+	int    bisect_max_iter = 5000;
+	double bisect_tol = 1e-8;
+
+	bool   verbose = true;
+};
+struct MatchingSQPConfig {
+	double nu_init = 5.0;    // Sigmoid 初始陡峭因子
+	double nu_step = 5.0;    // 每轮递增
+	double nu_max = 50.0;   // 上限
+	double conv_eps = 1e-4;   // 外层收敛阈值
+	int    max_outer_iter = 1;    // 最大外层迭代次数
+	int    max_ipopt_iter = 200;   // IPOPT 最大迭代
+	double ipopt_tol = 1e-6;  // IPOPT 收敛容差
+};
+
 class Point;
 class User;
 class Uav;
@@ -9,18 +43,23 @@ class SystemMd;     // 系统模型
 class BAProblem;    // 带宽分配问题类
 #define AllocationResult map<double, KnapsackResult> // 带宽分配结果，key为总带宽，value为对应的分配结果
 #define UtiFunc std::function<double(double, double)> // 用户效用函数类型
+
+
+
+
 /// <summary>
 /// 包含了背包问题的分配结果，包括选中的物品列表及其对应的分配值，总价值，总重量，连续部分的总价值和总重量，离散部分的总价值和总重量。
 /// </summary>
 struct KnapsackResult {
+	int uav_id = -1; // 所属的UAV ID
 	vector<int> allocatedList; // 选中的物品ID列表
 	map<int, double> allocatedBandwidth; // 选中的物品对应的分配值（带宽）
 	map<int, double> allocatedValue; // 选中的物品对应的价值
 	double totalValue = 0;         // 总价值
 	double totalWeight = 0;        // 总重量
-	double softValue = 0;         // 仅连续部分的总价值
+	double elasticValue = 0;         // 仅连续部分的总价值
 	double hardValue = 0;         // 仅离散部分的总价值
-	double softWeight = 0;        // 仅连续部分的总重量
+	double elasticWeight = 0;        // 仅连续部分的总重量
 	double hardWeight = 0;        // 仅离散部分的总重量
 };
 struct UserResult {
@@ -29,8 +68,21 @@ struct UserResult {
 	double utility = 0; // 用户效用
 };
 
+/// <summary>
+/// 该结构体是在函数BAProblem::WaterFillingAlgorithm_singleUAV和BAProblem::FPTAS_singleUAV中使用的。这两个函数都涉及到KKT条件和注水算法。
+/// </summary>
+struct KKT_parameters
+{
+	int user_id = -1;		// 用户下标
+	double W_sum = 0.0;		// 当前下标之前所有elastic用户的权重之和
+	double C_inv_sum = 0.0;	// 当前下标之前所有elastic用户的信道容量倒数之和
+	double efficient = 0.0;	// 当前elastic用户在未分配带宽时(或分配全部带宽时）的边际效用
+	double B_elastic_sum = 0.0; // 当前下标之前所有elastic用户的分配带宽之和
+	double B_hard_sum = 0.0;	// 当前下标之前所有hard用户的最小带宽需求之和
+};
 
-
+void clean_KnapsackResult(KnapsackResult& result);
+void add_KnapsackResult(KnapsackResult& result, User& user, double bandwidth, double value);
 
 
 // 删除 vector 中第一个等于 value 的元素，找到返回 true，否则返回 false
@@ -93,7 +145,7 @@ public:
 	Point(int id, double x, double y, double z);
 	Point() {}
 	~Point() {}
-	
+
 	///<summary>
 	/// 计算点s与点t的直线距离
 	/// 备注：静态函数，通过类名调用
@@ -101,7 +153,7 @@ public:
 	/// <param name="s">The s.</param>
 	/// <param name="t">The t.</param>
 	/// <returns>点s与点t的直线距离</returns>
-	static double cal_distance(const Point& s, const Point& t);		
+	static double cal_distance(const Point& s, const Point& t);
 	/// <summary>
 	/// 计算点s与点t的水平距离
 	/// 备注：静态函数，通过类名调用
@@ -120,9 +172,9 @@ public:
 class User : public Point {
 public:
 	int uType = HARD_UTILITY; // 用户效用类型，默认硬效用
-	int weight = 1; // 用户权重，默认1
+	double weight = 1; // 用户权重，默认1
 	double rData = 0;		// 需求的最小数据量
-	double rMin = 0;		// 需求的最小数据速率
+	double rMin = 0;		// 需求的最小数据速率 Mbps
 	double pOut = 0;		// 需求的最大中断概率
 
 	double B = 0.18; // 180 KHz
@@ -131,7 +183,7 @@ public:
 
 	User() {}
 
-	User(int id_, int uType_, int weight_, double x1, double y1, double z1, double rD_, double rM_, double pO_) : Point(id_, x1, y1, z1)
+	User(int id_, int uType_, double weight_, double x1, double y1, double z1, double rD_, double rM_, double pO_) : Point(id_, x1, y1, z1)
 	{
 		uType = uType_;
 		weight = weight_;
@@ -139,7 +191,7 @@ public:
 		//set_Bandwidth();
 	}
 
-	User(int id_, int uType_, int weight_, double x1, double y1, double z1, double r_min_, double P_o_) : Point(id_, x1, y1, z1)
+	User(int id_, int uType_, double weight_, double x1, double y1, double z1, double r_min_, double P_o_) : Point(id_, x1, y1, z1)
 	{
 		uType = uType_;
 		weight = weight_;
@@ -152,14 +204,24 @@ public:
 	void set_communication_requirements(double r_d_, double r_min_, double P_o_) { rData = r_d_; rMin = r_min_; pOut = P_o_; }
 	void set_communication_requirements(double r_min_, double P_o_) { rMin = r_min_; pOut = P_o_; }
 	void set_Bandwidth();
-	
+
 	/// <summary>
 	/// 硬效用函数, 用户的效用函数是一个阶跃函数，当分配给用户的带宽和信道容量的乘积大于等于用户的最小速率需求时，用户的效用为其权重，否则为0。
 	/// </summary>
 	/// <param name="bandwidth_">用户被分配的带宽.</param>
 	/// <param name="capacity_">用户与发送者之间的信道容量.</param>
 	/// <returns>效用值</returns>
-	double hard_utility(double bandwidth_, double capacity_) const; 	
+	double hard_utility(double bandwidth_, double capacity_, double SNR_avg_dB) const;
+
+	double hard_utility_SNR_avg(double bandwidth_, double SNR_avg_dB) const;
+
+	/// <summary>
+	/// 以中断概率为自变量的硬效用函数, 用户的效用函数是一个阶跃函数，当用户的中断概率小于等于其最大中断概率时，用户的效用为其权重，否则为0。
+	/// </summary>
+	/// <param name="outage_">中断概率.</param>
+	/// <returns>效用</returns>
+	double hard_utility(double outage_) const;
+
 	/// <summary>
 	/// 弹性效用函数, 用户的效用函数是一个凹函数,
 	/// weight * log(1 + r) / log(1 + rMin);
@@ -167,7 +229,7 @@ public:
 	/// <param name="bandwidth_">用户被分配的带宽.</param>
 	/// <param name="capacity_">用户与发送者之间的信道容量.</param>
 	/// <returns>效用值</returns>
-	double elastic_utility(double bandwidth_, double capacity_) const; 	
+	double elastic_utility(double bandwidth_, double capacity_) const;
 	/// <summary>
 	/// 右半边软效用函数, 用户的效用函数是一个右半边的软阶跃函数,
 	/// 备注：当r 小于 rMin时，效用为0；当r 大于等于 rMin时，
@@ -177,7 +239,10 @@ public:
 	/// <param name="capacity_r">用户与发送者之间的信道容量.</param>
 	/// <returns>效用值</returns>
 	double halfsoft_utility(double bandwidth_, double capacity_r) const; // 右半边软效用函数
-	double utility(double bandwidth_, double capacity_); // 用户效用函数
+
+	double utility(double bandwidth_, double capacity_, double SNR_avg_dB); // 用户效用函数
+
+
 
 	/// <summary>
 	/// 在带宽为 bandwidth_，信道容量为 capacity_，且已经存在效用值 existed_utility 的情况下，用户的边际效用
@@ -189,25 +254,25 @@ public:
 	double marginal_utility(double bandwidth_, double capacity_, double existed_utility);
 
 	/// <summary>
-	/// Elastic_utility 的导数函数
+	/// 用户在分配带宽为bandwidth_时的导数. 对于hard用户，参数capacity表示其需求的带宽阈值. 对于elastic用户，参数capacity表示信道容量，即log(1+SNR)
 	/// </summary>
 	/// <param name="bandwidth_">The bandwidth.</param>
 	/// <param name="capacity_">The capacity.</param>
 	/// <returns></returns>
-	double elastic_utility_derivative(double bandwidth_, double capacity_) const;
+	double utility_derivative(double bandwidth_, double capacity_);
 
 	void print_user() const;
 };
 
 class Uav : public Point {
 public:
-	double total_bandwidth = 20e6;	// UAV的总带宽容量,20MHz
+	double total_bandwidth = 20;	// UAV的总带宽容量,20MHz
 	double hard_bandwidth = 0;      // 为硬效用用户分配的带宽，这两个变量只有在带宽比例搜索算法中才会被使用
-	double soft_bandwidth = 0;      // 为软效用用户分配的带宽，这两个变量只有在带宽比例搜索算法中才会被使用
+	double elastic_bandwidth = 0;      // 为弹性效用用户分配的带宽，这两个变量只有在带宽比例搜索算法中才会被使用
 	double pTrans = 2;      // 发射功率 2W
 
 	Uav() {}
-	Uav(int id_, double x1, double y1, double z1, int total_bandwidth_) : Point(id_, x1, y1, z1)
+	Uav(int id_, double x1, double y1, double z1, double total_bandwidth_) : Point(id_, x1, y1, z1)
 	{
 		total_bandwidth = total_bandwidth_;
 	}
@@ -215,7 +280,7 @@ public:
 	void print_UAV() const;
 };
 
-class Channel{
+class Channel {
 public:
 	Uav P_tr;
 	User P_re;
@@ -238,8 +303,8 @@ public:
 	double SNRt_dB = 0;     // 信噪比阈值 SNR threshold, in dB
 	double channel_capacity = 0;    // 信道容量 Capacity, in bit/s/Hz
 
-	~Channel() {}	
-	
+	~Channel() {}
+
 	/// <summary>
 	/// 初始化类 <see= default;ref="Channel"/> 的一个新的实例.
 	/// 计算发送者P_tr到接受者P_re之间的各种信道参数
@@ -247,63 +312,63 @@ public:
 	/// <param name="p_tr_">信号发送者，一般指无人机</param>
 	/// <param name="p_re_">信号接收者，一般指用户</param>
 	Channel(Uav& p_tr_, User& p_re_);
-	
+
 	/// <summary>
 	/// Sets the p.
 	/// </summary>
 	/// <param name="p_tr_">The p tr.</param>
 	/// <param name="p_re_">The p re.</param>
 	void set_P(Uav& p_tr_, User& p_re_) { P_tr = p_tr_; P_re = p_re_; }
-	
+
 	/// <summary>
 	/// 计算低点P_re到高点P_re的仰角
 	/// theta = arctan((z1 - z2) / sqrt((x1 - x2)^2 + (y1 - y2)^2))
 	/// </summary>
 	/// <returns>P_re到P_tr的仰角，单位为度</returns>
-	double cal_theta() const;	
+	double cal_theta() const;
 	/// <summary>
 	/// 计算发送者P_tr到接受者P_re之间的视距概率
-	/// P_LoS = 1 / (1 + a * exp(-b * (theta - a)))
+	/// P_LoS = 1 / (1 + param_a * exp(-param_b * (theta - param_a)))
 	/// </summary>
 	/// <returns>P_tr到P_re的视距概率, 0-1之间</returns>
-	double cal_P_LoS() const;	
+	double cal_P_LoS() const;
 	/// <summary>
 	/// 计算发送者P_tr到接受者P_re之间的视距自由空间路径损耗L_LoS
-	/// L_LoS = 20log10(4πfd/c) + η_LoS
+	/// L_LoS = 20log10(4πfd/speed_light) + η_LoS
 	/// </summary>
 	/// <returns>P_tr到接受者P_re之间的视距自由空间路径损耗L_LoS，单位为dB</returns>
-	double cal_L_LoS() const;	
+	double cal_L_LoS() const;
 	/// <summary>
 	/// 计算发送者P_tr到接受者P_re之间的非视距自由空间路径损耗L_NLoS
-	/// L_NLoS = 20log10(4πfd/c) + η_NLoS
+	/// L_NLoS = 20log10(4πfd/speed_light) + η_NLoS
 	/// </summary>
 	/// <returns>P_tr到接受者P_re之间的非视距自由空间路径损耗L_LoS，单位为dB</returns>
-	double cal_L_NLoS() const;	
+	double cal_L_NLoS() const;
 	/// <summary>
 	/// 计算小尺度Nakagami-M衰落的参数M
 	/// M = (K + 1)^2 / (2K + 1)，其中K = P_LoS / P_NLoS
 	/// </summary>
 	/// <returns>小尺度Nakagami-M衰落的参数M</returns>
-	double cal_Nakagami_M() const;	
+	double cal_Nakagami_M() const;
 	/// <summary>
 	/// 计算发送者P_tr到接受者P_re之间的大尺度衰减系数PL
 	/// PL = P_LoS * L_LoS + P_NLoS * L_NLoS
 	/// </summary>
 	/// <returns>P_tr到接受者P_re之间的大尺度衰减系数PL，单位dB</returns>
-	double cal_PL() const;	
+	double cal_PL() const;
 	/// <summary>
 	/// 计算发送者P_tr到接受者P_re之间的平均信噪比SNR
-	/// SNR = (P_tr.pTrans * g^2) / (P_N * PL)
+	/// SNR = (P_tr.pTrans * g^2) / (noise_dbm * PL)
 	/// </summary>
 	/// <returns>P_tr到接受者P_re之间的平均信噪比SNR，单位为dB</returns>
-	double cal_average_SNR() const;	
+	double cal_average_SNR() const;
 	/// <summary>
 	/// 根据用户的最大中断概率pOut，计算P_tr满足P_re中断概率需求的信噪比阈值SNR_th。根据Nakagami衰落中的中断概率公式，通过求解反函数得到SNR_th。
 	/// pOut = 1/Γ(M) * γ(M, (M * SNR_th) / SNR_avg)
 	/// 如果发送者将其所有带宽分配给该用户时，仍然无法满足用户的中断概率需求，则返回负无穷。
 	/// </summary>
 	/// <returns>P_tr满足P_re中断概率需求的信噪比阈值SNR_th, 单位为dB</returns>
-	double cal_SNR_th() const;	
+	double cal_SNR_th() const;
 	/// <summary>
 	/// 计算发送者P_tr到接受者P_re之间的信道容量Capacity
 	/// 公式: Capacity = (1 - pOut) * log2(1 + SNR_th)
@@ -343,10 +408,12 @@ public:
 	vector<Uav> uavs;
 
 	vector<vector<double>> dis_list;    // m*(n1+n2) 记录各个用户与无人机之间的距离
-	vector<vector<double>> SNRa_list;    // m*(n1+n2) 记录各个用户与无人机之间的信噪比
-	vector<vector<double>> SNRt_list;    // m*(n1+n2) 记录各个用户与无人机之间的信噪比
+	vector<vector<double>> SNRave_list;    // m*(n1+n2) 记录各个用户与无人机之间的信噪比
+	vector<vector<double>> SNRth_list;    // m*(n1+n2) 记录各个用户与无人机之间的信噪比
 	vector<vector<double>> M_list;      // m*(n1+n2) 记录各个用户与无人机之间的Nakagami-M参数
 	vector<vector<double>> cap_list;    // m*(n1+n2) 记录各个用户与无人机之间的信道容量
+	vector<vector<double>> Bth_list; // m*n1 记录各个离散效用用户与无人机之间的最小带宽需求
+	map<int, vector<User>> uav_serviceable_users_map;	// 记录每个无人机可服务的用户列表，key为uav_id，value为该uav可服务的用户列表，分离硬效用用户和弹性效用用户
 
 	SystemMd() {}
 	/// <summary>
@@ -354,50 +421,52 @@ public:
 	///= default;/summary>
 	/// <param name="u_">用户对象的 vector 引用，用于初始化系统中的用户列表。</param>
 	/// <param name="a_">UAV（无人机）对象的 vector 引用，用于初始化系统中的 UAV 列表。</param>
-	SystemMd(vector<User> u_, vector<Uav> a_);	
+	SystemMd(vector<User> u_, vector<Uav> a_);
 	/// <summary>
-	/// Initializes a new instance of the <see cref="SystemMD"/> class.
+	/// Initializes param_a new instance of the <see cref="SystemMD"/> class.
 	/// </summary>
 	/// <param name="user_file">The user file.</param>
 	/// <param name="uav_file">The uav file.</param>
-	SystemMd(static string user_file, string uav_file);
-	
+	SystemMd(string user_file, string uav_file, string config_file);
 	/// <summary>
 	/// Initializes the syetem model.
 	/// </summary>
-	void init_SyetemModel();
+	void init_SystemModel();
 
-	void print_all_users();
-	void print_all_uavs();
-	void print_dis_list() const;
-	void print_SNRa_list() const;
-	void print_SNRt_list() const;
-	void print_M_list() const;
-	void print_cap_list() const;
+
+	void print_SystemInfo(int n = 100) const;
+	void print_all_users(int n = 100) const;
+	void print_all_uavs() const;
+	void print_dis_list(int n = 100) const;
+	void print_SNRa_list(int n = 100) const;
+	void print_SNRt_list(int n = 100) const;
+	void print_M_list(int n = 100) const;
+	void print_cap_list(int n = 100) const;
+	void print_min_bw_list(int n = 100) const;
 };
 
 class BAProblem {
 public:
 	SystemMd sysModel;
-	double epsilon = 0.1;	// FPTAS精度参数
+	double epsilon = 0.001;	// FPTAS精度参数
 	double delta = 0.1;		// 搜索算法步长
 	vector<vector<double>> alloc_matrix; // m*(n1+n2) 记录各个用户从各个无人机分配到的带宽
 	vector<vector<int>> connect_matrix;  // m*(n1+n2) 记录各个用户与无人机的连接关系，1表示连接，0表示不连接
 
 
-	BAProblem() {}	
+
+	BAProblem() {}
 	/// <summary>
-	/// Initializes a new instance of the <= default;e cref="BAProblem"/> class.
+	/// Initializes param_a new instance of the <see cref="BAProblem"/> class.
 	/// </summary>
 	/// <param name="sys_">The system.</param>
-	BAProblem(const static SystemMd sys_) : sysModel(sys_)
+	BAProblem(const SystemMd sys_) : sysModel(sys_)
 	{
 		alloc_matrix = vector<vector<double>>(sysModel.m, vector<double>(sysModel.n1 + sysModel.n2, 0.0));
 		connect_matrix = vector<vector<int>>(sysModel.m, vector<int>(sysModel.n1 + sysModel.n2, 0));
 	}
 	~BAProblem() {}
 
-	void init_allocation();	
 	/// <summary>
 	/// 根据分配矩阵计= default;统的总效用值
 	/// </summary>
@@ -405,7 +474,6 @@ public:
 	/// <returns> 系统的总效用值</returns>
 	static double get_total_utility(const vector<KnapsackResult>& allResult);
 
-			
 	/// <summary>
 	/// 实现局部搜索算法，(1+alpha)近似带宽分配算法
 	/// 参考论文："Knapsack problems with sigmoid utilities: Approximation algorithms via hybrid optimization"
@@ -425,20 +493,14 @@ public:
 	/// <returns> 无人机uav_id的分配结果</returns>
 	KnapsackResult GAP(int uav_id, vector<double>& uti_max, vector<KnapsackResult>& allResult);
 
-	// 基于线性规划的(1+ε)α近似的带宽分配算法
-	void LP_based_allocation(double epsilon, double alpha);
-
-	// 基于动态规划的子问题近似算法
-	void DP_based_subproblem_allocation(double epsilon, double alpha);
-
-
+	map<int, UserResult> construct_user_results(const vector<KnapsackResult>& allResults);
 
 	// ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
 	// 单无人机分配问题的算法
 
 	/// <summary>
 	/// 基于资源比例搜索的子问题近似算法
-	/// 备注：该函数通过遍历不同的连续资源比例，分别求解离散部分和连续部分的分配问题，并将结果合并，最终返回不同连续资源比例下的分配结果。
+	/// 备注：该函数通过遍历不同的连续资源，分别求解离散部分和连续部分的分配问题，并将结果合并，最终返回不同连续资源比例下的分配结果。
 	/// 该算法离散用户未使用的资源不会被连续用户使用
 	/// </summary>
 	/// <param name="uav_id">当前求解的UAV的ID.</param>
@@ -447,7 +509,7 @@ public:
 	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
 	/// <returns>key: 连续部分比例，value: 不同连续资源比例下的分配结果</returns>
 	map<double, KnapsackResult> RP_based_subproblem_allocation_experiment1(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
-	
+
 	/// <summary>
 	/// 基于资源比例搜索的子问题近似算法, 返回所有断点处的分配结果
 	/// 备注：该函数通过遍历不同的连续资源比例，分别求解离散部分和连续部分的分配问题，并将结果合并，最终返回不同连续资源比例下的分配结果。
@@ -459,10 +521,22 @@ public:
 	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
 	/// <returns>key: 所有断点对应的连续资源比例，value: 不同连续资源比例下的分配结果</returns>
 	map<double, KnapsackResult> RP_based_subproblem_allocation_experiment2(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
-	
+
+	/// <summary>
+	/// 基于资源比例搜索的子问题近似算法
+	/// 备注：该函数通过遍历不同的连续资源，分别求解离散部分和连续部分的分配问题，并将结果合并，最终返回不同连续资源比例下的分配结果。
+	/// 该算法是RP_based_subproblem_allocation_experiment1的松弛版本，离散用户的效用函数不再是阶跃函数，而是一个线性函数，表示离散用户可以部分分配资源，从而获得部分效用。
+	/// </summary>
+	/// <param name="uav_id">当前求解的UAV的ID.</param>
+	/// <param name="capacity">uav_id对应uav的剩余容量</param>
+	/// <param name="unproc_users">待处理的用户集合.</param>
+	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
+	/// <returns>key: 连续部分比例，value: 不同连续资源比例下的分配结果</returns>
+	map<double, KnapsackResult> RP_based_subproblem_allocation_experiment1_relaxed(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
+
 	/// <summary>
 	/// 基于资源比例搜索的子问题近似算法, 返回最大效用处的分配结果
-	/// 备注：该函数通过遍历不同的连续资源比例，分别求解离散部分和连续部分的分配问题，并将结果合并，最终返回不同连续资源比例下的分配结果。
+	/// 备注：该函数通过遍历不同的连续资源比例，分别求解离散部分和连续部分的分配问题，并将结果合并，最终返回不同连续资源比例下的分配结果。离散部分使用FPTAS算法。
 	/// 该算法离散用户未使用的资源会被连续用户使用
 	/// </summary>
 	/// <param name="uav_id">当前求解的UAV的ID.</param>
@@ -470,10 +544,22 @@ public:
 	/// <param name="unproc_users">待处理的用户集合.</param>
 	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
 	/// <returns>单无人机分配问题的分配结果，KnapsackResult 类型</returns>
-	KnapsackResult RP_based_subproblem_allocation(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
+	KnapsackResult RP_based_subproblem_allocation_FPTAS(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
-	/// 对于hard_utility用户的带宽分配问题，是一个0-1背包问题，FPTAS算法.
+	/// 基于资源比例搜索的子问题近似算法, 返回最大效用处的分配结果
+	/// 备注：该函数通过遍历不同的连续资源比例，分别求解离散部分和连续部分的分配问题，并将结果合并，最终返回不同连续资源比例下的分配结果。离散部分使用贪心算法。
+	/// 该算法离散用户未使用的资源会被连续用户使用
+	/// </summary>
+	/// <param name="uav_id">当前求解的UAV的ID.</param>
+	/// <param name="capacity">uav_id对应uav的剩余容量</param>
+	/// <param name="unproc_users">待处理的用户集合.</param>
+	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
+	/// <returns>单无人机分配问题的分配结果，KnapsackResult 类型</returns>
+	KnapsackResult RP_based_subproblem_allocation_Greedy(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
+
+	/// <summary>
+	/// 对于hard_utility用户的带宽分配问题，是一个0-1背包问题，FPTAS算法. 时间复杂度为 O(n^3 / ε)
 	/// 给定无人机uav_id，用该算法为该无人机分配带宽
 	/// 在该问题中，用户的最小带宽需求对应于背包问题中的物品重量，用户的权重对应于物品价值	
 	/// </summary>
@@ -483,9 +569,71 @@ public:
 	/// <returns>背包问题的分配结果，KnapsackResult 类型</returns>
 	KnapsackResult Fptas01Knapsack(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
 
+
+
+
 	/// <summary>
-	/// 对于elastic_utility类型的用户，带宽分配问题是一个凸优化问题，直接根据KKT条件求解 给定无人机uav_id，用该算法为该无人机分配带宽	
-	/// 算法记录与笔记：![[000-工作日志-讨论日志-9月2#对于连续部分：KKT条件找最优解]]
+	/// 贪心算法解决0-1背包问题，时间复杂度为O(n log n)
+	/// </summary>
+	/// <param name="uav">为uav进行分配决策，其中包含了容量信息.</param>
+	/// <param name="sorted_unproc_users">待处理的硬效用用户集合, 已按单位带宽效用排序.</param>
+	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
+	/// <returns></returns>
+	KnapsackResult Greedy01Knapsack(Uav& uav, vector<User>& sorted_unproc_users, vector<double>& uti_max);
+
+	/// <summary>
+	/// 这是一个基于KKT条件和注水原理 (Water-filling) 的资源分配算法。该算法的核心思想是通过边际效用排序，找到“水位”（即拉格朗日乘子 $\lambda$）的临界点，从而确定哪些用户可以获得资源。
+	/// </summary>
+	/// <param name="uav_id"> 当前无人机的ID </param>
+	/// <param name="capacity"> 当前无人机的剩余容量 </param>
+	/// <param name="unproc_users">待处理的用户集合</param>
+	/// <param name="is_rounding"> 是否对分配结果中的最后一个hard用户进行舍入，默认为1，表示进行舍入 </param>
+	/// <returns> 背包问题分配结果，KnapsackResult 类型 </returns>
+	KnapsackResult WaterFillingAlgorithm_singleUAV(Uav uav, vector<User> unproc_users, int is_rounding = 1);
+
+	/// <summary>
+	/// 该方法与WaterFillingAlgorithm_singleUAV的唯一区别是，在搜索水位λ时，采用二分法进行搜索，从而提高了搜索效率。
+	/// </summary>
+	/// <param name="uav_id"> 当前无人机的ID </param>
+	/// <param name="capacity"> 当前无人机的剩余容量 </param>
+	/// <param name="unproc_users">待处理的用户集合</param>
+	/// <param name="is_rounding"> 是否对分配结果中的最后一个hard用户进行舍入，默认为1，表示进行舍入 </param>
+	/// <returns> 背包问题分配结果，KnapsackResult 类型 </returns>
+	KnapsackResult WaterFillingAlgorithm_singleUAV_new(Uav uav, vector<User> unproc_users, int is_rounding = 1);
+
+	/// <summary>
+	/// 一个新的FPTAS算法，用于解决单无人机的带宽分配问题，时间复杂度为O(n^2 / ε)。考虑了用户的混合效用函数（硬效用和弹性效用）。
+	/// </summary>
+	/// <param name="uav_id"> 当前无人机的ID </param>
+	/// <param name="capacity"> 当前无人机的剩余容量 </param>
+	/// <param name="unproc_users">待处理的用户集合</param>
+	/// <param name="epsilon"> 精度要求 </param>
+	/// <returns> 背包问题分配结果，KnapsackResult 类型 </returns>
+	KnapsackResult FPTAS_singleUAV(Uav& uav, vector<User>& unproc_users, double epsilon);
+
+	/// <summary>
+	/// 该方法与FPTAS_singleUAV的唯一区别是，动态规划表格的值不再是恰好等于价值v的最小重量，而是价值至少为v的最小重量
+	/// </summary>
+	/// <param name="uav">为uav进行分配决策，其中包含了容量信息.</param>
+	/// <param name="unproc_users">待处理的硬效用用户集合.</param>
+	/// <param name="uti_max">用户当前的最大效用，用户的边际效用函数参数</param>
+	/// <returns>背包问题的分配结果，KnapsackResult 类型</returns>
+	KnapsackResult FPTAS_singleUAV_new(Uav uav, vector<User> unproc_users, double epsilon = 0.02);
+
+
+	/// <summary>
+	/// 在当前状态下，计算无人机uav_id子分配问题的KKT参数
+	/// </summary>
+	/// <param name="uav_id"> 当前无人机的ID </param>
+	/// <param name="unproc_users">待处理的用户集合</param>
+	/// <returns> KKT参数结构体 </returns>
+	vector<KKT_parameters> compute_KKT_parameters(int uav_id, const vector<User>& unproc_users);
+
+	void print_KKT_parameters(const vector<KKT_parameters>& kkt_params);
+
+	/// <summary>
+	/// 对于elastic_utility类型的用户，带宽分配问题是一个凸优化问题，直接根据KKT条件求解 给定无人机uav_id，用该算法为该无人机分配带宽
+	/// 算法记录与笔记：[[003 算法设计2 混合效用的单无人机资源分配问题#2 3 2 对于连续部分：KKT条件找最优解]]
 	/// </summary>
 	/// <param name="uav">为uav进行分配决策，其中包含了容量信息.</param>
 	/// <param name="unproc_users">待处理的软效用用户集合.</param>
@@ -494,7 +642,7 @@ public:
 	KnapsackResult KktBasedElasticUtility(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
-	/// Pegging算法，算法参考论文："The nonlinear knapsack problem – algorithms and applications"
+	/// Pegging算法，算法参考笔记：[[003 算法设计2 混合效用的单无人机资源分配问题#2 3 3 对于连续部分的新方法：Pegging算法]]
 	/// </summary>
 	/// <param name="uav">为uav进行分配决策，其中包含了容量信息.</param>
 	/// <param name="unproc_users">待处理的用户集合.</param>
@@ -502,17 +650,124 @@ public:
 	/// <returns>背包问题的分配结果，KnapsackResult 类型</returns>
 	KnapsackResult PeggingAlgorithm(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
 
+
+
 	/// <summary>
-	/// 用CPLEX求解凸优化问题，验证KKT_based_elastic_utility的正确性	
+	/// 提出的多无人机带宽分配近似算法
 	/// </summary>
-	/// <param name="uav_id">当前求解的UAV的ID.</param>
-	/// <returns>背包问题的分配结果，KnapsackResult 类型</returns>
-	KnapsackResult CplexBasedElasticUtility(int uav_id);
-	
+	/// <param name="uavs">系统中无人机集合</param>
+	/// <param name="users">系统中用户的集合</param>
+	/// <param name="used_single_alg"> 单无人机算法指示变量，1为使用1/2近似算法，2为使用FPTAS算法</param>
+	/// <param name="epsilon">精度要求</param>
+	/// <returns></returns>
+	pair<vector<KnapsackResult>, map<int, UserResult>>  approposed_multiUAV_allocation(vector<Uav> uavs, vector<User> users, int used_single_alg = 2, double parameter = 0.083);
+
 	/// <summary>
-	/// Prints the knapsack result.
+	/// 提出的多无人机带宽分配近似算法; 与原算法相比，不是每次选择每个效用最大的无人机，而是先为每个无人机分配一遍。
+	/// 用户选择效用最大的无人机
 	/// </summary>
-	/// <param name="knapsackResult">The knapsack result.</param>
-	/// <param name="uav_id">id of uav</param>
-	static void PrintKnapsackResult(KnapsackResult& knapsackResult, int uav_id = -1);
+	/// <param name="uavs">系统中无人机集合</param>
+	/// <param name="users">系统中用户的集合</param>
+	/// <param name="used_single_alg"> 单无人机算法指示变量，1为使用1/2近似算法，2为使用FPTAS算法</param>
+	/// <param name="epsilon">精度要求</param>
+	/// <returns></returns>
+	pair<vector<KnapsackResult>, map<int, UserResult>>  approposed_multiUAV_allocation_new(vector<Uav> uavs, vector<User> users, int used_single_alg = 2, double parameter = 0.083);
+
+
+	/**
+	* @brief 打印单个 KnapsackResult 结构体
+	* * @param result 要打印的结果对象
+	* @param maxItemsToPrint 控制打印详细物品的最大数量，默认打印前10个，-1表示打印所有
+	* @param indent 缩进空格数，用于美化层级显示
+	*/
+	void PrintKnapsackResult(const KnapsackResult& result, int uav_id, int maxItemsToPrint = 10, int indent = 0);
+
+	/**
+	* @brief 打印 vector<KnapsackResult>
+	* * @param results 结果列表
+	* @param maxItemsPerResult 每个结果中详细打印的物品数限制
+	*/
+	void PrintKnapsackResultList(const vector<KnapsackResult>& results, int maxItemsPerResult = 5);
+
+
+
+	/// <summary>
+	/// 对比算法一，松弛舍入法。：算法来源: On-Demand Multiplexing of eMBB/URLLC Traffic in a Multi-UAV Relay Network
+	/// </summary>
+	/// <param name="epsilon_tol"></param>
+	/// <returns></returns>
+	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
+		ConvexRelaxationAndRounding_multiUAV(double epsilon_tol = 1e-4);
+
+	/// <summary>
+	/// 对比算法二，基于匹配博弈的联合用户关联与带宽分配算法。算法来源：Diverse and Differentiated QoS Provisioning for 6G Communications via Demand-Aware Prioritization and DEI-Based Resource Allocation
+	/// 基于匹配博弈 + SQP(IPOPT) 的联合用户关联与带宽分配算法
+	/// 
+	/// 算法流程：
+	///   Phase 0: 贪心初始化（每个用户关联信道最好的UAV，均分带宽）
+	///   Phase 1 (Step A): 固定匹配x, 使用IPOPT为每个UAV独立求解带宽分配b
+	///   Phase 2 (Step B): 固定带宽b, 通过成对用户交换优化匹配x
+	///   Phase 4: 可行解恢复（Hard用户舍入/放弃）+ 剩余带宽再分配给Elastic用户
+	/// 
+	/// 效用函数设计：
+	///   - Hard用户: Sigmoid近似 w_i / (1 + exp(-nu * (R_i - r_min)))
+	///   - Elastic用户: 归一化对数 w_j * log2(1+b*cap) / log2(1+B_UAV*cap)
+	/// </summary>
+	/// <param name="config">算法参数配置（陡峭因子、收敛阈值、最大迭代等）</param>
+	/// <returns>
+	///   first: 每个UAV的分配结果列表 (vector<KnapsackResult>)
+	///   second: 每个用户的分配结果 (vector<UserResult>)
+	/// </returns>
+	std::pair<std::vector<KnapsackResult>, map<int, UserResult>>
+		MatchingSQP_Allocation(MatchingSQPConfig config = MatchingSQPConfig());
+
+
+	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
+		MatchingGameAllocation();
+
+	/// <summary>
+   /// SADA算法: 基于连续近似与对偶分解的联合用户关联与带宽分配算法
+   /// 
+   /// 算法流程:
+   ///   Step 1: Sigmoid平滑化 - 消除整数变量x_ki, 用连续带宽b_ki自然编码关联决策
+   ///   Step 2: Jensen不等式近似(外层循环) - 将非凸 log(sum U) 转化为凸下界
+   ///   Step 3: 对偶分解(内层循环) - 每个UAV并行求解带宽分配
+   ///     - UH用户: Sigmoid逆函数解析解
+   ///     - UE用户: 二分法求解KKT方程
+   ///   Step 4: 后处理 - 结果恢复, 可行性修复, 剩余带宽重分配
+   /// 
+   /// 参考算法: Li et al. (2024), Successive Approximation and Dual Decomposition
+   /// </summary>
+   /// <param name="config">算法参数配置</param>
+   /// <returns>
+   ///   first: 每个UAV的分配结果列表 (vector<KnapsackResult>)
+   ///   second: 每个用户的分配结果 (map<int, UserResult>)
+   /// </returns>
+	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
+		SADA_Allocation(SADAConfig config = SADAConfig());
+
+
+	/// <summary>
+/// 基于匈牙利算法（KM算法）的子信道匹配资源分配算法
+/// 
+/// 算法流程：
+///   Step 1: 将每个UAV的带宽离散化为 B_sub=180KHz 的子信道
+///   Step 2: 构建二部图：左侧=所有子信道（200*K个），右侧=所有用户（n个）
+///   Step 3: 补齐虚拟节点使方阵，虚拟边权重=0
+///   Step 4: 边权计算
+///     - Hard用户: 若单子信道满足QoS则 w*log2(1+B_sub*log2(1+SNR_avg))，否则0
+///     - Elastic用户: w*log2(1+B_sub*cap)
+///   Step 5: KM算法求解最大权完美匹配（O(N^3)）
+///   Step 6: 从匹配恢复 x_ki 和 b_ki
+/// 
+/// 特点：每个用户最多分配一个子信道（180KHz），一对一匹配
+/// </summary>
+/// <returns>
+///   first: 每个UAV的分配结果列表 (vector<KnapsackResult>)
+///   second: 每个用户的分配结果 (map<int, UserResult>)
+/// </returns>
+	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
+		HungarianMatchingAllocation();
 };
+
+

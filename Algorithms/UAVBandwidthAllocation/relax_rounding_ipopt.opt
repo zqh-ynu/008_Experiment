@@ -1,0 +1,9 @@
+# 该文件是求解器IPOPT的配置文件
+# hessian_approximation limited-memory  # <-- 注释掉或删除这一行！
+
+# 其他参数
+tol 1e-6
+mu_strategy adaptive
+print_level 0
+max_iter 1000
+sb yes

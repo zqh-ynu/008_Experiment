@@ -1,0 +1,71 @@
+# 008_Experiment research-snapshot policy
+#
+# This repository synchronizes source code, data-processing logic, compact
+# generation configurations, documents, and experiment results.  Raw inputs,
+# intermediate coordinate corpora, and user/UAV instance files stay on the
+# local machine or in a separately managed data snapshot.
+
+# ---------------------------------------------------------------------------
+# Population-processing data assets
+# ---------------------------------------------------------------------------
+# Keep the directory guide, but do not commit any raw, intermediate, or
+# demonstration data below DatasetTest/data/.
+/ExperimentsData/DatasetTest/data/**
+!/ExperimentsData/DatasetTest/data/README.md
+
+# Main experiment instances and archives are deliberately excluded.  JSON
+# generation-condition files and the directory guide remain versioned.
+/ExperimentsData/data/**/*.csv
+/ExperimentsData/data/**/*.zip
+/ExperimentsData/data/County_loc_Type_req/simulated_data/*.png
+
+# ---------------------------------------------------------------------------
+# Disconnected local DRL prototype
+# ---------------------------------------------------------------------------
+# The current C++ six-method conference-experiment loop does not invoke this
+# Python DQN/DRL prototype.  It includes local training assets and checkpoints
+# and is retained on the machine outside this synchronization snapshot.
+/Algorithms/baselineAlgorithms/DRL_Algorithm_3/
+
+# ---------------------------------------------------------------------------
+# Machine-local build products and IDE state
+# ---------------------------------------------------------------------------
+**/.vs/
+**/x64/
+**/Debug/
+**/Release/
+*.obj
+*.pdb
+*.idb
+*.ilk
+*.tlog
+*.exe
+*.dll
+*.iobj
+*.ipdb
+*.recipe
+*.lastbuildstate
+*.VC.db
+*.opensdf
+*.sdf
+*.vsidx
+*.suo
+*.vcxproj.user
+
+# ---------------------------------------------------------------------------
+# Python and notebook caches
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Local secrets and operating-system metadata
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.local.json
+Thumbs.db
+Desktop.ini

@@ -1,12 +1,15 @@
-#pragma once
+ï»¿#pragma once
 #include "EntityDefinition.h"
+#include "config.h"
 
-// ±¾ÎÄ¼şÖ÷ÒªÓÃÓÚ²âÊÔ¸÷¸öÀàµÄ¹¦ÄÜ
+// æœ¬æ–‡ä»¶ä¸»è¦ç”¨äºæµ‹è¯•å„ä¸ªå‡½æ•°çš„åŠŸèƒ½
 
 
+// åœ¨ä¸»å‡½æ•°æˆ–å…¶ä»–åœ°æ–¹è°ƒç”¨
+// ExperimentConfig config = load_experiment_config("config.json");
 
 
-// ²âÊÔPointÀà
+// æµ‹è¯•Pointç±»
 void test_Point() {
 	cout << "Testing Point class..." << endl
 		<< "Creating Point p1 at (1, 2, 3)..." << endl;
@@ -19,7 +22,7 @@ void test_Point() {
 	cout << "Point class test completed." << endl << endl;
 }
 
-// ²âÊÔUserÀà
+// æµ‹è¯•Userç±»
 void test_User() {
 	cout << "Testing User class..." << endl
 		<< "Creating User u1 at (1, 2, 0) with hard utility..." << endl;
@@ -28,29 +31,29 @@ void test_User() {
 	cout << "Creating User u2 at (3, 4, 0) with elastic utility..." << endl;
 	User u2(2, ELASTIC_UTILITY, 1, 3, 4, 0, 5, 2, 0.05);
 	u2.print_user();
-	cout << "Creating User u3 at (5, 6, 0) with half-soft utility..." << endl;
+	cout << "Creating User u3 at (5, 6, 0) with half-elastic utility..." << endl;
 	User u3(3, HALFSOFT_UTILITY, 1, 5, 6, 0, 8, 3, 0.08);
 	u3.print_user();
 	cout << "User class test completed." << endl << endl;
 }
 
-// ²âÊÔUAVÀà
+// æµ‹è¯•UAVç±»
 void test_UAV() {
 	cout << "Testing UAV class..." << endl
 		<< "Creating UAV a1 at (0, 0, 300)..." << endl;
-	Uav a1(1, 0, 0, uav_H, 20);
+	Uav a1(1, 0, 0, uav_alt, 20);
 	a1.print_UAV();
 	cout << "Creating UAV a2 at (100, 100, 300)..." << endl;
-	Uav a2(2, 100, 100, uav_H, 20);
+	Uav a2(2, 100, 100, uav_alt, 20);
 	a2.print_UAV();
 	cout << "UAV class test completed." << endl << endl;
 }
 
-// ²âÊÔChannelÀà
+// æµ‹è¯•Channelç±»
 void test_Channel() {
 	cout << "Testing Channel class..." << endl
 		<< "Creating UAV a1 at (0, 0, 300)..." << endl;
-	Uav a1(1, 0, 0, uav_H, 20);
+	Uav a1(1, 0, 0, uav_alt, 20);
 	cout << "Creating User u1 at (100, 100, 0) with hard utility..." << endl;
 	User u1(1, HARD_UTILITY, 1, 100, 100, 0, 10, 5, 0.1);
 	cout << "Creating Channel between a1 and u1..." << endl;
@@ -59,7 +62,7 @@ void test_Channel() {
 	cout << "Channel class test completed." << endl << endl;
 }
 
-// ²âÊÔSystemMDÀà
+// æµ‹è¯•SystemMDç±»
 void test_SystemMD() {
 	cout << "Testing SystemMD class..." << endl;
 	vector<User> users;
@@ -67,8 +70,8 @@ void test_SystemMD() {
 	users.emplace_back(2, ELASTIC_UTILITY, 1, 20, 20, 0, 5, 2, 0.05);
 	users.emplace_back(3, HALFSOFT_UTILITY, 1, 30, 30, 0, 8, 3, 0.08);
 	vector<Uav> uavs;
-	uavs.emplace_back(1, 0, 0, uav_H, 20);
-	uavs.emplace_back(2, 100, 100, uav_H, 20);
+	uavs.emplace_back(1, 0, 0, uav_alt, 20);
+	uavs.emplace_back(2, 100, 100, uav_alt, 20);
 	cout << "Creating SystemMD instance..." << endl;
 	SystemMd sysModel(users, uavs);
 	sysModel.print_all_users();
@@ -81,10 +84,10 @@ void test_SystemMD() {
 	cout << "SystemMD class test completed." << endl << endl;
 }
 
-// ²âÊÔBAProblem::FPTAS_0_1_knapsackº¯Êı
+// æµ‹è¯•BAProblem::FPTAS_0_1_knapsackå‡½æ•°
 
 
-// ²âÊÔBAProblem::KKT_based_elastic_utilityº¯Êı
+// æµ‹è¯•BAProblem::KKT_based_elastic_utilityå‡½æ•°
 void test_KKT_based_elastic_utility() {
 	cout << "Testing KKT_based_elastic_utility function..." << endl;
 	vector<User> users;
@@ -92,13 +95,13 @@ void test_KKT_based_elastic_utility() {
 	users.emplace_back(1, ELASTIC_UTILITY, 1, 20, 20, 0, 5, 2, 0.05);
 	users.emplace_back(2, ELASTIC_UTILITY, 1, 30, 30, 0, 8, 3, 0.08);
 	vector<Uav> uavs;
-	uavs.emplace_back(0, 0, 0, uav_H, 20);
-	uavs[0].soft_bandwidth = 0.0001; // ¼ÙÉèÎªÈíĞ§ÓÃÓÃ»§·ÖÅä15MHz´ø¿í
+	uavs.emplace_back(0, 0, 0, uav_alt, 20);
+	uavs[0].elastic_bandwidth = 0.0001; // å‡è®¾ä¸ºè½¯æ•ˆç”¨ç”¨æˆ·åˆ†é…15MHzå¸¦å®½
 	SystemMd sysModel(users, uavs);
 
 	BAProblem ba(sysModel);
 
-	vector<double> existed_utilitys = { 0.0, 0.0, 0.0 }; // ¼ÙÉèËùÓĞÓÃ»§³õÊ¼Ğ§ÓÃÎª0
+	vector<double> existed_utilitys = { 0.0, 0.0, 0.0 }; // å‡è®¾æ‰€æœ‰ç”¨æˆ·åˆå§‹æ•ˆç”¨ä¸º0
 
 	KnapsackResult result = ba.KktBasedElasticUtility(uavs[0], users, existed_utilitys);
 	cout << "Allocated bandwidths: ";
@@ -111,15 +114,15 @@ void test_KKT_based_elastic_utility() {
 
 void print_sorted_users(vector<User>& users)
 {
-	// ½«usersÖĞµÄÓÃ»§£¬°´ÕÕµ¥Î»×ÊÔ´Ğ§ÓÃ´Ó´óµ½Ğ¡ÅÅĞò£¬²¢Êä³öÓÃ»§id¼°Æäµ¥Î»×ÊÔ´Ğ§ÓÃ
-	vector<pair<int, double>> user_utilities; // pair<ÓÃ»§ID, µ¥Î»×ÊÔ´Ğ§ÓÃ>
+	// å°†usersä¸­çš„ç”¨æˆ·ï¼ŒæŒ‰ç…§å•ä½èµ„æºæ•ˆç”¨ä»å¤§åˆ°å°æ’åºï¼Œå¹¶è¾“å‡ºç”¨æˆ·idåŠå…¶å•ä½èµ„æºæ•ˆç”¨
+	vector<pair<int, double>> user_utilities; // pair<ç”¨æˆ·ID, å•ä½èµ„æºæ•ˆç”¨>
 	for (auto& u : users)
 	{
-		double unit_utility = u.weight / u.rMin; // ¼òµ¥Æğ¼û£¬µ¥Î»×ÊÔ´Ğ§ÓÃ¶¨ÒåÎªÈ¨ÖØ/×îĞ¡ËÙÂÊĞèÇó
+		double unit_utility = u.weight / u.rMin; // ç®€å•èµ·è§ï¼Œå•ä½èµ„æºæ•ˆç”¨å®šä¹‰ä¸ºæƒé‡/æœ€å°é€Ÿç‡éœ€æ±‚
 		user_utilities.push_back({ u.ID, unit_utility });
 	}
-	sort(user_utilities.begin(), user_utilities.end(), [](const pair<int, double>& a, const pair<int, double>& b) {
-		return a.second > b.second; // °´µ¥Î»×ÊÔ´Ğ§ÓÃ´Ó´óµ½Ğ¡ÅÅĞò
+	sort(user_utilities.begin(), user_utilities.end(), [](const pair<int, double>& param_a, const pair<int, double>& param_b) {
+		return param_a.second > param_b.second; // æŒ‰å•ä½èµ„æºæ•ˆç”¨ä»å¤§åˆ°å°æ’åº
 		});
 	cout << "Users sorted by unit resource utility (weight/rMin):" << endl;
 	for (auto& p : user_utilities)
@@ -127,14 +130,14 @@ void print_sorted_users(vector<User>& users)
 		cout << "User ID: " << p.first << ", Unit Resource Utility: " << p.second << endl;
 	}
 	cout << endl;
-	// ½«usersÖĞµÄÓÃ»§£¬°´ÕÕĞèÇóµÄ×îĞ¡Êı¾İËÙÂÊ½µĞòÅÅĞò£¬²¢Êä³öÓÃ»§id¼°Æä×îĞ¡Êı¾İËÙÂÊ
-	vector<pair<int, double>> user_rMin; // pair<ÓÃ»§ID, ×îĞ¡Êı¾İËÙÂÊ>
+	// å°†usersä¸­çš„ç”¨æˆ·ï¼ŒæŒ‰ç…§éœ€æ±‚çš„æœ€å°æ•°æ®é€Ÿç‡é™åºæ’åºï¼Œå¹¶è¾“å‡ºç”¨æˆ·idåŠå…¶æœ€å°æ•°æ®é€Ÿç‡
+	vector<pair<int, double>> user_rMin; // pair<ç”¨æˆ·ID, æœ€å°æ•°æ®é€Ÿç‡>
 	for (auto& u : users)
 	{
 		user_rMin.push_back({ u.ID, u.rMin });
 	}
-	sort(user_rMin.begin(), user_rMin.end(), [](const pair<int, double>& a, const pair<int, double>& b) {
-		return a.second > b.second; // °´×îĞ¡Êı¾İËÙÂÊ´Ó´óµ½Ğ¡ÅÅĞò
+	sort(user_rMin.begin(), user_rMin.end(), [](const pair<int, double>& param_a, const pair<int, double>& param_b) {
+		return param_a.second > param_b.second; // æŒ‰æœ€å°æ•°æ®é€Ÿç‡ä»å¤§åˆ°å°æ’åº
 		});
 	cout << "Users sorted by minimum data rate (rMin):" << endl;
 	for (auto& p : user_rMin)
@@ -142,14 +145,14 @@ void print_sorted_users(vector<User>& users)
 		cout << "User ID: " << p.first << ", Minimum Data Rate (rMin): " << p.second << endl;
 	}
 	cout << endl;
-	// ½«usersÖĞµÄÓÃ»§£¬°´ÕÕÈ¨ÖØ½µĞòÅÅĞò£¬²¢Êä³öÓÃ»§id¼°ÆäÈ¨ÖØ
-	vector<pair<int, int>> user_weight; // pair<ÓÃ»§ID, È¨ÖØ>
+	// å°†usersä¸­çš„ç”¨æˆ·ï¼ŒæŒ‰ç…§æƒé‡é™åºæ’åºï¼Œå¹¶è¾“å‡ºç”¨æˆ·idåŠå…¶æƒé‡
+	vector<pair<int, int>> user_weight; // pair<ç”¨æˆ·ID, æƒé‡>
 	for (auto& u : users)
 	{
 		user_weight.push_back({ u.ID, u.weight });
 	}
-	sort(user_weight.begin(), user_weight.end(), [](const pair<int, int>& a, const pair<int, int>& b) {
-		return a.second > b.second; // °´È¨ÖØ´Ó´óµ½Ğ¡ÅÅĞò
+	sort(user_weight.begin(), user_weight.end(), [](const pair<int, int>& param_a, const pair<int, int>& param_b) {
+		return param_a.second > param_b.second; // æŒ‰æƒé‡ä»å¤§åˆ°å°æ’åº
 		});
 	cout << "Users sorted by weight:" << endl;
 	for (auto& p : user_weight)
@@ -159,23 +162,24 @@ void print_sorted_users(vector<User>& users)
 	cout << endl;
 
 }
-// ²âÊÔBAProblem::RP_based_subproblem_allocation()º¯Êı
-// °üº¬10¸öÓ²Ğ§ÓÃÓÃ»§ºÍ10¸öµ¯ĞÔĞ§ÓÃÓÃ»§
-// °´ÕÕÒÔÏÂ¹æÔòÉú³ÉÊµÀı£º
-// ÓÃ»§£º
-//	1. ËùÓĞÓÃ»§µÄx×ø±êÓëy×ø±êËæ»úÔÚ(-250, 250)Ö®¼ä
-//	2. ËùÓĞÓÃ»§µÄÈ¨ÖØËæ»úÔÚ(1, 5)Ö®¼ä£¬ÇÒÊÇÕûÊı
-//	3. ËùÓĞÓÃ»§µÄĞèÇóµÄ×îĞ¡Êı¾İËÙÂÊËæ»ú·Ö²¼ÔÚ(0.5, 10)Ö®¼ä
-//	4. ËùÓĞÓÃ»§µÄĞèÇóµÄ×î´óÖĞ¶Ï¸ÅÂÊËæ»ú·Ö²¼ÔÚ(10e-1, 10e-3)Ö®¼ä
+
+// æµ‹è¯•BAProblem::RP_based_subproblem_allocation()å‡½æ•°
+// åŒ…å«10ä¸ªç¡¬æ•ˆç”¨ç”¨æˆ·å’Œ10ä¸ªå¼¹æ€§æ•ˆç”¨ç”¨æˆ·
+// æŒ‰ç…§ä»¥ä¸‹è§„åˆ™ç”Ÿæˆå®ä¾‹ï¼š
+// ç”¨æˆ·ï¼š
+//	1. æ‰€æœ‰ç”¨æˆ·çš„xåæ ‡ä¸yåæ ‡éšæœºåœ¨(-250, 250)ä¹‹é—´
+//	2. æ‰€æœ‰ç”¨æˆ·çš„æƒé‡éšæœºåœ¨(1, 5)ä¹‹é—´ï¼Œä¸”æ˜¯æ•´æ•°
+//	3. æ‰€æœ‰ç”¨æˆ·çš„éœ€æ±‚çš„æœ€å°æ•°æ®é€Ÿç‡éšæœºåˆ†å¸ƒåœ¨(0.5, 10)ä¹‹é—´
+//	4. æ‰€æœ‰ç”¨æˆ·çš„éœ€æ±‚çš„æœ€å¤§ä¸­æ–­æ¦‚ç‡éšæœºåˆ†å¸ƒåœ¨(10e-1, 10e-3)ä¹‹é—´
 void test_RP_based_subproblem_allocation() {
-	cout << "Testing RP_based_subproblem_allocation function..." << endl;
-	// ÉèÖÃËæ»úÖÖ×Ó
+	cout << "Testing RP_based_subproblem_allocation_FPTAS function..." << endl;
+	// è®¾ç½®éšæœºç§å­
 	// srand((unsigned int)time(NULL));
-	// ÎªÁË½á¹û¿É¸´ÏÖ£¬Ê¹ÓÃ¹Ì¶¨ÖÖ×Ó
+	// ä¸ºäº†ç»“æœå¯å¤ç°ï¼Œä½¿ç”¨å›ºå®šç§å­
 	srand(42);
 
 	vector<User> users;
-	// 10¸öÓ²Ğ§ÓÃÓÃ»§
+	// 10ä¸ªç¡¬æ•ˆç”¨ç”¨æˆ·
 	for (int i = 0; i < 10; i++) {
 		double x = (static_cast<double>(rand()) / RAND_MAX) * 500 - 250; // (-250, 250)
 		double y = (static_cast<double>(rand()) / RAND_MAX) * 500 - 250; // (-250, 250)
@@ -186,7 +190,7 @@ void test_RP_based_subproblem_allocation() {
 	}
 	// print_sorted_users(users);
 
-	// 10¸öµ¯ĞÔĞ§ÓÃÓÃ»§
+	// 10ä¸ªå¼¹æ€§æ•ˆç”¨ç”¨æˆ·
 	for (int i = 10; i < 20; i++) {
 		double x = (static_cast<double>(rand()) / RAND_MAX) * 500 - 250; // (-250, 250)
 		double y = (static_cast<double>(rand()) / RAND_MAX) * 500 - 250; // (-250, 250)
@@ -196,28 +200,28 @@ void test_RP_based_subproblem_allocation() {
 		users.emplace_back(i, ELASTIC_UTILITY, weight, x, y, 0, rMin, pOut);
 	}
 	vector<Uav> uavs;
-	uavs.emplace_back(0, 0, 0, uav_H, 20);
+	uavs.emplace_back(0, 0, 0, uav_alt, 20);
 	SystemMd sysModel(users, uavs);
 	BAProblem ba(sysModel);
 
-	vector<double> existed_utilitys(20, 0.0); // ¼ÙÉèËùÓĞÓÃ»§³õÊ¼Ğ§ÓÃÎª0
+	vector<double> existed_utilities(20, 0.0); // å‡è®¾æ‰€æœ‰ç”¨æˆ·åˆå§‹æ•ˆç”¨ä¸º0
 
 	double epsilon = 0.5;
-	map<double, KnapsackResult> result_map = ba.RP_based_subproblem_allocation_experiment1(0, uavs[0].total_bandwidth, users, existed_utilitys);
+	map<double, KnapsackResult> result_map = ba.RP_based_subproblem_allocation_experiment1(0, uavs[0].total_bandwidth, users, existed_utilities);
 
-	// Êä³öresult_map
-	cout << "Results of RP_based_subproblem_allocation:" << endl;
+	// è¾“å‡ºresult_map
+	cout << "Results of RP_based_subproblem_allocation_FPTAS:" << endl;
 
 
 
-	// ÕÒµ½×î´óĞ§ÓÃ¶ÔÓ¦µÄ±ÈÀı
+	// æ‰¾åˆ°æœ€å¤§æ•ˆç”¨å¯¹åº”çš„æ¯”ä¾‹
 	double max_utility = 0;
 	double best_ratio = 0;
 	for (const auto& entry : result_map) {
 		double ratio = entry.first;
 		KnapsackResult result = entry.second;
 		cout << "Ratio: " << ratio << endl;
-		ba.PrintKnapsackResult(result);
+		ba.PrintKnapsackResult(result, 0);
 		cout << '\n';
 
 
@@ -228,49 +232,49 @@ void test_RP_based_subproblem_allocation() {
 	}
 	cout << "Best Ratio: " << best_ratio << ", Max Utility: " << max_utility << endl;
 
-	cout << "RP_based_subproblem_allocation function test completed." << endl << endl;
-	
-	// °´ÒÔÏÂ¸ñÊ½½«½á¹ûĞ´µ½ÎÄ¼ş
-	// µÚÒ»ĞĞ£º"ContinuousRatio, TotalUtility, SoftUtility, HardUtility"
-	// ÍùºóµÄÃ¿Ò»ĞĞ£ºresult_map.first, result_map.second.totalValue
+	cout << "RP_based_subproblem_allocation_FPTAS function test completed." << endl << endl;
+
+	// æŒ‰ä»¥ä¸‹æ ¼å¼å°†ç»“æœå†™åˆ°æ–‡ä»¶
+	// ç¬¬ä¸€è¡Œï¼š"ContinuousRatio, TotalUtility, ElasticUtility, HardUtility"
+	// å¾€åçš„æ¯ä¸€è¡Œï¼šresult_map.first, result_map.second.totalValue
 	string fname = experimentDataPath + "\\testSearchMethod\\" + "RP_result_addRemain1.csv";
 	ofstream outfile(fname);
 	if (!outfile.is_open()) {
 		cerr << "Error opening file for writing: " << fname << endl;
 		return;
 	}
-	outfile << "ContinuousRatio, TotalUtility, SoftUtility, HardUtility, TotalAllocatedBandwidth, SoftAllocatedBandwidth, HardAllocatedBandwidth\n";
+	outfile << "ContinuousRatio, TotalUtility, ElasticUtility, HardUtility, TotalAllocatedBandwidth, ElasticAllocatedBandwidth, HardAllocatedBandwidth\n";
 	for (const auto& entry : result_map) {
 		double ratio = entry.first;
 		KnapsackResult result = entry.second;
-		outfile << ratio << ", " << result.totalValue << ", " << result.softValue << ", " << result.hardValue << ", "
-			<< result.totalWeight << ", " << result.softWeight << ", " << result.hardWeight << "\n";
+		outfile << ratio << ", " << result.totalValue << ", " << result.elasticValue << ", " << result.hardValue << ", "
+			<< result.totalWeight << ", " << result.elasticWeight << ", " << result.hardWeight << "\n";
 	}
 	outfile.close();
 }
 
 
-// ²âÊÔBAProblem::RP_based_subproblem_allocation2()º¯Êı
-// °üº¬10¸öÓ²Ğ§ÓÃÓÃ»§ºÍ10¸öµ¯ĞÔĞ§ÓÃÓÃ»§
-// °´ÕÕÒÔÏÂ¹æÔòÉú³ÉÊµÀı£º
-// ÓÃ»§£º
-//	1. ËùÓĞÓÃ»§µÄx×ø±êÓëy×ø±êËæ»úÔÚ(-1000, 1000)Ö®¼ä
-//	2. ËùÓĞÓÃ»§µÄÈ¨ÖØËæ»úÔÚ(1, 5)Ö®¼ä£¬ÇÒÊÇÕûÊı
-//	3. ËùÓĞÓÃ»§µÄĞèÇóµÄ×îĞ¡Êı¾İËÙÂÊËæ»ú·Ö²¼ÔÚ(0.5, 10)Ö®¼ä
-//	4. ËùÓĞÓÃ»§µÄĞèÇóµÄ×î´óÖĞ¶Ï¸ÅÂÊËæ»ú·Ö²¼ÔÚ(10e-1, 10e-3)Ö®¼ä
+// æµ‹è¯•BAProblem::RP_based_subproblem_allocation2()å‡½æ•°
+// åŒ…å«10ä¸ªç¡¬æ•ˆç”¨ç”¨æˆ·å’Œ10ä¸ªå¼¹æ€§æ•ˆç”¨ç”¨æˆ·
+// æŒ‰ç…§ä»¥ä¸‹è§„åˆ™ç”Ÿæˆå®ä¾‹ï¼š
+// ç”¨æˆ·ï¼š
+//	1. æ‰€æœ‰ç”¨æˆ·çš„xåæ ‡ä¸yåæ ‡éšæœºåœ¨(-1000, 1000)ä¹‹é—´
+//	2. æ‰€æœ‰ç”¨æˆ·çš„æƒé‡éšæœºåœ¨(1, 5)ä¹‹é—´ï¼Œä¸”æ˜¯æ•´æ•°
+//	3. æ‰€æœ‰ç”¨æˆ·çš„éœ€æ±‚çš„æœ€å°æ•°æ®é€Ÿç‡éšæœºåˆ†å¸ƒåœ¨(0.5, 10)ä¹‹é—´
+//	4. æ‰€æœ‰ç”¨æˆ·çš„éœ€æ±‚çš„æœ€å¤§ä¸­æ–­æ¦‚ç‡éšæœºåˆ†å¸ƒåœ¨(10e-1, 10e-3)ä¹‹é—´
 void test_RP_based_subproblem_allocation2() {
 	cout << "Testing RP_based_subproblem_allocation2 function..." << endl;
-	// ÉèÖÃËæ»úÖÖ×Ó
+	// è®¾ç½®éšæœºç§å­
 	// srand((unsigned int)time(NULL));
-	// ÎªÁË½á¹û¿É¸´ÏÖ£¬Ê¹ÓÃ¹Ì¶¨ÖÖ×Ó
+	// ä¸ºäº†ç»“æœå¯å¤ç°ï¼Œä½¿ç”¨å›ºå®šç§å­
 	srand(42);
 	vector<User> users;
 	int hard_user_num = 50;
 	int elastic_user_num = 50;
 
-	// 10¸öÓ²Ğ§ÓÃÓÃ»§
+	// 10ä¸ªç¡¬æ•ˆç”¨ç”¨æˆ·
 	for (int i = 0; i < hard_user_num; i++) {
-		//	1. ËùÓĞÓÃ»§µÄx×ø±êÓëy×ø±êËæ»úÔÚ(-1000, 1000)Ö®¼ä
+		//	1. æ‰€æœ‰ç”¨æˆ·çš„xåæ ‡ä¸yåæ ‡éšæœºåœ¨(-1000, 1000)ä¹‹é—´
 		double x = (static_cast<double>(rand()) / RAND_MAX) * 2000 - 1000; // (-1000, 1000)
 		double y = (static_cast<double>(rand()) / RAND_MAX) * 2000 - 1000; // (-1000, 1000)
 		int weight = rand() % 5 + 1; // (1, 5)
@@ -279,9 +283,9 @@ void test_RP_based_subproblem_allocation2() {
 		users.emplace_back(i, HARD_UTILITY, weight, x, y, 0, rMin, pOut);
 	}
 	// print_sorted_users(users);
-	// 10¸öµ¯ĞÔĞ§ÓÃÓÃ»§
+	// 10ä¸ªå¼¹æ€§æ•ˆç”¨ç”¨æˆ·
 	for (int i = hard_user_num; i < hard_user_num + elastic_user_num; i++) {
-		//	1. ËùÓĞÓÃ»§µÄx×ø±êÓëy×ø±êËæ»úÔÚ(-1000, 1000)Ö®¼ä
+		//	1. æ‰€æœ‰ç”¨æˆ·çš„xåæ ‡ä¸yåæ ‡éšæœºåœ¨(-1000, 1000)ä¹‹é—´
 		double x = (static_cast<double>(rand()) / RAND_MAX) * 2000 - 1000; // (-1000, 1000)
 		double y = (static_cast<double>(rand()) / RAND_MAX) * 2000 - 1000; // (-1000, 1000)
 		int weight = rand() % 5 + 1; // (1, 5)
@@ -290,7 +294,7 @@ void test_RP_based_subproblem_allocation2() {
 		users.emplace_back(i, ELASTIC_UTILITY, weight, x, y, 0, rMin, pOut);
 	}
 	vector<Uav> uavs;
-	uavs.emplace_back(0, 0, 0, uav_H, 20);
+	uavs.emplace_back(0, 0, 0, uav_alt, 20);
 	SystemMd sysModel(users, uavs);
 	sysModel.print_all_users();
 	sysModel.print_dis_list();
@@ -301,20 +305,20 @@ void test_RP_based_subproblem_allocation2() {
 
 	BAProblem ba(sysModel);
 
-	vector<double> existed_utilitys(hard_user_num + elastic_user_num, 0.0); // ¼ÙÉèËùÓĞÓÃ»§³õÊ¼Ğ§ÓÃÎª0
+	vector<double> existed_utilitys(hard_user_num + elastic_user_num, 0.0); // å‡è®¾æ‰€æœ‰ç”¨æˆ·åˆå§‹æ•ˆç”¨ä¸º0
 
 	double delta = 0.1;
 	double epsilon = 0.5;
 	map<double, KnapsackResult> result_map = ba.RP_based_subproblem_allocation_experiment2(0, uavs[0].total_bandwidth, users, existed_utilitys);
-	// Êä³öresult_map
+	// è¾“å‡ºresult_map
 	cout << "Results of RP_based_subproblem_allocation2:" << endl;
-	// ÕÒµ½×î´óĞ§ÓÃ¶ÔÓ¦µÄÓ²×ÊÔ´Á¿
+	// æ‰¾åˆ°æœ€å¤§æ•ˆç”¨å¯¹åº”çš„ç¡¬èµ„æºé‡
 	double max_utility = 0;
 	double best_hard_bandwidth = 0;
 	for (auto& entry : result_map) {
 		double hard_bandwidth = entry.first;
 		KnapsackResult result = entry.second;
-		ba.PrintKnapsackResult(result);
+		ba.PrintKnapsackResult(result, 0);
 		cout << '\n';
 		if (result.totalValue > max_utility) {
 			max_utility = result.totalValue;
@@ -323,41 +327,41 @@ void test_RP_based_subproblem_allocation2() {
 	}
 	cout << "Best Hard Bandwidth: " << best_hard_bandwidth << ", Max Utility: " << max_utility << endl;
 	cout << "RP_based_subproblem_allocation2 function test completed." << endl << endl;
-	// °´ÒÔÏÂ¸ñÊ½½«½á¹ûĞ´µ½ÎÄ¼ş
-	// µÚÒ»ĞĞ£º"HardBandwidth, TotalUtility, SoftUtility, HardUtility"
-	// ÍùºóµÄÃ¿Ò»ĞĞ£ºresult_map.first, result_map.second.totalValue
+	// æŒ‰ä»¥ä¸‹æ ¼å¼å°†ç»“æœå†™åˆ°æ–‡ä»¶
+	// ç¬¬ä¸€è¡Œï¼š"HardBandwidth, TotalUtility, ElasticUtility, HardUtility"
+	// å¾€åçš„æ¯ä¸€è¡Œï¼šresult_map.first, result_map.second.totalValue
 	string fname = experimentDataPath + "\\testSearchMethod\\" + "RP_result2_addRemain1_range1000.csv";
 	ofstream outfile(fname);
 	if (!outfile.is_open()) {
 		cerr << "Error opening file for writing: " << fname << endl;
 		return;
 	}
-	outfile << "HardBandwidth, TotalUtility, SoftUtility, HardUtility, TotalAllocatedBandwidth, SoftAllocatedBandwidth, HardAllocatedBandwidth\n";
+	outfile << "HardBandwidth, TotalUtility, ElasticUtility, HardUtility, TotalAllocatedBandwidth, ElasticAllocatedBandwidth, HardAllocatedBandwidth\n";
 	for (auto& entry : result_map) {
 		double hard_bandwidth = entry.first;
 		KnapsackResult result = entry.second;
-		outfile << hard_bandwidth << ", " << result.totalValue << ", " << result.softValue << ", " << result.hardValue << ", "
-			<< result.totalWeight << ", " << result.softWeight << ", " << result.hardWeight << "\n";
+		outfile << hard_bandwidth << ", " << result.totalValue << ", " << result.elasticValue << ", " << result.hardValue << ", "
+			<< result.totalWeight << ", " << result.elasticWeight << ", " << result.hardWeight << "\n";
 	}
 	outfile.close();
 }
 
-// ²âÊÔBAProblem::RP_based_subproblem_allocation()º¯Êı
-// °üº¬10¸öÓ²Ğ§ÓÃÓÃ»§ºÍ10¸ö°ëÈíĞ§ÓÃÓÃ»§
-// °´ÕÕÒÔÏÂ¹æÔòÉú³ÉÊµÀı£º
-// ÓÃ»§£º
-//	1. ËùÓĞÓÃ»§µÄx×ø±êÓëy×ø±êËæ»úÔÚ(-250, 250)Ö®¼ä
-//	2. ËùÓĞÓÃ»§µÄÈ¨ÖØËæ»úÔÚ(1, 5)Ö®¼ä£¬ÇÒÊÇÕûÊı
-//	3. ËùÓĞÓÃ»§µÄĞèÇóµÄ×îĞ¡Êı¾İËÙÂÊËæ»ú·Ö²¼ÔÚ(0.5, 10)Ö®¼ä
-//	4. ËùÓĞÓÃ»§µÄĞèÇóµÄ×î´óÖĞ¶Ï¸ÅÂÊËæ»ú·Ö²¼ÔÚ(10e-1, 10e-3)Ö®¼ä
+// æµ‹è¯•BAProblem::RP_based_subproblem_allocation()å‡½æ•°
+// åŒ…å«10ä¸ªç¡¬æ•ˆç”¨ç”¨æˆ·å’Œ10ä¸ªåŠè½¯æ•ˆç”¨ç”¨æˆ·
+// æŒ‰ç…§ä»¥ä¸‹è§„åˆ™ç”Ÿæˆå®ä¾‹ï¼š
+// ç”¨æˆ·ï¼š
+//	1. æ‰€æœ‰ç”¨æˆ·çš„xåæ ‡ä¸yåæ ‡éšæœºåœ¨(-250, 250)ä¹‹é—´
+//	2. æ‰€æœ‰ç”¨æˆ·çš„æƒé‡éšæœºåœ¨(1, 5)ä¹‹é—´ï¼Œä¸”æ˜¯æ•´æ•°
+//	3. æ‰€æœ‰ç”¨æˆ·çš„éœ€æ±‚çš„æœ€å°æ•°æ®é€Ÿç‡éšæœºåˆ†å¸ƒåœ¨(0.5, 10)ä¹‹é—´
+//	4. æ‰€æœ‰ç”¨æˆ·çš„éœ€æ±‚çš„æœ€å¤§ä¸­æ–­æ¦‚ç‡éšæœºåˆ†å¸ƒåœ¨(10e-1, 10e-3)ä¹‹é—´
 void test_RP_based_subproblem() {
 	cout << "Testing RP_based_subproblem function..." << endl;
-	// ÉèÖÃËæ»úÖÖ×Ó
+	// è®¾ç½®éšæœºç§å­
 	// srand((unsigned int)time(NULL));
-	// ÎªÁË½á¹û¿É¸´ÏÖ£¬Ê¹ÓÃ¹Ì¶¨ÖÖ×Ó
+	// ä¸ºäº†ç»“æœå¯å¤ç°ï¼Œä½¿ç”¨å›ºå®šç§å­
 	srand(42);
 	vector<User> users;
-	// 10¸öÓ²Ğ§ÓÃÓÃ»§
+	// 10ä¸ªç¡¬æ•ˆç”¨ç”¨æˆ·
 	for (int i = 0; i < 10; i++) {
 		double x = ((double)rand() / RAND_MAX) * 500 - 250; // (-250, 250)
 		double y = ((double)rand() / RAND_MAX) * 500 - 250; // (-250, 250)
@@ -367,7 +371,7 @@ void test_RP_based_subproblem() {
 		users.emplace_back(i, HARD_UTILITY, weight, x, y, 0, rMin, pOut);
 	}
 	// print_sorted_users(users);
-	// 10¸ö°ëÈíĞ§ÓÃÓÃ»§
+	// 10ä¸ªåŠè½¯æ•ˆç”¨ç”¨æˆ·
 	for (int i = 10; i < 20; i++) {
 		double x = ((double)rand() / RAND_MAX) * 500 - 250; // (-250, 250)
 		double y = ((double)rand() / RAND_MAX) * 500 - 250; // (-250, 250)
@@ -377,104 +381,79 @@ void test_RP_based_subproblem() {
 		users.emplace_back(i, HALFSOFT_UTILITY, weight, x, y, 0, rMin, pOut);
 	}
 
-	vector<double> existed_utilitys(20, 0.0); // ¼ÙÉèËùÓĞÓÃ»§³õÊ¼Ğ§ÓÃÎª0
+	vector<double> existed_utilitys(20, 0.0); // å‡è®¾æ‰€æœ‰ç”¨æˆ·åˆå§‹æ•ˆç”¨ä¸º0
 
 	vector<Uav> uavs;
-	uavs.emplace_back(0, 0, 0, uav_H, 20);
+	uavs.emplace_back(0, 0, 0, uav_alt, 20);
 	SystemMd sysModel(users, uavs);
 	BAProblem ba(sysModel);
 	double epsilon = 0.5;
-	KnapsackResult result = ba.RP_based_subproblem_allocation(0, uavs[0].total_bandwidth, users, existed_utilitys);
-	// Êä³öresult
-	cout << "Results of RP_based_subproblem_allocation:" << endl;
-	ba.PrintKnapsackResult(result);
+	KnapsackResult result = ba.RP_based_subproblem_allocation_FPTAS(0, uavs[0].total_bandwidth, users, existed_utilitys);
+	// è¾“å‡ºresult
+	cout << "Results of RP_based_subproblem_allocation_FPTAS:" << endl;
+	ba.PrintKnapsackResult(result, 0);
 	cout << '\n';
-	cout << "RP_based_subproblem_allocation function test completed." << endl << endl;
-	
+	cout << "RP_based_subproblem_allocation_FPTAS function test completed." << endl << endl;
+
 }
 
 
-// ²âÊÔstd::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAProblem::local_search_allocation
-// °üº¬10¸öÓ²Ğ§ÓÃÓÃ»§ºÍ10¸ö°ëÈíĞ§ÓÃÓÃ»§
-// °´ÕÕÒÔÏÂ¹æÔòÉú³ÉÊµÀı£º
-// ÓÃ»§£º
-//	1. ËùÓĞÓÃ»§µÄx×ø±êÓëy×ø±êËæ»úÔÚ(-250, 250)Ö®¼ä
-//	2. ËùÓĞÓÃ»§µÄÈ¨ÖØËæ»úÔÚ(1, 5)Ö®¼ä£¬ÇÒÊÇÕûÊı
-//	3. ËùÓĞÓÃ»§ĞèÇóµÄ×îĞ¡Êı¾İËÙÂÊËæ»ú·Ö²¼ÔÚ(0.5, 10)Ö®¼ä
-//	4. ËùÓĞÓÃ»§ĞèÇóµÄ×î´óÖĞ¶Ï¸ÅÂÊËæ»ú·Ö²¼ÔÚ(10e-1, 10e-3)Ö®¼ä
-// UAV£º
-//	1. ËùÓĞUAVµÄx×ø±êÓëy×ø±êËæ»úÔÚ(-250, 250)Ö®¼ä
-//	2. ËùÓĞUAVµÄz×ø±ê¹Ì¶¨Îª0
-//	3. ËùÓĞUAVµÄ´ø¿íËæ»ú·Ö²¼ÔÚ(10, 20)Ö®¼ä£¬ÇÒÊÇÕûÊı
+// æµ‹è¯•std::pair< std::vector<KnapsackResult>, std::vector<std::pair<int,double>> > BAProblem::local_search_allocation
+// åŒ…å«10ä¸ªç¡¬æ•ˆç”¨ç”¨æˆ·å’Œ10ä¸ªåŠè½¯æ•ˆç”¨ç”¨æˆ·
+// æŒ‰ç…§ä»¥ä¸‹è§„åˆ™ç”Ÿæˆå®ä¾‹ï¼š
+// ç”¨æˆ·ï¼š
+//	1. æ‰€æœ‰ç”¨æˆ·çš„xåæ ‡ä¸yåæ ‡éšæœºåœ¨(-250, 250)ä¹‹é—´
+//	2. æ‰€æœ‰ç”¨æˆ·çš„æƒé‡éšæœºåœ¨(1, 5)ä¹‹é—´ï¼Œä¸”æ˜¯æ•´æ•°
+//	3. æ‰€æœ‰ç”¨æˆ·éœ€æ±‚çš„æœ€å°æ•°æ®é€Ÿç‡éšæœºåˆ†å¸ƒåœ¨(0.5, 10)ä¹‹é—´
+//	4. æ‰€æœ‰ç”¨æˆ·éœ€æ±‚çš„æœ€å¤§ä¸­æ–­æ¦‚ç‡éšæœºåˆ†å¸ƒåœ¨(10e-1, 10e-3)ä¹‹é—´
+// UAVï¼š
+//	1. æ‰€æœ‰UAVçš„xåæ ‡ä¸yåæ ‡éšæœºåœ¨(-250, 250)ä¹‹é—´
+//	2. æ‰€æœ‰UAVçš„zåæ ‡å›ºå®šä¸º0
+//	3. æ‰€æœ‰UAVçš„å¸¦å®½éšæœºåˆ†å¸ƒåœ¨(10, 20)ä¹‹é—´ï¼Œä¸”æ˜¯æ•´æ•°
 void test_local_search_allocation() {
-    cout << "Testing local_search_allocation function..." << endl;
-	// ÉèÖÃ¹Ì¶¨Ëæ»úÖÖ×Ó
-    srand(42);
-	int soft_user_num = 10;
-    int hard_user_num = 10;
-    vector<User> users;
-    for (int i = 0; i < hard_user_num; i++) {
-        double x = (static_cast<double>(rand()) / RAND_MAX) * 500 - 250; // (-250, 250)
-        double y = (static_cast<double>(rand()) / RAND_MAX) * 500 - 250; // (-250, 250)
-        int weight = rand() % 5 + 1; // (1, 5)
-        double rMin = (static_cast<double>(rand()) / RAND_MAX) * 9.5 + 0.5; // (0.5, 10)
-        double pOut = pow(10, -(rand() % 3 + 1)); // (10e-1, 10e-3)
-        users.emplace_back(i, HARD_UTILITY, weight, x, y, 0, rMin, pOut);
-    }
-    for (int i = hard_user_num; i < hard_user_num + soft_user_num; i++) {
-        double x = (static_cast<double>(rand()) / RAND_MAX) * 500 - 250; // (-250, 250)
-        double y = (static_cast<double>(rand()) / RAND_MAX) * 500 - 250; // (-250, 250)
-        int weight = rand() % 5 + 1; // (1, 5)
-        double rMin = (static_cast<double>(rand()) / RAND_MAX) * 9.5 + 0.5; // (0.5, 10)
-        double pOut = pow(10, -(rand() % 3 + 1)); // (10e-1, 10e-3)
-        users.emplace_back(i, ELASTIC_UTILITY, weight, x, y, 0, rMin, pOut);
-    }
-    
-    vector<Uav> uavs;
-    uavs.emplace_back(0, 125, 0, uav_H, 10);
-    uavs.emplace_back(1, -125, 0, uav_H, 20);
+	cout << "Testing local_search_allocation function..." << endl;
 
-    SystemMd sysModel(users, uavs);
-	// Êä³öËùÓĞÓÃ»§£¬ËùÓĞUAV
-	sysModel.print_all_users();
-	sysModel.print_all_uavs();
-	// Êä³ösysModel
-    sysModel.print_M_list();
-    sysModel.print_SNRa_list();
-    sysModel.print_SNRt_list();
-    sysModel.print_cap_list();
-    sysModel.print_dis_list();
-
-    BAProblem ba(sysModel);
+	string exp_config_file = experimentDataPath + "testSearchMethod\\simulation_config_uavNum2.json";
+	ExperimentConfig exp_config = load_experiment_config(exp_config_file);
+	SystemMd sysModel = generate_instance(exp_config);
 
 
-    auto LS_result = ba.local_search_allocation();
-	vector<KnapsackResult>& knapsack_result_list = LS_result.first;	// ¼ÇÂ¼Ã¿¸öUAV·şÎñµÄÓÃ»§
-    vector<UserResult>& allocation_result = LS_result.second; // ¼ÇÂ¼Ã¿¸öuesr±»·ÖÅäµÄ´ø¿í
+
+	int hard_user_num = sysModel.n1;
+	int elastic_user_num = sysModel.n2;
+	vector<User>& users = sysModel.users;
+	vector<Uav>& uavs = sysModel.uavs;
+
+	BAProblem ba(sysModel);
+
+
+	auto LS_result = ba.local_search_allocation();
+	vector<KnapsackResult>& knapsack_result_list = LS_result.first;	// è®°å½•æ¯ä¸ªUAVæœåŠ¡çš„ç”¨æˆ·
+	vector<UserResult>& allocation_result = LS_result.second; // è®°å½•æ¯ä¸ªuesrè¢«åˆ†é…çš„å¸¦å®½
 	cout << "Results of local_search_allocation:" << endl;
-    cout << "Total Utility: " << BAProblem::get_total_utility(knapsack_result_list) << endl;
-    cout << "Allocated Users:\n";
-    for (int user_id = 0; user_id < hard_user_num + soft_user_num; user_id++) {
+	cout << "Total Utility: " << BAProblem::get_total_utility(knapsack_result_list) << endl;
+	cout << "Allocated Users:\n";
+	for (int user_id = 0; user_id < hard_user_num + elastic_user_num; user_id++) {
 		int uav_id = allocation_result[user_id].uav_id;
 		double bandwidth = allocation_result[user_id].allocated_bandwidth;
 		double user_utility = allocation_result[user_id].utility;
-		// ±£Áô5Î»Ğ¡Êı
+		// ä¿ç•™5ä½å°æ•°
 		cout << fixed << setprecision(5);
 		cout << "\tUser " << user_id << ": UAV " << uav_id << ", " << bandwidth << " MHz, Utility: " << user_utility << '\n';
-    }
-    cout << '\n';
+	}
+	cout << '\n';
 
-	// Êä³öÃ¿¸öÎŞÈË»ú·şÎñµÄÓÃ»§
-    cout << "Allocated Users by UAV:\n";
-    for (int uav_id = 0; uav_id < uavs.size(); uav_id++) {
-		BAProblem::PrintKnapsackResult(knapsack_result_list[uav_id], uav_id);
-    }
-    cout << "local_search_allocation function test completed." << endl << endl;
+	// è¾“å‡ºæ¯ä¸ªæ— äººæœºæœåŠ¡çš„ç”¨æˆ·
+	cout << "Allocated Users by UAV:\n";
+	for (int uav_id = 0; uav_id < uavs.size(); uav_id++) {
+		ba.PrintKnapsackResult(knapsack_result_list[uav_id], uav_id);
+	}
+	cout << "local_search_allocation function test completed." << endl << endl;
 
 
 
-	// ÑéÖ¤ LS_result ÖĞÃ¿¸öÓÃ»§µÄĞ§ÓÃÊÇ·ñÕıÈ·
-	// Í¨¹ı½«·ÖÅä¸øÓÃ»§µÄ´ø¿í´úÈëÆäĞ§ÓÃº¯Êı¼ÆËãµÃµ½
+	// éªŒè¯ LS_result ä¸­æ¯ä¸ªç”¨æˆ·çš„æ•ˆç”¨æ˜¯å¦æ­£ç¡®
+	// é€šè¿‡å°†åˆ†é…ç»™ç”¨æˆ·çš„å¸¦å®½ä»£å…¥å…¶æ•ˆç”¨å‡½æ•°è®¡ç®—å¾—åˆ°
 	cout << "Verifying user utilities..." << endl;
 	for (int uav_id = 0; uav_id < uavs.size(); uav_id++) {
 		auto& kr = knapsack_result_list[uav_id];
@@ -482,11 +461,12 @@ void test_local_search_allocation() {
 		{
 			User& user = users[user_id];
 			double bandwidth = kr.allocatedBandwidth[user_id];
-			double alg_value = kr.allocatedValue[user_id];	// Ëã·¨¼ÆËãµÄĞ§ÓÃ
+			double alg_value = kr.allocatedValue[user_id];	// ç®—æ³•è®¡ç®—çš„æ•ˆç”¨
 
-			double channel_cap = sysModel.cap_list[uav_id][user_id]; // ĞÅµÀÈİÁ¿
+			double channel_cap = sysModel.cap_list[uav_id][user_id]; // ä¿¡é“å®¹é‡
+			double SNR_avg_dB = sysModel.SNRave_list[uav_id][user_id];
 
-			double cal_value = user.utility(bandwidth, channel_cap);
+			double cal_value = user.utility(bandwidth, channel_cap, SNR_avg_dB);
 
 			if (abs(alg_value - cal_value) > 1e-5) {
 				cout << "Mismatch for User " << user_id << ": alg_value = " << alg_value << ", cal_value = " << cal_value << endl;
@@ -497,7 +477,7 @@ void test_local_search_allocation() {
 		}
 	}
 
-	// Êä³öËùÓĞÓëÓÃ»§id=12µÄÓÃ»§Ïà¹ØµÄĞÅÏ¢£¬°üÀ¨ÓÃ»§ĞÅÏ¢£¬ËùÓĞUAVÓë¸ÃÓÃ»§µÄĞÅµÀÈİÁ¿£¬·ÖÅä½á¹û
+	// è¾“å‡ºæ‰€æœ‰ä¸ç”¨æˆ·id=12çš„ç”¨æˆ·ç›¸å…³çš„ä¿¡æ¯ï¼ŒåŒ…æ‹¬ç”¨æˆ·ä¿¡æ¯ï¼Œæ‰€æœ‰UAVä¸è¯¥ç”¨æˆ·çš„ä¿¡é“å®¹é‡ï¼Œåˆ†é…ç»“æœ
 	int test_user_id = 12;
 	cout << "Details for User " << test_user_id << ":\n";
 	users[test_user_id].print_user();
@@ -505,7 +485,7 @@ void test_local_search_allocation() {
 		double channel_cap = sysModel.cap_list[uav_id][test_user_id];
 		cout << "UAV " << uav_id << " Channel Capacity: " << channel_cap << " Mbps\n";
 	}
-	// ²éÕÒ¸ÃÓÃ»§±»·ÖÅäµÄUAV¼°´ø¿í£¬Ğ§ÓÃ
+	// æŸ¥æ‰¾è¯¥ç”¨æˆ·è¢«åˆ†é…çš„UAVåŠå¸¦å®½ï¼Œæ•ˆç”¨
 	int assigned_uav_id = allocation_result[test_user_id].uav_id;
 	double assigned_bandwidth = allocation_result[test_user_id].allocated_bandwidth;
 	double assigned_utility = allocation_result[test_user_id].utility;
@@ -513,5 +493,499 @@ void test_local_search_allocation() {
 
 
 	cout << "local_search_allocation verification completed." << endl << endl;
+
+}
+
+
+// æµ‹è¯•RP_based_subproblem_allocation_Greedyå‡½æ•°
+void test_RP_based_subproblem_allocation_Greedy() {
+	cout << "Testing RP_based_subproblem_allocation_Greedy function..." << endl;
+	string exp_config_file = experimentDataPath + "testSearchMethod\\simulation_config_uavNum1.json";
+	ExperimentConfig exp_config = load_experiment_config(exp_config_file);
+	SystemMd sysModel = generate_instance(exp_config);
+
+
+	int hard_user_num = sysModel.n1;
+	int elastic_user_num = sysModel.n2;
+	vector<User>& users = sysModel.users;
+	vector<Uav>& uavs = sysModel.uavs;
+
+	BAProblem ba(sysModel);
+	// å­˜å‚¨æ¯ä¸ªç”¨æˆ·çš„æœ€å¤§æ•ˆç”¨ï¼Œåˆå§‹åŒ–ä¸º0
+	vector<double> uti_max(users.size(), 0.0);
+	auto EXPResult = ba.RP_based_subproblem_allocation_Greedy(0, uavs[0].total_bandwidth, users, uti_max);
+	cout << fixed << setprecision(5);
+}
+
+
+// æµ‹è¯•PeggingAlgorithm
+void test_PeggingAlgorithm() {
+	cout << "Testing PeggingAlgorithm..." << endl;
+
+	string exp_config_file = experimentDataPath + "testSearchMethod\\simulation_config_uavNum1.json";
+	ExperimentConfig exp_config = load_experiment_config(exp_config_file);
+	SystemMd sysModel = generate_instance(exp_config);
+
+
+	int hard_user_num = sysModel.n1;
+	int elastic_user_num = sysModel.n2;
+	vector<User>& users = sysModel.users;
+	vector<Uav>& uavs = sysModel.uavs;
+	BAProblem ba(sysModel);
+	// å­˜å‚¨æ¯ä¸ªç”¨æˆ·çš„æœ€å¤§æ•ˆç”¨ï¼Œåˆå§‹åŒ–ä¸º0
+	vector<double> uti_max(users.size(), 0.0);
+	// æ„é€ elasticç”¨æˆ·åˆ—è¡¨
+	vector<User> elastic_users;
+	for (User& user : users) {
+		if (user.uType == ELASTIC_UTILITY) {
+			elastic_users.push_back(user);
+		}
+	}
+
+	uavs[0].elastic_bandwidth = uavs[0].total_bandwidth;
+	KnapsackResult result = ba.PeggingAlgorithm(uavs[0], elastic_users, uti_max);
+	// è¾“å‡ºç»“æœ
+	cout << "Results of PeggingAlgorithm:" << endl;
+	ba.PrintKnapsackResult(result, 0);
+
+	cout << "PeggingAlgorithm test completed." << endl << endl;
+}
+
+// æµ‹è¯•å‡½æ•° KnapsackResult BAProblem::WaterFillingAlgorithm_singleUAV(int uav_id, double capacity, vector<User>& unproc_users)
+void test_WaterFillingAlgorithm() {
+	cout << "Testing WaterFillingAlgorithm_singleUAV..." << endl;
+	string exp_config_file = experimentDataPath + "testSearchMethod\\simulation_config_files\\simulation_config_uavNum1.json";
+	string globle_config_file = algProjPath + "config\\def_config.json";
+
+	ExperimentConfig exp_config = load_experiment_config(exp_config_file);
+	load_global_channel_config(globle_config_file);
+	SystemMd sysModel = generate_instance(exp_config);
+
+	sysModel.print_SystemInfo();
+
+	int hard_user_num = sysModel.n1;
+	int elastic_user_num = sysModel.n2;
+	vector<User>& users = sysModel.users;
+	vector<Uav>& uavs = sysModel.uavs;
+	BAProblem ba(sysModel);
+
+
+	//KnapsackResult result = ba.WaterFillingAlgorithm_singleUAV(uavs[0], users);
+	KnapsackResult result = ba.WaterFillingAlgorithm_singleUAV_new(uavs[0], users);
+	// è¾“å‡ºç»“æœ
+	cout << "Results of WaterFillingAlgorithm_singleUAV:" << endl;
+	ba.PrintKnapsackResult(result, 0);
+	cout << "WaterFillingAlgorithm_singleUAV test completed." << endl << endl;
+}
+
+// æµ‹è¯•KnapsackResult BAProblem::FPTAS_singleUAV(int uav_id, double capacity, vector<User>& unproc_users, double epsilon)
+void test_FPTAS_singleUAV() {
+	cout << "Testing FPTAS_singleUAV..." << endl;
+	string exp_config_file = experimentDataPath + "testSearchMethod\\simulation_config_files\\simulation_config_uavNum1.json";
+	string globle_config_file = algProjPath + "config\\def_config.json";
+
+	ExperimentConfig exp_config = load_experiment_config(exp_config_file);
+	load_global_channel_config(globle_config_file);
+	SystemMd sysModel = generate_instance(exp_config);
+	sysModel.print_SystemInfo();
+
+	int hard_user_num = sysModel.n1;
+	int elastic_user_num = sysModel.n2;
+	vector<User>& users = sysModel.users;
+	vector<Uav>& uavs = sysModel.uavs;
+	BAProblem ba(sysModel);
+
+
+
+	// æ„é€ elasticç”¨æˆ·åˆ—è¡¨
+	vector<User> elastic_users;
+	for (User& user : users) {
+		if (user.uType == ELASTIC_UTILITY) {
+			elastic_users.push_back(user);
+		}
+	}
+	uavs[0].total_bandwidth = 2;
+	uavs[0].elastic_bandwidth = uavs[0].total_bandwidth;
+	KnapsackResult result = ba.FPTAS_singleUAV_new(uavs[0], users, 0.02);
+
+
+	// è¾“å‡ºç»“æœ
+	cout << "Results of FPTAS_singleUAV:" << endl;
+	ba.PrintKnapsackResult(result, 0);
+	cout << "FPTAS_singleUAV test completed." << endl << endl;
+}
+
+// åœ¨ test.h ä¸­æ·»åŠ 
+
+void test_SystemMd_from_file() {
+	cout << "Testing SystemMd::SystemMd(string, string, string)..." << endl;
+
+	// 1. åˆ›å»ºä¸´æ—¶çš„ user.csv
+	string user_csv = experimentDataPath + "data\\County_loc_Type_req\\simulated_data\\1_1000users_data_130822.csv";
+
+	// 2. åˆ›å»ºä¸´æ—¶çš„ uav.csv
+	string uav_csv = experimentDataPath + "data\\County_loc_Type_req\\simulated_data\\1_10uavs_loc_130822.csv";
+
+	// 3. é…ç½®æ–‡ä»¶ (å‡è®¾è·¯å¾„å­˜åœ¨ï¼Œæˆ–è€…ä½¿ç”¨å·²æœ‰çš„é…ç½®æ–‡ä»¶è·¯å¾„)
+	// è¿™é‡Œä¸ºäº†æµ‹è¯•è¿è¡Œï¼Œå‡è®¾ load_global_channel_config å¯ä»¥å¤„ç†ä¸å­˜åœ¨çš„æ–‡ä»¶æˆ–è€…ç»™ä¸€ä¸ªè™šæ‹Ÿè·¯å¾„
+	// å®é™…è¿è¡Œæ—¶è¯·æŒ‡å‘çœŸå®çš„ config.json
+	string config_file = algProjPath + "config\\def_config.json";
+
+	// 4. è°ƒç”¨æ„é€ å‡½æ•°
+	// æ³¨æ„ï¼šè¿™é‡Œçš„ç”¨æˆ·å’Œæ— äººæœºç»çº¬åº¦å·®å¼‚å·¨å¤§ï¼ˆç”¨æˆ·åœ¨æµ™æ±Ÿï¼Œæ— äººæœºåœ¨æ²³åŒ—/åŒ—äº¬é™„è¿‘ï¼‰
+	// åæ ‡åŸç‚¹ä¼šæ˜¯æ‰€æœ‰ç‚¹ä¸­ç»çº¬åº¦æœ€å°çš„ã€‚
+	// User Min Lon: ~119.906, UAV Min Lon: ~117.485 -> åŸç‚¹ Lon 117.485
+	// User Min Lat: ~28.455, UAV Min Lat: ~40.419 -> åŸç‚¹ Lat 28.455
+	SystemMd sys(user_csv, uav_csv, config_file);
+
+	// 5. éªŒè¯æ•°æ®
+	cout << "\n--- Verification ---" << endl;
+	sys.print_SystemInfo(20);
+
+	// éªŒè¯è½¬æ¢é€»è¾‘
+	// æ£€æŸ¥ç¬¬ä¸€ä¸ª User (ID 0, åŸ 2380) çš„ rMin æ˜¯å¦ä¸º 1.68/1000 = 0.00168 Mbps
+	if (sys.users.size() > 0) {
+		cout << "User 0 rMin (Expected 0.00168): " << sys.users[0].rMin << endl;
+		if (abs(sys.users[0].rMin - 0.00168) < 1e-6) cout << "PASS: rMin conversion." << endl;
+		else cout << "FAIL: rMin conversion." << endl;
+	}
+
+	// éªŒè¯ Hard ç”¨æˆ·çš„ä¸­æ–­æ¦‚ç‡
+	// User 2 (ID 2, åŸ 2134) æ˜¯ Hard, pOut åº”è¯¥æ˜¯ 0.1
+	if (sys.users.size() > 2) {
+		cout << "User 2 pOut (Expected 0.1): " << sys.users[2].pOut << endl;
+		if (abs(sys.users[2].pOut - 0.1) < 1e-6) cout << "PASS: pOut reading." << endl;
+		else cout << "FAIL: pOut reading." << endl;
+	}
+
+	// éªŒè¯ UAV å¸¦å®½
+	if (sys.uavs.size() > 0) {
+		cout << "UAV 0 Bandwidth (Expected 50): " << sys.uavs[0].total_bandwidth << endl;
+	}
+
+	// 6. æ¸…ç†ä¸´æ—¶æ–‡ä»¶ (å¯é€‰)
+	// remove(user_csv.c_str());
+	// remove(uav_csv.c_str());
+
+	cout << "test_SystemMd_from_file completed." << endl << endl;
+}
+
+/// <summary>
+/// æµ‹è¯•å‡¸æ¾å¼›å’Œèˆå…¥ç®—æ³•
+/// </summary>
+void test_ConvexRelaxationAndRounding() {
+	cout << "========================================" << endl;
+	cout << "æµ‹è¯•: ConvexRelaxationAndRoundingç®—æ³•" << endl;
+	cout << "========================================" << endl;
+
+	// 1. åˆ›å»ºç³»ç»Ÿæ¨¡å‹
+	// æ ¹æ®æ‚¨çš„é¡¹ç›®é…ç½®æ–‡ä»¶è·¯å¾„ä¿®æ”¹
+	string user_file = experimentDataPath + "data/variable_user_num/1000u_num/user_data/1_1000users_data_440515.csv";
+	string uav_file = experimentDataPath + "data/variable_user_num/1000u_num/uav_data/1_10uavs_loc_440515.csv";
+	string config_file = algProjPath + "config/def_config.json";
+
+	SystemMd sysModel(user_file, uav_file, config_file);
+
+
+	//sysModel.print_SystemInfo(20);
+
+
+
+	cout << "\nç³»ç»Ÿä¿¡æ¯:" << endl;
+	cout << "  UAVæ•°é‡: " << sysModel.m << endl;
+	cout << "  ç¡¬ç”¨æˆ·æ•°é‡: " << sysModel.n1 << endl;
+	cout << "  å¼¹æ€§ç”¨æˆ·æ•°é‡: " << sysModel.n2 << endl;
+	cout << "  æ€»ç”¨æˆ·æ•°: " << (sysModel.n1 + sysModel.n2) << endl;
+
+	/*Uav uav = sysModel.uavs[0];
+	vector<Uav> test_uavs;
+	test_uavs.push_back(uav);
+	sysModel.uavs = test_uavs;
+	sysModel.m = 1;*/
+	// sysModel.print_SystemInfo(20);
+
+
+	// 2. åˆ›å»ºå¸¦å®½åˆ†é…é—®é¢˜å®ä¾‹
+	BAProblem problem(sysModel);
+
+	// 3. è¿è¡Œå‡¸æ¾å¼›å’Œèˆå…¥ç®—æ³•
+	cout << "\nå¼€å§‹è¿è¡Œå‡¸æ¾å¼›å’Œèˆå…¥ç®—æ³•..." << endl;
+	cout << "äºŒåˆ†æŸ¥æ‰¾å®¹å·®: 1e-4" << endl;
+
+	auto start_time = chrono::high_resolution_clock::now();
+	// auto result = problem.ConvexRelaxationAndRounding_multiUAV(1e-4);
+
+	//auto result = problem.MatchingSQP_Allocation();
+	// auto result = problem.MatchingGameAllocation();
+	// auto result = problem.SADA_Allocation();
+	auto result = problem.HungarianMatchingAllocation();
+	// auto result = problem.approposed_multiUAV_allocation_new(sysModel.uavs, sysModel.users, 2);
+
+	auto end_time = chrono::high_resolution_clock::now();
+	auto duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
+
+	cout << "\nç®—æ³•è¿è¡Œå®Œæˆï¼Œè€—æ—¶: " << duration.count() << " ms" << endl;
+
+	// 4. è·å–ç»“æœ
+	vector<KnapsackResult>& uavResults = result.first;
+	map<int, UserResult>& userResults = result.second;
+
+
+	// 5. æ£€æŸ¥æ˜¯å¦æ‰¾åˆ°å¯è¡Œè§£
+	if (uavResults.empty()) {
+		cout << "\nè­¦å‘Š: æœªæ‰¾åˆ°å¯è¡Œè§£!" << endl;
+		return;
+	}
+
+	// 6. æ‰“å°æ¯ä¸ªUAVçš„åˆ†é…ç»“æœ
+	cout << "\n========================================" << endl;
+	cout << "UAVåˆ†é…ç»“æœ" << endl;
+	cout << "========================================" << endl;
+	problem.PrintKnapsackResultList(uavResults, 500);
+
+
+	// 7. æ‰“å°ç”¨æˆ·è§†è§’çš„ç»“æœ
+	/*cout << "\n========================================" << endl;
+	cout << "ç”¨æˆ·åˆ†é…ç»“æœ" << endl;
+	cout << "========================================" << endl;
+
+	int served_hard_users = 0;
+	int served_elastic_users = 0;
+
+	for (int i = 0; i < userResults.size(); i++) {
+		if (userResults[i].uav_id >= 0) {
+			string type = (i < sysModel.n1) ? "ç¡¬ç”¨æˆ·" : "å¼¹æ€§ç”¨æˆ·";
+			cout << "ç”¨æˆ· " << i << " (" << type << "): "
+				<< "è¿æ¥UAV " << userResults[i].uav_id << ", "
+				<< "å¸¦å®½=" << fixed << setprecision(4) << userResults[i].allocated_bandwidth << " MHz, "
+				<< "æ•ˆç”¨=" << setprecision(4) << userResults[i].utility << endl;
+
+			if (i < sysModel.n1) {
+				served_hard_users++;
+			}
+			else {
+				served_elastic_users++;
+			}
+		}
+	}*/
+
+	// 8. æ‰“å°ç»Ÿè®¡ä¿¡æ¯
+	/*cout << "\n========================================" << endl;
+	cout << "ç»Ÿè®¡ä¿¡æ¯" << endl;
+	cout << "========================================" << endl;
+	cout << "ç³»ç»Ÿæ€»æ•ˆç”¨: " << fixed << setprecision(6) << total_system_utility << endl;
+	cout << "  ç¡¬ç”¨æˆ·æ•ˆç”¨: " << setprecision(6) << total_hard_utility << endl;
+	cout << "  å¼¹æ€§ç”¨æˆ·æ•ˆç”¨: " << setprecision(6) << total_elastic_utility << endl;
+	cout << "æ€»å¸¦å®½ä½¿ç”¨: " << setprecision(4) << total_bandwidth_used << " MHz" << endl;
+	cout << "æ€»å¸¦å®½å®¹é‡: " << setprecision(4) << (sysModel.m * sysModel.uavs[0].total_bandwidth) << " MHz" << endl;
+	cout << "å¸¦å®½åˆ©ç”¨ç‡: " << setprecision(2) << (total_bandwidth_used / (sysModel.m * sysModel.uavs[0].total_bandwidth) * 100) << "%" << endl;
+	cout << "æœåŠ¡çš„ç¡¬ç”¨æˆ·æ•°: " << served_hard_users << " / " << sysModel.n1 << endl;
+	cout << "æœåŠ¡çš„å¼¹æ€§ç”¨æˆ·æ•°: " << served_elastic_users << " / " << sysModel.n2 << endl;*/
+
+	// 9. éªŒè¯çº¦æŸæ»¡è¶³æƒ…å†µ
+	cout << "\n========================================" << endl;
+	cout << "çº¦æŸéªŒè¯" << endl;
+	cout << "========================================" << endl;
+
+	bool all_constraints_satisfied = true;
+
+	// çº¦æŸ1: æ¯ä¸ªç”¨æˆ·æœ€å¤šè¿æ¥1ä¸ªUAV
+	for (int i = 0; i < userResults.size(); i++) {
+		int connection_count = 0;
+		for (int k = 0; k < uavResults.size(); k++) {
+			if (find(uavResults[k].allocatedList.begin(),
+				uavResults[k].allocatedList.end(), i) != uavResults[k].allocatedList.end()) {
+				connection_count++;
+			}
+		}
+		if (connection_count > 1) {
+			cout << "  âœ— ç”¨æˆ· " << i << " è¿æ¥äº† " << connection_count << " ä¸ªUAV (è¿åçº¦æŸ1)" << endl;
+			all_constraints_satisfied = false;
+		}
+	}
+
+	// çº¦æŸ3: æ¯ä¸ªUAVçš„æ€»å¸¦å®½ä¸è¶…è¿‡å®¹é‡
+	for (int k = 0; k < uavResults.size(); k++) {
+		if (uavResults[k].totalWeight > sysModel.uavs[k].total_bandwidth + 1e-6) {
+			cout << "  âœ— UAV " << k << " åˆ†é…å¸¦å®½ " << uavResults[k].totalWeight
+				<< " è¶…è¿‡å®¹é‡ " << sysModel.uavs[k].total_bandwidth << " (è¿åçº¦æŸ3)" << endl;
+			all_constraints_satisfied = false;
+		}
+	}
+
+	// çº¦æŸ4: ç¡¬ç”¨æˆ·çš„æœ€å°é€Ÿç‡ä¿è¯
+	for (int i = 0; i < sysModel.n1; i++) {
+		if (userResults[i].uav_id >= 0) {
+			int k = userResults[i].uav_id;
+			double allocated_bw = userResults[i].allocated_bandwidth;
+			double SNR_linear = pow(10.0, sysModel.SNRth_list[k][i] / 10.0);
+			double achieved_rate = allocated_bw * log2(1.0 + SNR_linear);
+			double required_rate = sysModel.users[i].rMin;
+
+			if (achieved_rate < required_rate - 1e-6) {
+				cout << "  âœ— ç¡¬ç”¨æˆ· " << i << " å®é™…é€Ÿç‡ " << achieved_rate
+					<< " ä½äºéœ€æ±‚ " << required_rate << " (è¿åçº¦æŸ4)" << endl;
+				all_constraints_satisfied = false;
+			}
+		}
+	}
+
+	// éªŒè¯elasticç”¨æˆ·æ•ˆç”¨æ˜¯å¦ç¬¦åˆ
+	for (auto& u_result : userResults)
+	{
+		int user_id = u_result.first;
+		int uav_id = u_result.second.uav_id;
+		if (uav_id == -1)
+			continue;
+		double uti_result = u_result.second.utility;
+		double band_result = u_result.second.allocated_bandwidth;
+		double SNR_avg_dB = sysModel.SNRave_list[uav_id][user_id];
+		double cap = sysModel.cap_list[uav_id][user_id];
+		double real_uti = sysModel.users[user_id].utility(band_result, cap, SNR_avg_dB);
+
+		if (abs(real_uti - uti_result) > 1e-9)
+		{
+			cout << "user" << user_id << " has wrong utility: uti_result = " << uti_result << ", real_uti = " << real_uti << endl;
+		}
+
+	}
+
+	if (all_constraints_satisfied) {
+		cout << "  âœ“ æ‰€æœ‰çº¦æŸå‡æ»¡è¶³!" << endl;
+	}
+
+	cout << "\n========================================" << endl;
+	cout << "æµ‹è¯•å®Œæˆ" << endl;
+	cout << "========================================" << endl;
+}
+
+// æµ‹è¯•vector<KnapsackResult> BAProblem::approposed_multiUAV_allocation(vector<Uav> uavs, vector<User> users, double used_single_alg, double parameter)
+void test_approposed_multiUAV_allocation() {
+	cout << "========================================" << endl;
+	cout << "æµ‹è¯•: Approposed Multi-UAV Allocationç®—æ³•" << endl;
+	cout << "========================================" << endl;
+	// 1. åˆ›å»ºç³»ç»Ÿæ¨¡å‹
+	// æ ¹æ®æ‚¨çš„é¡¹ç›®é…ç½®æ–‡ä»¶è·¯å¾„ä¿®æ”¹
+	string user_file = experimentDataPath + "data\\County_loc_Type_req\\simulated_data\\50_1000users_data_510723.csv";
+	string uav_file = experimentDataPath + "data\\County_loc_Type_req\\simulated_data\\50_10uavs_loc_510723.csv";
+	string config_file = algProjPath + "config\\def_config.json";
+	SystemMd sysModel(user_file, uav_file, config_file);
+	sysModel.print_SystemInfo();
+
+	// å°†æ‰€æœ‰UAVçš„å¸¦å®½è®¾ç½®ä¸º20 MHzï¼Œä»¥ä¾¿æµ‹è¯•
+	/*for (auto& uav : sysModel.uavs) {
+		uav.total_bandwidth = 50.0;
+	}*/
+	sysModel.print_SystemInfo(20);
+	// 2. åˆ›å»ºå¸¦å®½åˆ†é…é—®é¢˜å®ä¾‹
+	BAProblem problem(sysModel);
+	// 3. è¿è¡Œ Approposed Multi-UAV Allocation ç®—æ³•
+	cout << "\nå¼€å§‹è¿è¡Œ Approposed Multi-UAV Allocation ç®—æ³•..." << endl;
+	auto start_time = chrono::high_resolution_clock::now();
+
+	vector<Uav> test_uavs;
+	test_uavs.push_back(sysModel.uavs[0]); // ä»…æµ‹è¯•ç¬¬ä¸€ä¸ªUAV
+
+	auto results = problem.approposed_multiUAV_allocation(sysModel.uavs, sysModel.users, 2);
+	auto uavResults = results.first;
+	auto end_time = chrono::high_resolution_clock::now();
+	auto duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
+	cout << "\nç®—æ³•è¿è¡Œå®Œæˆï¼Œè€—æ—¶: " << duration.count() << " ms" << endl;
+	// 4. è·å–ç»“æœ
+	// vector<KnapsackResult>& uavResults = result;
+	// 5. æ£€æŸ¥æ˜¯å¦æ‰¾åˆ°å¯è¡Œè§£
+	if (uavResults.empty()) {
+		cout << "\nè­¦å‘Š: æœªæ‰¾åˆ°å¯è¡Œè§£!" << endl;
+		return;
+	}
+	// 6. æ‰“å°uavResultsï¼Œæ¯ä¸ªUAVçš„åˆ†é…ç»“æœ
+	cout << "\n========================================" << endl;
+	cout << "UAVåˆ†é…ç»“æœ" << endl;
+	problem.PrintKnapsackResultList(uavResults, 10);
+
+}
+
+// æµ‹è¯•ä¸¤ç§æ–¹æ³•çš„å¤šUAVåˆ†é…æ•ˆæœå¯¹æ¯”
+void test_multiUAV_allocation_comparison() {
+	// åœ¨æ–‡ä»¶å¤¹E:\Research\My paper\2_Papers\008\008_Experiment\ExperimentsData\data\County_loc_Type_req\simulated_dataä¸‹ï¼Œæœ‰50ç»„ç”¨æˆ·å’ŒUAVæ•°æ®æ–‡ä»¶
+	// ç”¨æˆ·æ–‡ä»¶åæ ¼å¼ï¼š50_1000users_data_xxYYZZ.csv
+	// UAVæ–‡ä»¶åæ ¼å¼ï¼š50_10uavs_loc_xxYYZZ.csv
+
+	// é’ˆå¯¹æ¯ä¸€ç»„æ•°æ®ï¼Œåˆ†åˆ«ä½¿ç”¨
+	// approposed_multiUAV_allocation(sysModel.uavs, sysModel.users, 1); å…¶ä¸­ used_single_alg=1ï¼Œè¡¨ç¤ºä½¿ç”¨WaterFillingAlgorithm_singleUAV_new
+	// approposed_multiUAV_allocation(sysModel.uavs, sysModel.users, 2); å…¶ä¸­ used_single_alg=2ï¼Œè¡¨ç¤ºä½¿ç”¨FPTAS_singleUAV_new
+
+	// ç”¨åˆ†åˆ«è®°å½•æ–¹æ³•çš„å¹³å‡æ•ˆç”¨
+
+	//===========================
+	//å…·ä½“å®ç°ï¼š
+
+	// 1. è·å–æ•°æ®æ–‡ä»¶åˆ—è¡¨
+	cout << "Testing multi-UAV allocation comparison..." << endl;
+	string config_file = algProjPath + "config\\def_config.json";
+
+
+	string dataFilePath = experimentDataPath + "data\\County_loc_Type_req\\simulated_data\\";
+	vector<string> userFiles;
+	vector<string> uavFiles;
+
+	bool success = getMatchedFilePairs(
+		dataFilePath,
+		dataFilePath,
+		"1000users_data",   // User æ–‡ä»¶å…³é”®è¯
+		"10uavs_loc",       // UAV æ–‡ä»¶å…³é”®è¯
+		50,                 // åªéœ€è¦å‰ 50 ç»„
+		userFiles,          // [è¾“å‡º]
+		uavFiles            // [è¾“å‡º]
+	);
+	if (!success) {
+		cout << "Failed to load data files." << endl;
+		return;
+	}
+	cout << "Successfully loaded " << userFiles.size() << " pairs of data." << endl;
+	// æ‰“å°éªŒè¯
+	if (!userFiles.empty()) {
+		cout << "First Pair Check: " << endl;
+		cout << "   User: " << fs::path(userFiles[0]).filename() << endl;
+		cout << "   UAV : " << fs::path(uavFiles[0]).filename() << endl;
+	}
+
+	// å®šä¹‰ä¸¤ä¸ªå˜é‡åˆ†åˆ«å­˜å‚¨ä¸¤ç§æ–¹æ³•çš„æ€»æ•ˆç”¨
+	double total_utility_method1 = 0.0;
+	double total_utility_method2 = 0.0;
+
+	// 3. å¾ªç¯å¤„ç†æ¯ä¸€ç»„æ•°æ®
+	for (size_t k = 0; k < userFiles.size(); ++k) {
+		cout << "Processing group " << (k + 1) << "..." << endl;
+
+		// æ­¤å¤„åŠ è½½æ•°æ®åˆ° sysModel
+		SystemMd sysModel(userFiles[k], uavFiles[k], config_file);
+
+		BAProblem problem1(sysModel);
+		// æ–¹æ³•1: used_single_alg=1 (WaterFillingAlgorithm_singleUAV_new)
+		auto results1 = problem1.approposed_multiUAV_allocation(sysModel.uavs, sysModel.users, 1);
+		auto uavResults1 = results1.first;
+		total_utility_method1 += BAProblem::get_total_utility(uavResults1);
+		problem1.~BAProblem();
+
+		// æ–¹æ³•2: used_single_alg=2 (FPTAS_singleUAV_new)
+		BAProblem problem2(sysModel);
+		auto results2 = problem2.approposed_multiUAV_allocation(sysModel.uavs, sysModel.users, 2);
+		auto uavResults2 = results2.first;
+		total_utility_method2 += BAProblem::get_total_utility(uavResults2);
+		problem2.~BAProblem();
+	}
+
+	// 4. è®¡ç®—å¹³å‡æ•ˆç”¨
+	double average_utility_method1 = total_utility_method1 / userFiles.size();
+	double average_utility_method2 = total_utility_method2 / userFiles.size();
+
+	// 5. è¾“å‡ºç»“æœ
+	cout << "\n========================================" << endl;
+	cout << "Multi-UAV Allocation Comparison Results" << endl;
+	cout << "========================================" << endl;
+	cout << "Method 1 (WaterFillingAlgorithm_singleUAV_new) Average Utility: " << fixed << setprecision(6) << average_utility_method1 << endl;
+	cout << "Method 2 (FPTAS_singleUAV_new) Average Utility: " << fixed << setprecision(6) << average_utility_method2 << endl;
+
 
 }

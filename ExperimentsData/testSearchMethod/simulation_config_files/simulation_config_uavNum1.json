@@ -1,0 +1,31 @@
+{
+  "topology_settings": {
+    "num_uavs": 1,
+    "user_counts": {
+      "num_elastic_users": 10,
+      "num_hard_qos_users": 10
+    },
+    "deployment_area": {
+      "description": "Square area coordinates in meters",
+      "min_coordinate_m": -250.0,
+      "max_coordinate_m": 250.0
+    }
+  },
+  "traffic_generation_params": {
+    "hard_qos_requirements": {
+      "min_required_rate_range_mbps": {
+        "min": 0.5,
+        "max": 10.0
+      },
+      "outage_probability_exponent_range": {
+        "comment": "Represents x in 10^-x. range [1, 3] means 10^-1 to 10^-3",
+        "min_exponent": 1,
+        "max_exponent": 3
+      }
+    },
+    "utility_weight_range": {
+      "min": 1,
+      "max": 5
+    }
+  }
+}

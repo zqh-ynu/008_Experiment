@@ -21,6 +21,21 @@
     <ClCompile Include="EntityDefinition.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Convexrelaxationandrounding.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="MatchingSQP.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="SADA_algorithm.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="MatchingGameAllocation.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HungarianMatching.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="EntityDefinition.h">
@@ -32,5 +47,14 @@
     <ClInclude Include="test.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="experiments.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>

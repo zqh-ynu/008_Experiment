@@ -1,0 +1,98 @@
+{
+  "simulation_settings": {
+    "n_num": 3000,
+    "hard_ratio": 0.8,
+    "f_num": 30
+  },
+  "hard_qos_config": [
+    {
+      "name": "Voice_Call",
+      "prob": 0.3,
+      "r_min_range": [
+        0.032,
+        0.032
+      ],
+      "p_out": 0.01
+    },
+    {
+      "name": "Video_Call",
+      "prob": 0.6,
+      "r_min_range": [
+        1.2,
+        1.2
+      ],
+      "p_out": 0.001
+    },
+    {
+      "name": "Remote_Control",
+      "prob": 0.1,
+      "r_min_range": [
+        0.08,
+        0.08
+      ],
+      "p_out": 1e-05
+    }
+  ],
+  "elastic_qos_config": [
+    {
+      "name": "Text_Msg",
+      "prob": 0.5,
+      "r_min_range": [
+        0.001,
+        0.002
+      ],
+      "r_max_range": [
+        0.008,
+        0.016
+      ]
+    },
+    {
+      "name": "Email",
+      "prob": 0.1,
+      "r_min_range": [
+        0.016,
+        0.032
+      ],
+      "r_max_range": [
+        0.256,
+        0.512
+      ]
+    },
+    {
+      "name": "Offline_Map",
+      "prob": 0.1,
+      "r_min_range": [
+        0.064,
+        0.128
+      ],
+      "r_max_range": [
+        1.0,
+        2.0
+      ]
+    },
+    {
+      "name": "Social_Media",
+      "prob": 0.2,
+      "r_min_range": [
+        0.032,
+        0.064
+      ],
+      "r_max_range": [
+        0.512,
+        1.0
+      ]
+    },
+    {
+      "name": "Sensor_Log",
+      "prob": 0.1,
+      "r_min_range": [
+        0.0005,
+        0.001
+      ],
+      "r_max_range": [
+        0.01,
+        0.02
+      ]
+    }
+  ]
+}

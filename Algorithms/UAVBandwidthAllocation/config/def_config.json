@@ -1,0 +1,17 @@
+{
+  "environmental_constants": {
+    "los_loss_db": 1.6,
+    "nlos_loss_db": 23,
+    "noise_dbm": -174,
+    "param_a": 12.08,
+    "param_b": 0.11,
+    "speed_light": 299792458,
+    "max_coverage_distance": 600
+  },
+  "uav_constants": {
+    "uav_alt": 300,
+    "freq_ghz": 3.4,
+    "trans_power": 2,
+    "gain_uav_db": 5
+  }
+}

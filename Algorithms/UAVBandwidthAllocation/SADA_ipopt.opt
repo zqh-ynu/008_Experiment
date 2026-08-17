@@ -1,0 +1,15 @@
+# 该文件是求解器IPOPT的配置文件
+hessian_approximation exact  # <-- 注释掉或删除这一行！
+
+# 其他参数
+tol 1e-6
+mu_strategy adaptive
+print_level 1
+max_iter 200
+sb yes
+constr_viol_tol 1e-8
+acceptable_tol 1e-6
+acceptable_iter 5
+bound_push 1e-6
+bound_frac 1e-6
+

@@ -1,0 +1,97 @@
+/home/pc/qinghui/env/bin/python /home/pc/qinghui/DRL_Algorithm_3/RLenv/train_real.py
+================================================================================
+GNN-BDQ-HO: Real Training with PyTorch
+================================================================================
+
+PyTorch version: 2.7.1+cu118
+CUDA available: True
+CUDA device: NVIDIA GeForce RTX 4090
+Using device: cuda
+
+--- Creating System ---
+=== 环境参数 ===
+LoS 损耗: 1 dB
+NLoS 损耗: 21 dB
+噪声功率: -105 dBm
+参数 A: 9.611725
+参数 B: 0.158062
+光速: 299792458 m/s
+最大通信距离: 1000 m
+
+=== 无人机参数 ===
+高度: 300 m
+频率: 2.40 GHz
+传输功率: 10 W
+增益: 5 dB
+Loading data from files...
+  User file: ../data/train_data/1_5000users_data_230717.csv
+  UAV file: ../data/train_data/1_20uavs_loc_230717.csv
+Global Origin: (128.874255, 47.719962)
+Warning: UAV coordinate conversion may be inconsistent with users
+Initializing channel matrices (20 UAVs x 5000 users)...
+System model initialized successfully.
+System initialized from files.
+Users: 5000 (Hard: 3500, Elastic: 1500)
+UAVs: 20
+
+--- Creating Environment ---
+Building bipartite graph: 5000 users, 20 UAVs
+Graph built: 38849 edges
+
+--- Creating DQN Agent ---
+✅ Real GNN-BDQ Network initialized on cuda
+   Users: 5000, UAVs: 20, Action space: 21
+   Parameters: 821,804
+
+--- Creating Trainer ---
+Real Trainer initialized:
+  Buffer size: 100000
+  Batch size: 256
+  Use PER: True
+
+--- Pre-filling Replay Buffer ---
+  Pre-filled 50/256 samples
+  Pre-filled 100/256 samples
+  Pre-filled 150/256 samples
+  Pre-filled 200/256 samples
+  Pre-filled 250/256 samples
+✅ Buffer size: 256
+
+
+--- Starting Training ---
+
+================================================================================
+Starting Real Training
+================================================================================
+Traceback (most recent call last):
+  File "/home/pc/qinghui/DRL_Algorithm_3/RLenv/train_real.py", line 413, in <module>
+    main()
+  File "/home/pc/qinghui/DRL_Algorithm_3/RLenv/train_real.py", line 361, in main
+    stats = trainer.train(
+  File "/home/pc/qinghui/DRL_Algorithm_3/RLenv/train_real.py", line 99, in train
+    episode_reward, episode_info = self._train_episode()
+  File "/home/pc/qinghui/DRL_Algorithm_3/RLenv/train_real.py", line 193, in _train_episode
+    stats = self.agent.update(batch)
+  File "/home/pc/qinghui/DRL_Algorithm_3/RLenv/real_gnn_bdq.py", line 373, in update
+    q = self.forward(state['graph_data'])  # [num_users, action_space_size]
+  File "/home/pc/qinghui/DRL_Algorithm_3/RLenv/real_gnn_bdq.py", line 306, in forward
+    user_embeddings = self.encoder(graph_dict)
+  File "/home/pc/qinghui/env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/pc/qinghui/env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/pc/qinghui/DRL_Algorithm_3/RLenv/real_gnn_bdq.py", line 91, in forward
+    x = gat(x, graph_dict['edge_index'], graph_dict['edge_attr'])
+  File "/home/pc/qinghui/env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/pc/qinghui/env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/pc/qinghui/env/lib/python3.10/site-packages/torch_geometric/nn/conv/gat_conv.py", line 362, in forward
+    alpha = self.edge_updater(edge_index, alpha=alpha, edge_attr=edge_attr,
+  File "/tmp/torch_geometric.nn.conv.gat_conv_GATConv_edge_updater_w4uxgveo.py", line 176, in edge_updater
+    out = self.edge_update(
+  File "/home/pc/qinghui/env/lib/python3.10/site-packages/torch_geometric/nn/conv/gat_conv.py", line 405, in edge_update
+    alpha_edge = (edge_attr * self.att_edge).sum(dim=-1)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 44.00 MiB. GPU 0 has a total capacity of 23.52 GiB of which 7.81 MiB is free. Including non-PyTorch memory, this process has 23.49 GiB memory in use. Of the allocated memory 22.14 GiB is allocated by PyTorch, and 921.42 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+
+Process finished with exit code 1

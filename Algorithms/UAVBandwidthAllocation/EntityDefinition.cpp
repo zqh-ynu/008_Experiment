@@ -5031,6 +5031,7 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
 				state_limit, completed_entry);
 
 			// 小规模确定性调用逐行与 O(P^2) 穷举核对，专门防止有限补全或索引映射出错。
+			// 仅在状态上界 P 不超过 128 时执行，避免过度消耗时间。当epsilon=0.1时，7个用户就会触发 128 状态上界。
 			if (state_limit <= 128)
 			{
 				for (int row = 0; row <= state_limit; ++row)

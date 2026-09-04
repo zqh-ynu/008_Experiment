@@ -11,7 +11,9 @@ int main() {
         // test_approposed_multiUAV_allocation();
         //test_ConvexRelaxationAndRounding();
         // exp1_different_user_number();
-        exp2_different_uav_number();
+        // exp2_different_uav_number();
+        // 
+        test_ToN_singleUAV_algorithms();
         // exp3_different_hard_user_ratio();
         // exp4_different_total_bandwidth();
         // test();

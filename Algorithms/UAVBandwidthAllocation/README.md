@@ -2,11 +2,12 @@
 
 面向混合 QoS 用户的多无人机（UAV）带宽分配研究代码。该 Visual Studio C++ 工程包含两种当前提出方法、四种当前对比方法、EXP1–EXP4 实验驱动、逐实例结果记录和跨实例汇总逻辑。
 
-> **当前状态（2026-09-03 源码审计）**
+> **当前状态（2026-09-04 ToN 算法接入）**
 >
 > - 当前 [`main.cpp`](main.cpp) 默认启用 `exp2_different_uav_number()`；其他实验和测试需要手工切换源码入口。
 > - 该工程是研究代码，不是克隆后即可一键复现的完整软件包。正式 user/UAV 实例 CSV 不随当前 Git 快照同步，第三方依赖和部分路径仍绑定本机环境。
-> - 本 README 根据当前源码、Visual Studio 项目文件和现有配置编写；本次文档维护没有构建工程、运行算法或重新验证历史数值结果。
+> - `ApproBetter` 和 `ApproFast` 已切换到 ToN 的状态依赖边际效用实现；旧 MASS 函数仍完整保留，但不再是这两个正式标签的调用入口。
+> - ToN 结果写入独立版本目录，既有 MASS CSV、summary 和图片不会被覆盖或追加。
 
 仓库的整体数据链、历史资产和同步边界见[仓库级 README](../../README.md)；输入实例的恢复规则和 CSV schema 见 [`ExperimentsData/data/README.md`](../../ExperimentsData/data/README.md)。
 
@@ -38,29 +39,37 @@ flowchart LR
 
 | 结果标签 | 当前实际入口 | 实现文件 | 说明 |
 | --- | --- | --- | --- |
-| `ApproBetter` | `approposed_multiUAV_allocation_new(..., 2)` | [`EntityDefinition.cpp`](EntityDefinition.cpp) | 多 UAV 冲突消解框架 + `FPTAS_singleUAV_new`。调用未显式传入 `parameter`，因此使用声明中的默认值 `0.083`。 |
-| `ApproFast` | `approposed_multiUAV_allocation_new(..., 1)` | [`EntityDefinition.cpp`](EntityDefinition.cpp) | 同一多 UAV 框架 + `WaterFillingAlgorithm_singleUAV_new(..., 1)`，包括 hard 用户舍入。 |
+| `ApproBetter` | `Appro_multiUAV_ToN(..., 2, 0.1)` | [`EntityDefinition.cpp`](EntityDefinition.cpp) | ToN 固定状态多 UAV 贪心 + `AlgBetter_singleUAV_ToN`；统一精确利润 DP，elastic 层使用 SMAWK，显式采用 `epsilon=0.1`。 |
+| `ApproFast` | `Appro_multiUAV_ToN(..., 1, 0.1)` | [`EntityDefinition.cpp`](EntityDefinition.cpp) | 同一 ToN 多 UAV 框架 + `AlgFast_singleUAV_ToN`；求解边际效用 LCM 松弛并执行 unsafe 用户二候选舍入。 |
 | `AlgDRL` | `ConvexRelaxationAndRounding_multiUAV()` | [`Convexrelaxationandrounding.cpp`](Convexrelaxationandrounding.cpp) | 当前 C++ 驱动实际执行的是 IPOPT 松弛—舍入实现。`AlgDRL` 是历史结果标签，不能仅凭名称将其解释为 Python DQN/DRL 推理。 |
 | `AlgMatching` | `MatchingSQP_Allocation()` | [`MatchingSQP.cpp`](MatchingSQP.cpp) | 匹配更新与 IPOPT/SQP 带宽优化过程。 |
 | `AlgHardFirst` | `HungarianMatchingAllocation()` | [`HungarianMatching.cpp`](HungarianMatching.cpp) | 基于 Hungarian/KM 的用户—子信道匹配；结果标签是历史命名，不足以证明实现严格采用“hard first”顺序。 |
 | `AlgSADA` | `SADA_Allocation()` | [`SADA_algorithm.cpp`](SADA_algorithm.cpp) | successive approximation、对偶分解和 IPOPT 局部优化实现。 |
 
-### 2.1 当前提出方法的真实多 UAV 流程
+### 2.1 当前 ToN 提出方法的真实多 UAV 流程
 
-`approposed_multiUAV_allocation_new()` 不是多 UAV 全局联合优化器，也不是旧版逐轮选择 UAV 的顺序贪心实现。当前代码执行三个阶段：
+`Appro_multiUAV_ToN()` 执行四个明确阶段：
 
-1. **独立局部求解**：对每架 UAV 的 `uav_serviceable_users_map[uav_id]` 独立运行一次单 UAV 算法。
-2. **用户冲突消解**：若一个用户被多架 UAV 同时选择，则比较第一阶段的 `allocatedValue[user_id]`，仅保留效用最高的 UAV。
-3. **局部重新优化**：在每架 UAV 冲突消解后保留的用户集合上，再运行一次相同的单 UAV 算法。
+1. **固定状态贪心**：每一轮复制同一份旧状态 `m_j`，所有尚未选择的 UAV 都在该冻结状态下调用同一个新单 UAV 算法；按真实边际效用选最大者，`EPS` 内并列时选择较小 UAV ID。
+2. **状态更新**：只在选中 UAV 后保留其分配，并更新 `m_j=max(m_j,g_kj(b_kj))`；每架 UAV 恰好选择一次。
+3. **唯一关联与完整重建**：每个用户保留绝对效用最大的 UAV，并列时保留更早选中的 UAV；删除其他链路后，从带宽映射和绝对效用重新构造 `KnapsackResult` 的列表、映射与全部聚合字段。
+4. **残余带宽阶段**：按贪心选择顺序处理 UAV。候选仅包含当前 UAV 已服务的 a 类用户和全局未服务的 c 类用户；已由其他 UAV 服务的 b 类用户排除。a 类以已有带宽和绝对效用为基准，c 类以零为基准。新接纳的 c 类立即归当前 UAV 所有，后续 UAV 不得再次服务。
+
+两个新单 UAV 函数统一把决策量解释为新增带宽 `x_j`，优化
+`[g_kj(b_kj_old+x_j)-m_j]^+`。因此它们返回的 `allocatedBandwidth` 是新增带宽，`allocatedValue`/`totalValue` 是真实边际效用。`Appro_multiUAV_ToN()` 在返回实验框架前将结果重新物化为最终总带宽和最终绝对效用，所以现有 `compute_single_EXPResult()` 与 `construct_user_results()` 无需改动。
 
 函数返回：
 
 - `vector<KnapsackResult>`：每架 UAV 的用户集合、逐用户带宽/效用和聚合量；
 - `map<int, UserResult>`：按内部用户 ID 给出的最终 UAV、带宽和效用。未服务用户保留默认值 `uav_id = -1`、带宽与效用为 0。
 
-覆盖集合由 `SystemMd::init_SystemModel()` 按 `distance <= max_coverage_distance` 构造。当前从 CSV 构造模型时会将 UAV 和用户重新编号为连续 ID；算法内部多处直接使用 ID 索引 `vector`，因此通过其他接口传入非连续 ID 并不安全。
+覆盖集合由 `SystemMd::init_SystemModel()` 按 `distance <= max_coverage_distance` 构造。新函数只读访问 `uav_serviceable_users_map`。当前从 CSV 构造模型时会将 UAV 和用户重新编号为连续 ID；新接口会对越界或重复 ID、状态向量长度、算法选择以及 `epsilon` 范围进行显式检查。
 
-### 2.2 编译但未进入六方法循环的实现
+### 2.2 新旧实现边界
+
+新实现仅新增 `AlgFast_singleUAV_ToN()`、`AlgBetter_singleUAV_ToN()` 和 `Appro_multiUAV_ToN()`。历史函数 `WaterFillingAlgorithm_singleUAV_new()`、`FPTAS_singleUAV_new()`、`approposed_multiUAV_allocation()`、`approposed_multiUAV_allocation_new()` 以及旧 `compute_KKT_parameters()` 均保留，便于追溯 MASS 实现，但正式 `ApproBetter`/`ApproFast` 不再调用它们。`User::marginal_utility()` 的历史空实现也未改动，以免暗中改变其他旧算法行为。
+
+### 2.3 编译但未进入六方法循环的实现
 
 [`MatchingGameAllocation.cpp`](MatchingGameAllocation.cpp) 在当前 `.vcxproj` 中参与编译，但 `run_Instance_with_checkpoint()` 不调用它。它不应与结果标签 `AlgMatching` 混同。
 
@@ -110,10 +119,10 @@ exp2_different_uav_number();
 
 | 函数 | 自变量 | 当前条件 | 输入根目录 | 结果根目录 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| `exp1_different_user_number()` | 用户数 | `1000, 2000, 3000, 4000, 5000`；10 UAV | `data/variable_user_num/` | `ExperimentsResults/EXP1_user_num/` | 驱动和配置存在。 |
-| `exp2_different_uav_number()` | UAV 数 | `5, 10, 15, 20`；固定 3000 用户 | 用户来自 `data/variable_user_num/3000u_num/`，UAV 来自 `data/variable_uav_num/` | `ExperimentsResults/EXP2_uav_num/` | **当前默认入口**。 |
-| `exp3_different_hard_user_ratio()` | hard 用户比例 | 目录 `0, 2, 4, 6, 8, 10` 分别表示 `0, 0.2, ..., 1.0`；3000 用户、10 UAV | `data/variable_hard_user_ratio/` | `ExperimentsResults/EXP3_hard_user_ratio/` | 驱动和配置存在。 |
-| `exp4_different_total_bandwidth()` | 每架 UAV 总带宽 | `10, 20, 30, 40, 50` MHz；3000 用户、10 UAV | 复用 `data/variable_user_num/3000u_num/` | `ExperimentsResults/EXP4_bandwidth/` | **当前标准路径缺少 `def_config.json`，不能直接视为可运行。** |
+| `exp1_different_user_number()` | 用户数 | `1000, 2000, 3000, 4000, 5000`；10 UAV | `data/variable_user_num/` | `ExperimentsResults/EXP1_user_num/ToN_marginal_eps0p1/` | 驱动和配置存在。 |
+| `exp2_different_uav_number()` | UAV 数 | `5, 10, 15, 20`；固定 3000 用户 | 用户来自 `data/variable_user_num/3000u_num/`，UAV 来自 `data/variable_uav_num/` | `ExperimentsResults/EXP2_uav_num/ToN_marginal_eps0p1/` | **当前默认入口**。 |
+| `exp3_different_hard_user_ratio()` | hard 用户比例 | 目录 `0, 2, 4, 6, 8, 10` 分别表示 `0, 0.2, ..., 1.0`；3000 用户、10 UAV | `data/variable_hard_user_ratio/` | `ExperimentsResults/EXP3_hard_user_ratio/ToN_marginal_eps0p1/` | 驱动和配置存在。 |
+| `exp4_different_total_bandwidth()` | 每架 UAV 总带宽 | `10, 20, 30, 40, 50` MHz；3000 用户、10 UAV | 复用 `data/variable_user_num/3000u_num/` | `ExperimentsResults/EXP4_bandwidth/ToN_marginal_eps0p1/` | **当前标准路径缺少 `def_config.json`，不能直接视为可运行。** |
 
 当前四个驱动都将实例数硬编码为 `count = 10`。文件配对函数虽然最多搜索 30 或 50 个 ID，但标准运行只处理排序后的前 10 对；运行前必须确认实际找到的配对数不少于 10，否则会发生越界访问风险。
 
@@ -174,16 +183,16 @@ msbuild .\UAVBandwidthAllocation.sln /m /p:Configuration=Release /p:Platform=x64
 
 ## 6. 运行前配置
 
-### 6.1 先修正项目绝对路径
+### 6.1 当前项目绝对路径
 
-[`predefine.h`](predefine.h) 当前定义：
+[`predefine.h`](predefine.h) 当前机器定义：
 
 ```text
-algProjPath      = E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\
-experimentDataPath = E:\Research\My paper\2_Papers\008\008_Experiment\ExperimentsData\
+algProjPath        = E:\Research\My_paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation\
+experimentDataPath = E:\Research\My_paper\2_Papers\008\008_Experiment\ExperimentsData\
 ```
 
-其中使用的是 `My paper`，而当前工作区实际目录是 `My_paper`。EXP1–EXP4 都通过 `experimentDataPath` 拼接输入、配置和输出路径；按当前字符串直接运行会访问错误位置。运行前应将两个常量改为当前机器的真实绝对路径，最好在后续重构中改为命令行参数或相对路径。
+这两个字符串已与当前工作区的 `My_paper` 路径对齐。它们仍是本机绝对路径，不具备跨机器可移植性；迁移环境时应改为新机器的真实路径，后续可另行重构为命令行参数或相对路径。
 
 ### 6.2 恢复输入实例
 
@@ -211,9 +220,9 @@ EXP2 是例外：用户文件固定来自 `variable_user_num/3000u_num/user_data
 
 这些文件控制 LoS/NLoS 损耗、噪声谱密度、LoS 概率参数、最大覆盖距离、UAV 高度、载波频率、发射功率和天线增益。不同配置说明中的数值并不完全一致，解释一次运行时必须记录实际加载文件的内容与哈希。
 
-### 6.4 为新运行隔离输出
+### 6.4 ToN 运行的隔离输出
 
-标准驱动会直接在 [`ExperimentsData/ExperimentsResults`](../../ExperimentsData/ExperimentsResults/) 下创建或追加 CSV，并重写 `summary/` 中的汇总文件。为避免把新运行混入历史结果，建议先在代码中为本次运行指定新的、明确命名的结果根目录，并保留：
+标准驱动已将所有六种方法的新结果固定写入各实验根目录下的 `ToN_marginal_eps0p1/`，并仅重写该版本目录自己的 `summary/`。旧 MASS 条件目录、CSV、summary 和图片不会被删除、覆盖或追加。正式运行仍应保留：
 
 - 源码 commit/hash 和本地未提交差异；
 - 输入实例版本或校验和；
@@ -258,15 +267,19 @@ uav_id,longitude,latitude,bandwidth
 
 ### 8.1 逐实例结果
 
-每个实验条件目录包含六个方法文件：
+每个实验的 ToN 版本目录按条件保存六个方法文件，例如：
 
 ```text
-ApproBetter.csv
-ApproFast.csv
-AlgDRL.csv
-AlgMatching.csv
-AlgHardFirst.csv
-AlgSADA.csv
+EXP2_uav_num/
+└── ToN_marginal_eps0p1/
+    ├── 5/
+    │   ├── ApproBetter.csv
+    │   ├── ApproFast.csv
+    │   ├── AlgDRL.csv
+    │   ├── AlgMatching.csv
+    │   ├── AlgHardFirst.csv
+    │   └── AlgSADA.csv
+    └── summary/
 ```
 
 每行对应一个按文件名 ID 排序后的输入实例，字段为：
@@ -279,7 +292,7 @@ duration,total_num,hard_num,elastic_num,total_utility,hard_utility,elastic_utili
 
 ### 8.2 汇总结果
 
-每个实验的 `summary/` 会生成：
+每个实验的 `ToN_marginal_eps0p1/summary/` 会生成：
 
 ```text
 Run_time_ms.csv
@@ -303,42 +316,42 @@ Total_Throughput.csv
 `run_Instance_with_checkpoint()` 会：
 
 1. 为六种方法建立带表头的 CSV；
-2. 只统计 `ApproBetter.csv` 的数据行数作为已完成实例数；
-3. 从下一行开始，按六种方法的固定顺序逐个计算并立即追加结果；
-4. 条件完成后，从现有方法 CSV 重新计算 summary。
+2. 分别统计六个方法 CSV 的非空数据行数；
+3. 仅当六个行数完全相等时，才把共同值作为已完成实例数并继续；
+4. 若行数不一致，立即打印每个文件的行数并抛出异常，不删除、截断或自动修复任何文件；
+5. 从下一行开始，按六种方法的固定顺序逐个计算并立即追加结果；
+6. 条件完成后，从该版本目录的现有方法 CSV 重新计算 summary。
 
-该机制**不是事务式 checkpoint**。如果程序在同一实例的六种方法之间中断，`ApproBetter.csv` 可能已经多出一行，而后续方法尚未写入。再次启动时该实例可能被整体跳过，造成方法间行数错位。恢复前至少应核对六个文件的数据行数和预期输入顺序；发现不一致时，应先保留原文件作为故障证据，再在新的隔离输出目录重新运行相关条件。
+该机制仍不是事务式 checkpoint：如果程序在同一实例的六种方法之间中断，方法文件可能出现不同长度；但下一次启动会 fail closed，不会跳过错位实例或静默改写证据。此时应保留文件并人工决定如何处理，代码不会替用户删行。
 
 ## 10. 当前已知限制与审计提示
 
 以下内容会直接影响构建、复现或结果解释：
 
-1. **源码数据路径不匹配。** `predefine.h` 使用 `My paper`，当前工作区为 `My_paper`。
-2. **依赖路径不可移植。** Boost、IPOPT 和 CPLEX 的绝对路径写在 `.vcxproj` 中。
-3. **EXP4 标准配置缺失。** 代码期望 `ExperimentsResults/EXP4_bandwidth/def_config.json`，当前该文件不存在；其他历史目录中的同名配置不能未经核对直接代替。
-4. **Git 快照不是完整运行包。** 正式实例 CSV 需要从独立私有/冻结数据资产恢复。
-5. **没有统一 CLI。** 实验选择、实例数和部分参数通过源码硬编码。
-6. **固定 `count = 10` 缺少边界检查。** 若找到的配对输入少于 10，驱动仍会索引前 10 项。
-7. **checkpoint 只以 `ApproBetter` 为准。** 中断可能造成六方法 CSV 行数和实例位置不一致。
-8. **结果行缺少实例标识和运行元数据。** 当前 CSV 不能单独证明某行来自哪个输入文件或配置版本。
-9. **整数型均值会截断。** `total_num`、`hard_num` 和 `elastic_num` 是 `int`，汇总时执行整数除法；非整数平均值会被截断。
-10. **提出方法的空 UAV 聚合量存在一致性风险。** 冲突消解阶段只从 `allocatedList` 删除用户；若某架 UAV 的列表因此变空，第二次求解会直接 `continue`，第一阶段的 `allocatedValue`/`totalValue` 等聚合数据可能残留，而结果统计又会累加这些聚合量。正式使用前应增加针对该路径的单元测试和约束检查。
-11. **带宽预算覆盖后没有重算信道矩阵。** `SystemMd` 先按 CSV 带宽初始化噪声、容量和 hard 用户最低带宽，实验驱动随后才覆盖 UAV 总带宽；EXP1–EXP4 当前均未再次调用 `init_SystemModel()`。
-12. **内部索引要求连续 ID。** CSV 构造流程会重新编号，因此标准数据路径满足该条件；直接调用算法时则需要调用者保证或显式映射。
-13. **历史标签不等于实现证明。** 特别是 `AlgDRL` 当前映射到 C++ IPOPT 松弛—舍入方法，`AlgHardFirst` 映射到 Hungarian/KM 实现；引用论文或比较基线前应重新核对版本和方法来源。
-14. **同目录相似源码不一定参与构建。** `_new`、`_old`、`_short` 和 `setSysCode/` 文件不能自动视为当前算法版本。
-15. **现有测试不是自动化测试套件。** `test.h` 需要在 `main.cpp` 中手工启用，当前没有独立的 CI、单元测试框架或统一正确性门禁。
+1. **依赖路径不可移植。** Boost、IPOPT 和 CPLEX 的绝对路径写在 `.vcxproj` 中；`predefine.h` 的项目路径也只对应当前机器。
+2. **EXP4 标准配置缺失。** 代码期望 `ExperimentsResults/EXP4_bandwidth/def_config.json`，当前该文件不存在；其他历史目录中的同名配置不能未经核对直接代替。
+3. **Git 快照不是完整运行包。** 正式实例 CSV 需要从独立私有/冻结数据资产恢复。
+4. **没有统一 CLI。** 实验选择、实例数和部分参数通过源码硬编码。
+5. **固定 `count = 10` 缺少边界检查。** 若找到的配对输入少于 10，驱动仍会索引前 10 项。
+6. **checkpoint 不是事务写入。** 单实例中断仍可能先造成方法文件长度不同；新逻辑会在下次启动时报告并停止，但不会自动恢复该实例。
+7. **结果行缺少实例标识和运行元数据。** 当前 CSV 不能单独证明某行来自哪个输入文件或配置版本。
+8. **整数型均值会截断。** `total_num`、`hard_num` 和 `elastic_num` 是 `int`，汇总时执行整数除法；非整数平均值会被截断。
+9. **带宽预算覆盖后没有重算信道矩阵。** `SystemMd` 先按 CSV 带宽初始化噪声、容量和 hard 用户最低带宽，实验驱动随后才覆盖 UAV 总带宽；EXP1–EXP4 当前均未再次调用 `init_SystemModel()`。
+10. **内部索引要求连续 ID。** CSV 构造流程会重新编号，因此标准数据路径满足该条件；新 ToN 接口会拒绝越界或重复 ID，但不会自动重映射任意 ID。
+11. **历史标签不等于实现证明。** 特别是 `AlgDRL` 当前映射到 C++ IPOPT 松弛—舍入方法，`AlgHardFirst` 映射到 Hungarian/KM 实现；引用论文或比较基线前应重新核对版本和方法来源。
+12. **同目录相似源码不一定参与构建。** `_new`、`_old`、`_short` 和 `setSysCode/` 文件不能自动视为当前算法版本。
+13. **测试仍是手工入口。** `test.h` 已包含新 ToN 的确定性边界、平移、SMAWK、唯一关联和聚合一致性检查，但仍需在 `main.cpp` 中手工启用 `test_ToN_algorithms()`；当前没有独立 CI 测试框架。
 
 ## 11. 建议的安全运行顺序
 
 1. 确认只启用一个 `main.cpp` 入口。
-2. 修正 `predefine.h` 中两个项目路径。
+2. 核对 `predefine.h` 中两个绝对路径仍对应当前机器。
 3. 恢复并只读核对目标实验需要的 user/UAV CSV；确认至少存在 10 个同 ID 配对。
 4. 冻结本次实际使用的 JSON、IPOPT `.opt`、输入清单和源码状态。
-5. 将输出指向新的隔离目录，避免与已有结果追加混合。
+5. 确认输出根为 `ToN_marginal_eps0p1/`，且六个方法 CSV 行数一致。
 6. 使用 `Release|x64` 构建，并确认依赖 DLL 与 `.opt` 文件可被找到。
-7. 先用一个小规模副本/测试入口检查：程序能加载输入、六种方法都产生一行、带宽约束和用户唯一关联成立。
-8. 再运行目标条件；中途停止后先核对六方法行数，不要直接依赖自动续跑。
+7. 先运行 `test_ToN_algorithms()`，再用一个现有实例检查六种方法都产生一行、带宽约束和用户唯一关联成立。
+8. 再运行目标条件；中途停止后让 fail-closed checkpoint 先核对六方法行数。
 9. 从逐实例 CSV 独立重算 summary，并与程序输出交叉核对。
 10. 在论文或图表中使用结果前，保存实例—行号映射、失败记录、统计脚本和环境说明。
 

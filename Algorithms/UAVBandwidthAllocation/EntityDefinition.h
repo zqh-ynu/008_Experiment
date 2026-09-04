@@ -1,4 +1,5 @@
 #pragma once
+// 本文件声明 UAV 带宽分配系统模型、结果结构以及各类算法接口。
 #include "predefine.h"
 
 
@@ -620,6 +621,36 @@ public:
 	/// <returns>背包问题的分配结果，KnapsackResult 类型</returns>
 	KnapsackResult FPTAS_singleUAV_new(Uav uav, vector<User> unproc_users, double epsilon = 0.02);
 
+	/**
+	 * @brief 使用 LCM 与二候选舍入求解 ToN 快速单 UAV 边际效用问题。
+	 * @param uav 待评估 UAV；total_bandwidth 表示本次可用的新增带宽预算。
+	 * @param candidate_users 该 UAV 在本次调用中可以服务的候选用户。
+	 * @param current_utilities 按用户 ID 索引的当前网络绝对效用 m_j。
+	 * @param base_bandwidths 按用户 ID 索引的同一 UAV 已有基准带宽 b_{kj}^{old}。
+	 * @return allocatedBandwidth 为新增带宽，allocatedValue/totalValue 为真实边际效用。
+	 */
+	KnapsackResult AlgFast_singleUAV_ToN(
+		const Uav& uav,
+		const vector<User>& candidate_users,
+		const vector<double>& current_utilities,
+		const vector<double>& base_bandwidths);
+
+	/**
+	 * @brief 使用缩放利润 DP 与 SMAWK 求解 ToN 改进单 UAV 边际效用问题。
+	 * @param uav 待评估 UAV；total_bandwidth 表示本次可用的新增带宽预算。
+	 * @param candidate_users 该 UAV 在本次调用中可以服务的候选用户。
+	 * @param current_utilities 按用户 ID 索引的当前网络绝对效用 m_j。
+	 * @param base_bandwidths 按用户 ID 索引的同一 UAV 已有基准带宽 b_{kj}^{old}。
+	 * @param epsilon 近似参数，必须满足 0 < epsilon < 1/2，默认值为 0.1。
+	 * @return allocatedBandwidth 为新增带宽，allocatedValue/totalValue 为真实边际效用。
+	 */
+	KnapsackResult AlgBetter_singleUAV_ToN(
+		const Uav& uav,
+		const vector<User>& candidate_users,
+		const vector<double>& current_utilities,
+		const vector<double>& base_bandwidths,
+		double epsilon = 0.1);
+
 
 	/// <summary>
 	/// 在当前状态下，计算无人机uav_id子分配问题的KKT参数
@@ -672,6 +703,21 @@ public:
 	/// <param name="epsilon">精度要求</param>
 	/// <returns></returns>
 	pair<vector<KnapsackResult>, map<int, UserResult>>  approposed_multiUAV_allocation_new(vector<Uav> uavs, vector<User> users, int used_single_alg = 2, double parameter = 0.083);
+
+	/**
+	 * @brief 执行 ToN 固定状态贪心多 UAV 分配及残余带宽阶段。
+	 * @param uavs 参与选择的 UAV 集合，每架 UAV 恰好处理一次。
+	 * @param users 当前系统模型中的完整用户集合。
+	 * @param used_single_alg 取 1 时调用 AlgFast_singleUAV_ToN，取 2 时调用 AlgBetter_singleUAV_ToN。
+	 * @param epsilon 传给 AlgBetter_singleUAV_ToN 的近似参数，必须满足 0 < epsilon < 1/2。
+	 * @return 最终绝对结果：allocatedBandwidth 为总带宽，allocatedValue/totalValue 为绝对效用；
+	 *         同时返回与 UAV 结果一致的逐用户投影。
+	 */
+	pair<vector<KnapsackResult>, map<int, UserResult>> Appro_multiUAV_ToN(
+		const vector<Uav>& uavs,
+		const vector<User>& users,
+		int used_single_alg = 2,
+		double epsilon = 0.1);
 
 
 	/**
@@ -769,5 +815,3 @@ public:
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 		HungarianMatchingAllocation();
 };
-
-

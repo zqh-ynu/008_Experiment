@@ -1,6 +1,519 @@
 ﻿#include "EntityDefinition.h"
 
 // 辅助函数：分割字符串
+// 本文件实现系统模型及各类带宽分配算法。下方 ToN 辅助函数均限制在本编译单元内部，
+// 以便复用现有数据结构，同时不暴露新接口或改变历史算法的行为。
+#include <numeric>
+#include <stdexcept>
+
+namespace {
+
+constexpr double TON_ROOT_TOL = 1e-11;
+
+/**
+ * @brief 描述单个用户平移后的边际效用函数，仅供 ToN 算法内部使用。
+ *
+ * 所有 bandwidth 字段均采用“新增带宽”坐标 x。对于 elastic 用户，max_extra
+ * 等于本次调用的 UAV 可用预算；对于 hard 用户，它等于从已有带宽补足阈值所需的带宽。
+ */
+struct TonUserProfile {
+	int user_id = -1;                 // 用户 ID，也是系统状态向量的下标。
+	int user_type = -1;               // HARD_UTILITY 或 ELASTIC_UTILITY。
+	double weight = 0.0;              // 效用权重 w_i。
+	double channel = 0.0;             // 当前 UAV 到该用户的信道系数 C_{ki}。
+	double base_bandwidth = 0.0;      // 当前 UAV 已分配给该用户的基准带宽 b_i^{old}。
+	double current_utility = 0.0;     // 当前网络绝对效用 m_i，可能来自另一架 UAV。
+	double max_extra = 0.0;           // 本次允许分配的最大新增带宽 x_i。
+	double tau = 0.0;                 // 最小凹上界线性激活段的右端点 tau_i。
+	double activation_slope = 0.0;    // 线性激活段斜率 s_i。
+	double start_derivative = 0.0;    // 最小凹上界在 x=0 处的右导数。
+	double end_derivative = 0.0;      // 最小凹上界在 x=max_extra 处的左导数。
+	double hard_threshold = 0.0;      // hard 用户的总带宽阈值 B_{ki}^{th}。
+	double hard_full_utility = 0.0;   // hard 用户达到阈值后的绝对效用 pi_i。
+	double max_marginal = 0.0;        // 在 max_extra 内可达到的最大真实边际效用。
+	bool retained = false;            // 预处理后是否仍具有可达的正边际效用。
+};
+
+/** @brief 使用相对容差比较两个浮点导数，避免临界斜率去重和分支判断受舍入误差影响。 */
+bool ton_nearly_equal(double lhs, double rhs)
+{
+	double scale = std::max(1.0, std::max(std::abs(lhs), std::abs(rhs)));
+	return std::abs(lhs - rhs) <= 1e-10 * scale;
+}
+
+/** @brief 计算 elastic 用户的绝对效用 w log2(1 + Cb)。 */
+double ton_elastic_utility(const User& user, double channel, double bandwidth)
+{
+	if (bandwidth <= 0.0 || channel <= 0.0 || user.weight <= 0.0)
+		return 0.0;
+	return user.weight * std::log2(1.0 + bandwidth * channel);
+}
+
+/** @brief 在不修改 User 对象的前提下计算 hard/elastic 用户的绝对效用。 */
+double ton_absolute_utility(const User& user, double channel, double bandwidth)
+{
+	if (user.uType == ELASTIC_UTILITY)
+		return ton_elastic_utility(user, channel, bandwidth);
+	if (user.uType == HARD_UTILITY)
+	{
+		if (channel > 0.0 && bandwidth * channel >= user.rMin - EPS)
+			return user.weight * std::log2(1.0 + user.rMin);
+		return 0.0;
+	}
+	throw std::invalid_argument("ToN algorithms support only hard and elastic users");
+}
+
+/** @brief 计算 elastic 绝对效用在总带宽 b 处的导数。 */
+double ton_elastic_derivative(const TonUserProfile& profile, double bandwidth)
+{
+	if (profile.channel <= 0.0 || profile.weight <= 0.0)
+		return 0.0;
+	return profile.weight * profile.channel /
+		(std::log(2.0) * (1.0 + bandwidth * profile.channel));
+}
+
+/** @brief 对非负目标效用求 w log2(1 + Cb) 的反函数，返回对应总带宽 b。 */
+double ton_elastic_inverse(const TonUserProfile& profile, double target_utility)
+{
+	if (target_utility <= 0.0)
+		return 0.0;
+	if (profile.channel <= 0.0 || profile.weight <= 0.0)
+		return INF;
+	return std::expm1(target_utility * std::log(2.0) / profile.weight) /
+		profile.channel;
+}
+
+/**
+ * @brief 校验两个 ToN 单 UAV 算法共用的输入，以及按用户 ID 索引的状态向量。
+ * @throws std::invalid_argument 当状态长度、ID、用户类型或数值不合法时抛出。
+ */
+void ton_validate_single_inputs(
+	const SystemMd& model,
+	const Uav& uav,
+	const vector<User>& candidate_users,
+	const vector<double>& current_utilities,
+	const vector<double>& base_bandwidths)
+{
+	const size_t user_count = model.users.size();
+	if (current_utilities.size() != user_count || base_bandwidths.size() != user_count)
+		throw std::invalid_argument("ToN state vectors must match sysModel.users.size()");
+	if (uav.ID < 0 || uav.ID >= static_cast<int>(model.cap_list.size()))
+		throw std::invalid_argument("ToN candidate UAV ID is out of range");
+	if (!std::isfinite(uav.total_bandwidth) || uav.total_bandwidth < -EPS)
+		throw std::invalid_argument("ToN candidate UAV bandwidth must be finite and nonnegative");
+	if (model.cap_list[uav.ID].size() < user_count)
+		throw std::invalid_argument("ToN channel-capacity row is shorter than the user vector");
+
+	// candidate_users 可能是系统用户的子集，但其 ID 必须唯一且仍能安全索引全局状态。
+	vector<char> seen(user_count, 0);
+	for (const User& candidate : candidate_users)
+	{
+		const int user_id = candidate.ID;
+		if (user_id < 0 || user_id >= static_cast<int>(user_count))
+			throw std::invalid_argument("ToN candidate user ID is out of range");
+		if (seen[user_id])
+			throw std::invalid_argument("ToN candidate user IDs must be unique");
+		seen[user_id] = 1;
+
+		const User& user = model.users[user_id];
+		if (user.uType != HARD_UTILITY && user.uType != ELASTIC_UTILITY)
+			throw std::invalid_argument("ToN algorithms support only hard and elastic users");
+		if (!std::isfinite(user.weight) || user.weight < 0.0 ||
+			!std::isfinite(user.rMin) || user.rMin < 0.0)
+			throw std::invalid_argument("ToN user parameters must be finite and nonnegative");
+		if (!std::isfinite(current_utilities[user_id]) || current_utilities[user_id] < -EPS ||
+			!std::isfinite(base_bandwidths[user_id]) || base_bandwidths[user_id] < -EPS)
+			throw std::invalid_argument("ToN state entries must be finite and nonnegative");
+
+		const double channel = model.cap_list[uav.ID][user_id];
+		if (!std::isfinite(channel) || channel < 0.0)
+			throw std::invalid_argument("ToN channel capacity must be finite and nonnegative");
+		if (user.uType == HARD_UTILITY)
+		{
+			if (uav.ID >= static_cast<int>(model.Bth_list.size()) ||
+				user_id >= static_cast<int>(model.Bth_list[uav.ID].size()))
+				throw std::invalid_argument("ToN hard-user threshold ID is out of range");
+			double threshold = model.Bth_list[uav.ID][user_id];
+			if (std::isnan(threshold) || threshold < 0.0)
+				throw std::invalid_argument("ToN hard-user threshold must be nonnegative");
+		}
+
+		// m_i 至少应覆盖当前 UAV 已有基准带宽产生的绝对效用，否则平移状态自相矛盾。
+		const double base = std::max(0.0, base_bandwidths[user_id]);
+		const double current = std::max(0.0, current_utilities[user_id]);
+		const double base_utility = ton_absolute_utility(user, channel, base);
+		double state_tolerance = 1e-8 * std::max(1.0, base_utility);
+		if (base_utility > current + state_tolerance)
+			throw std::invalid_argument(
+				"ToN current utility must dominate the utility of the supplied base bandwidth");
+	}
+}
+
+/**
+ * @brief 为一个候选用户构造平移边际函数及其最小凹上界（LCM）参数。
+ * @return 仅当该用户在当前预算内具有可达的正边际效用时返回 true。
+ */
+bool ton_build_profile(
+	const SystemMd& model,
+	const Uav& uav,
+	int user_id,
+	const vector<double>& current_utilities,
+	const vector<double>& base_bandwidths,
+	TonUserProfile& profile)
+{
+	const User& user = model.users[user_id];
+	const double budget = std::max(0.0, uav.total_bandwidth);
+	profile = TonUserProfile();
+	profile.user_id = user_id;
+	profile.user_type = user.uType;
+	profile.weight = user.weight;
+	profile.channel = model.cap_list[uav.ID][user_id];
+	profile.base_bandwidth = std::max(0.0, base_bandwidths[user_id]);
+	profile.current_utility = std::max(0.0, current_utilities[user_id]);
+
+	if (user.uType == HARD_UTILITY)
+	{
+		// hard 用户只有“补足阈值”这一种正收益动作；已满足或预算内不可满足者直接剔除。
+		profile.hard_threshold = model.Bth_list[uav.ID][user_id];
+		profile.hard_full_utility = user.weight * std::log2(1.0 + user.rMin);
+		profile.max_marginal = std::max(
+			0.0, profile.hard_full_utility - profile.current_utility);
+		if (profile.max_marginal <= EPS || !std::isfinite(profile.hard_threshold))
+			return false;
+
+		profile.max_extra = std::max(
+			0.0, profile.hard_threshold - profile.base_bandwidth);
+		if (profile.max_extra > budget + EPS)
+			return false;
+		if (profile.max_extra <= EPS)
+		{
+			profile.max_extra = 0.0;
+			profile.retained = true;
+			return true;
+		}
+
+		profile.tau = profile.max_extra;
+		profile.activation_slope = profile.max_marginal / profile.max_extra;
+		profile.start_derivative = profile.activation_slope;
+		profile.end_derivative = profile.activation_slope;
+		profile.retained = true;
+		return true;
+	}
+
+	// elastic 用户允许使用至多整个本次预算，并在总带宽 b_old+x 上计算真实效用。
+	profile.max_extra = budget;
+	if (budget <= EPS || profile.channel <= 0.0 || profile.weight <= 0.0)
+		return false;
+	const double utility_at_base = ton_elastic_utility(
+		user, profile.channel, profile.base_bandwidth);
+	const double utility_at_max = ton_elastic_utility(
+		user, profile.channel, profile.base_bandwidth + budget);
+	profile.max_marginal = std::max(0.0, utility_at_max - profile.current_utility);
+	if (profile.max_marginal <= EPS)
+		return false;
+
+	double utility_tolerance = 1e-10 * std::max(1.0, utility_at_base);
+	if (profile.current_utility <= utility_at_base + utility_tolerance)
+	{
+		// 当前效用未高于基准带宽效用时，边际函数从 x=0 起就是凹函数，无激活前缀。
+		profile.tau = 0.0;
+		profile.activation_slope = ton_elastic_derivative(
+			profile, profile.base_bandwidth);
+	}
+	else
+	{
+		// break_even 是 g(b_old+x)=m_i 的零增益点；接触点 tau 必定位于其右侧。
+		double break_even = ton_elastic_inverse(profile, profile.current_utility) -
+			profile.base_bandwidth;
+		break_even = std::max(0.0, std::min(budget, break_even));
+		// 接触方程 x*g'(b_old+x)=g(b_old+x)-m_i 保证原点至接触点的弦与凹尾部相切。
+		auto tangent_residual = [&](double extra_bandwidth) {
+			double total_bandwidth = profile.base_bandwidth + extra_bandwidth;
+			double derivative = ton_elastic_derivative(profile, total_bandwidth);
+			double marginal = ton_elastic_utility(user, profile.channel, total_bandwidth) -
+				profile.current_utility;
+			return extra_bandwidth * derivative - marginal;
+			};
+
+		if (tangent_residual(budget) >= -TON_ROOT_TOL)
+		{
+			// 若预算端点前仍未出现内部根，则整个可行区间都由一条激活线段覆盖。
+			profile.tau = budget;
+		}
+		else
+		{
+			// 残差在 break_even 侧为正、预算端为负，使用区间二分稳定求内部接触点。
+			double lower = break_even;
+			double upper = budget;
+			for (int iteration = 0; iteration < 100; ++iteration)
+			{
+				double middle = 0.5 * (lower + upper);
+				if (tangent_residual(middle) > 0.0)
+					lower = middle;
+				else
+					upper = middle;
+				if (upper - lower <= TON_ROOT_TOL * std::max(1.0, budget))
+					break;
+			}
+			profile.tau = 0.5 * (lower + upper);
+		}
+
+		double marginal_at_tau = ton_elastic_utility(
+			user, profile.channel, profile.base_bandwidth + profile.tau) -
+			profile.current_utility;
+		profile.activation_slope = marginal_at_tau / profile.tau;
+	}
+
+	profile.start_derivative = profile.tau > EPS
+		? profile.activation_slope
+		: ton_elastic_derivative(profile, profile.base_bandwidth);
+	profile.end_derivative = profile.tau >= budget - EPS
+		? profile.activation_slope
+		: ton_elastic_derivative(profile, profile.base_bandwidth + budget);
+	profile.retained = true;
+	return true;
+}
+
+/** @brief 计算真实平移边际效用 h_i(x)=[g_i(b_i^{old}+x)-m_i]^+。 */
+double ton_marginal_value(const TonUserProfile& profile, double extra_bandwidth)
+{
+	extra_bandwidth = std::max(0.0, extra_bandwidth);
+	if (profile.user_type == HARD_UTILITY)
+	{
+		if (profile.base_bandwidth + extra_bandwidth >= profile.hard_threshold - EPS)
+			return std::max(0.0, profile.hard_full_utility - profile.current_utility);
+		return 0.0;
+	}
+	double absolute_utility = profile.weight * std::log2(
+		1.0 + (profile.base_bandwidth + extra_bandwidth) * profile.channel);
+	return std::max(0.0, absolute_utility - profile.current_utility);
+}
+
+/**
+ * @brief 返回在 LCM 中与试探导数 lambda 对应的最小新增带宽。
+ *
+ * 当 lambda 恰好等于线性激活段斜率时，先返回该平台的左端点 0；同斜率平台上的
+ * 剩余预算随后按用户 ID 进行规范填充，从而将非唯一最优解固定为可复现的 canonical 解。
+ */
+double ton_relaxed_min_allocation(const TonUserProfile& profile, double lambda)
+{
+	if (profile.max_extra <= EPS)
+		return 0.0;
+	if (profile.tau > EPS && ton_nearly_equal(profile.activation_slope, lambda))
+		return 0.0;
+	if (profile.end_derivative > lambda &&
+		!ton_nearly_equal(profile.end_derivative, lambda))
+		return profile.max_extra;
+	if (profile.start_derivative < lambda &&
+		!ton_nearly_equal(profile.start_derivative, lambda))
+		return 0.0;
+	if (profile.user_type == HARD_UTILITY)
+		return profile.activation_slope > lambda ? profile.max_extra : 0.0;
+	if (lambda <= 0.0)
+		return profile.max_extra;
+
+	double extra = profile.weight / (lambda * std::log(2.0)) -
+		1.0 / profile.channel - profile.base_bandwidth;
+	double lower = profile.tau > EPS ? profile.tau : 0.0;
+	return std::max(lower, std::min(profile.max_extra, extra));
+}
+
+/**
+ * @brief 将内部新增带宽向量物化为单 UAV 返回结果，并重新计算真实边际效用。
+ * @return allocatedBandwidth 为新增带宽，allocatedValue/totalValue 为真实边际效用。
+ */
+KnapsackResult ton_make_marginal_result(
+	int uav_id,
+	const vector<TonUserProfile>& profiles,
+	const vector<double>& allocations)
+{
+	KnapsackResult result;
+	result.uav_id = uav_id;
+	// 按 user_id 输出，避免候选输入顺序影响结果文件和确定性测试。
+	vector<size_t> order(profiles.size());
+	std::iota(order.begin(), order.end(), size_t(0));
+	std::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) {
+		return profiles[lhs].user_id < profiles[rhs].user_id;
+		});
+
+	for (size_t index : order)
+	{
+		const TonUserProfile& profile = profiles[index];
+		double bandwidth = std::max(0.0, allocations[index]);
+		double value = ton_marginal_value(profile, bandwidth);
+		if (value <= EPS)
+			continue;
+		result.allocatedList.push_back(profile.user_id);
+		result.allocatedBandwidth[profile.user_id] = bandwidth;
+		result.allocatedValue[profile.user_id] = value;
+		result.totalWeight += bandwidth;
+		result.totalValue += value;
+		if (profile.user_type == HARD_UTILITY)
+		{
+			result.hardWeight += bandwidth;
+			result.hardValue += value;
+		}
+		else
+		{
+			result.elasticWeight += bandwidth;
+			result.elasticValue += value;
+		}
+	}
+	return result;
+}
+
+/**
+ * @brief 根据最终总带宽完整重建兼容旧实验框架的绝对结果。
+ *
+ * 该函数同时重算列表、映射以及 hard/elastic 聚合字段，避免删除重复关联后遗留旧总值。
+ */
+KnapsackResult ton_make_absolute_result(
+	const SystemMd& model,
+	int uav_id,
+	const map<int, double>& bandwidths)
+{
+	KnapsackResult result;
+	result.uav_id = uav_id;
+	for (const auto& entry : bandwidths)
+	{
+		const int user_id = entry.first;
+		const double bandwidth = std::max(0.0, entry.second);
+		if (user_id < 0 || user_id >= static_cast<int>(model.users.size()) ||
+			uav_id < 0 || uav_id >= static_cast<int>(model.cap_list.size()))
+			throw std::invalid_argument("ToN final allocation contains an out-of-range ID");
+		double value = ton_absolute_utility(
+			model.users[user_id], model.cap_list[uav_id][user_id], bandwidth);
+		if (value <= EPS)
+			continue;
+		result.allocatedList.push_back(user_id);
+		result.allocatedBandwidth[user_id] = bandwidth;
+		result.allocatedValue[user_id] = value;
+		result.totalWeight += bandwidth;
+		result.totalValue += value;
+		if (model.users[user_id].uType == HARD_UTILITY)
+		{
+			result.hardWeight += bandwidth;
+			result.hardValue += value;
+		}
+		else
+		{
+			result.elasticWeight += bandwidth;
+			result.elasticValue += value;
+		}
+	}
+	return result;
+}
+
+/**
+ * @brief 对完整全单调矩阵递归执行 SMAWK，在线性查询次数内求各行最小列。
+ * @param rows 当前递归层保留的行标签。
+ * @param columns 当前递归层保留的列标签。
+ * @param minima 按原始行标签保存其最小值所在列。
+ * @param positions 复用的“列标签到约简后位置”临时数组。
+ * @param lookup 矩阵元素查询回调；矩阵不需要显式存储。
+ */
+template <typename Lookup>
+void ton_smawk_recursive(
+	const vector<int>& rows,
+	const vector<int>& columns,
+	vector<int>& minima,
+	vector<int>& positions,
+	const Lookup& lookup)
+{
+	if (rows.empty())
+		return;
+
+	// 列约简：利用全单调性弹出不可能成为任何行最优解的列。
+	vector<int> reduced_columns;
+	reduced_columns.reserve(std::min(rows.size(), columns.size()));
+	for (int column : columns)
+	{
+		while (!reduced_columns.empty())
+		{
+			size_t row_position = reduced_columns.size() - 1;
+			int row = rows[row_position];
+			if (lookup(row, column) < lookup(row, reduced_columns.back()))
+				reduced_columns.pop_back();
+			else
+				break;
+		}
+		if (reduced_columns.size() < rows.size())
+			reduced_columns.push_back(column);
+	}
+
+	// 递归求奇数位置行；这些结果将给相邻偶数位置行提供单调搜索边界。
+	vector<int> odd_rows;
+	odd_rows.reserve(rows.size() / 2);
+	for (size_t index = 1; index < rows.size(); index += 2)
+		odd_rows.push_back(rows[index]);
+	ton_smawk_recursive(odd_rows, reduced_columns, minima, positions, lookup);
+
+	// 在相邻奇数行最优列之间扫描偶数位置行，完成插值阶段。
+	for (size_t index = 0; index < reduced_columns.size(); ++index)
+		positions[reduced_columns[index]] = static_cast<int>(index);
+	for (size_t row_position = 0; row_position < rows.size(); row_position += 2)
+	{
+		int left = row_position == 0
+			? 0
+			: positions[minima[rows[row_position - 1]]];
+		int right = row_position + 1 >= rows.size()
+			? static_cast<int>(reduced_columns.size()) - 1
+			: positions[minima[rows[row_position + 1]]];
+		int best_column = reduced_columns[left];
+		double best_value = lookup(rows[row_position], best_column);
+		for (int index = left + 1; index <= right; ++index)
+		{
+			int column = reduced_columns[index];
+			double value = lookup(rows[row_position], column);
+			if (value < best_value)
+			{
+				best_value = value;
+				best_column = column;
+			}
+		}
+		minima[rows[row_position]] = best_column;
+	}
+}
+
+/** @brief 构造行列标签并求方形全单调矩阵的全部行最小列。 */
+template <typename Lookup>
+vector<int> ton_smawk_row_minima(int maximum_index, const Lookup& lookup)
+{
+	vector<int> rows(maximum_index + 1);
+	vector<int> columns(maximum_index + 1);
+	std::iota(rows.begin(), rows.end(), 0);
+	std::iota(columns.begin(), columns.end(), 0);
+	vector<int> minima(maximum_index + 1, -1);
+	vector<int> positions(maximum_index + 1, -1);
+	ton_smawk_recursive(rows, columns, minima, positions, lookup);
+	return minima;
+}
+
+/**
+ * @brief 计算 Phi_i(q)：用户取得 q 个缩放利润单位所需的最小新增带宽。
+ *
+ * elastic 用户通过绝对效用反函数减去 b_i^{old}；hard 用户只会以完整利润调用本函数。
+ */
+double ton_scaled_bandwidth_cost(
+	const TonUserProfile& profile,
+	int scaled_profit,
+	double delta)
+{
+	if (scaled_profit <= 0)
+		return 0.0;
+	if (profile.user_type == HARD_UTILITY)
+		return profile.max_extra;
+	double target = profile.current_utility + scaled_profit * delta;
+	double total_bandwidth = ton_elastic_inverse(profile, target);
+	double extra = std::max(0.0, total_bandwidth - profile.base_bandwidth);
+	if (extra > profile.max_extra &&
+		extra - profile.max_extra <= 1e-8 * std::max(1.0, profile.max_extra))
+		extra = profile.max_extra;
+	return extra;
+}
+
+} // namespace
+
 vector<string> split(const string& s, char delimiter) {
 	vector<string> tokens;
 	string token;
@@ -4108,6 +4621,782 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::approposed_multiUA
 	return { uav_results, user_results };
 }
 
+
+/**
+ * @brief 使用 ToN Algorithm 1 求解平移后的单 UAV 边际效用问题。
+ *
+ * 函数在新增带宽坐标中构造每个用户的最小凹上界，利用临界导数求解松弛问题，
+ * 并在出现 unsafe 用户时执行二候选舍入。
+ * @param uav 待评估 UAV；其 total_bandwidth 是本次可分配的新增带宽预算。
+ * @param candidate_users 本次调用考虑的可服务用户集合。
+ * @param current_utilities 按用户 ID 索引的当前网络绝对效用 m_j。
+ * @param base_bandwidths 按用户 ID 索引的当前 UAV 已有基准带宽 b_{kj}^{old}。
+ * @return 新增带宽以及由原始非凹边际函数重新计算的真实边际效用。
+ */
+KnapsackResult BAProblem::AlgFast_singleUAV_ToN(
+	const Uav& uav,
+	const vector<User>& candidate_users,
+	const vector<double>& current_utilities,
+	const vector<double>& base_bandwidths)
+{
+	ton_validate_single_inputs(
+		sysModel, uav, candidate_users, current_utilities, base_bandwidths);
+	KnapsackResult empty_result;
+	empty_result.uav_id = uav.ID;
+	const double budget = std::max(0.0, uav.total_bandwidth);
+	if (candidate_users.empty() || budget <= EPS)
+		return empty_result;
+
+	// 先剔除零增益、不可达或预算内无法满足的用户，仅保留有效边际配置。
+	vector<TonUserProfile> profiles;
+	profiles.reserve(candidate_users.size());
+	for (const User& candidate : candidate_users)
+	{
+		TonUserProfile profile;
+		if (ton_build_profile(
+			sysModel, uav, candidate.ID, current_utilities, base_bandwidths, profile))
+			profiles.push_back(profile);
+	}
+	if (profiles.empty())
+		return empty_result;
+
+	vector<double> allocations(profiles.size(), 0.0);
+	double sum_of_upper_bounds = 0.0;
+	for (const TonUserProfile& profile : profiles)
+		sum_of_upper_bounds += profile.max_extra;
+	if (sum_of_upper_bounds <= budget + EPS)
+	{
+		// 每个用户的最大新增带宽之和不超预算时，无需搜索水位，全部取上界即最优。
+		for (size_t index = 0; index < profiles.size(); ++index)
+			allocations[index] = profiles[index].max_extra;
+		return ton_make_marginal_result(uav.ID, profiles, allocations);
+	}
+
+	// critical_derivatives 收集每个 LCM 可行段的首尾导数；重复斜率只在搜索序列中去重。
+	vector<double> critical_derivatives;
+	critical_derivatives.reserve(2 * profiles.size());
+	for (const TonUserProfile& profile : profiles)
+	{
+		if (profile.max_extra <= EPS)
+			continue;
+		critical_derivatives.push_back(profile.start_derivative);
+		critical_derivatives.push_back(profile.end_derivative);
+	}
+	std::sort(critical_derivatives.begin(), critical_derivatives.end(),
+		std::greater<double>());
+	vector<double> unique_derivatives;
+	for (double derivative : critical_derivatives)
+	{
+		if (unique_derivatives.empty() ||
+			!ton_nearly_equal(unique_derivatives.back(), derivative))
+			unique_derivatives.push_back(derivative);
+	}
+	if (unique_derivatives.empty())
+		return ton_make_marginal_result(uav.ID, profiles, allocations);
+
+	// minimum_total 是给定导数下各用户“最小”规范分配之和；plateau_capacity 则是
+	// 所有同斜率线性激活段还能承接的带宽。预算落在二者之间时，该导数就是最优水位。
+	auto evaluate_critical = [&](double derivative, vector<double>* minimum_allocations) {
+		double minimum_total = 0.0;
+		double plateau_capacity = 0.0;
+		if (minimum_allocations != nullptr)
+			minimum_allocations->assign(profiles.size(), 0.0);
+		for (size_t index = 0; index < profiles.size(); ++index)
+		{
+			const TonUserProfile& profile = profiles[index];
+			double allocation = ton_relaxed_min_allocation(profile, derivative);
+			minimum_total += allocation;
+			if (minimum_allocations != nullptr)
+				(*minimum_allocations)[index] = allocation;
+			if (profile.tau > EPS &&
+				ton_nearly_equal(profile.activation_slope, derivative))
+				plateau_capacity += profile.tau;
+		}
+		return std::make_pair(minimum_total, plateau_capacity);
+		};
+
+	int search_left = 0;
+	int search_right = static_cast<int>(unique_derivatives.size()) - 1;
+	int exact_index = -1;
+	while (search_left <= search_right)
+	{
+		int middle = search_left + (search_right - search_left) / 2;
+		auto totals = evaluate_critical(unique_derivatives[middle], nullptr);
+		if (totals.first > budget + EPS)
+		{
+			// 分配过多说明试探导数低于 lambda*；序列按降序排列，因此向更大导数方向搜索。
+			search_right = middle - 1;
+		}
+		else if (totals.first + totals.second < budget - EPS)
+		{
+			// 即使用尽该斜率平台仍分配不足，说明试探导数高于 lambda*，应搜索更小导数。
+			search_left = middle + 1;
+		}
+		else
+		{
+			exact_index = middle;
+			break;
+		}
+	}
+
+	if (exact_index >= 0)
+	{
+		// lambda* 等于某个临界斜率：先取各用户最小分配，再在等斜率平台中按用户 ID 填充。
+		// 这种确定性顺序保证最终至多产生一个位于 (0,tau_i) 的 unsafe 用户。
+		auto totals = evaluate_critical(
+			unique_derivatives[exact_index], &allocations);
+		double remaining = std::max(0.0, budget - totals.first);
+		vector<size_t> plateau_users;
+		for (size_t index = 0; index < profiles.size(); ++index)
+		{
+			if (profiles[index].tau > EPS &&
+				ton_nearly_equal(
+					profiles[index].activation_slope,
+					unique_derivatives[exact_index]))
+				plateau_users.push_back(index);
+		}
+		std::sort(plateau_users.begin(), plateau_users.end(),
+			[&](size_t lhs, size_t rhs) {
+				return profiles[lhs].user_id < profiles[rhs].user_id;
+			});
+		for (size_t index : plateau_users)
+		{
+			double added = std::min(remaining, profiles[index].tau);
+			allocations[index] = added;
+			remaining -= added;
+			if (remaining <= EPS)
+				break;
+		}
+		if (remaining > 1e-7 * std::max(1.0, budget))
+			throw std::logic_error("ToN canonical plateau filling did not use the budget");
+	}
+	else
+	{
+		// 二分结束后，search_right 对应 gamma_p，search_left 对应 gamma_{p+1}，
+		// 最优导数严格位于这两个相邻临界导数之间。
+		if (search_right < 0 ||
+			search_left >= static_cast<int>(unique_derivatives.size()) ||
+			search_right + 1 != search_left)
+			throw std::logic_error("ToN critical-derivative search failed to bracket lambda");
+		const double upper_derivative = unique_derivatives[search_right];
+		const double lower_derivative = unique_derivatives[search_left];
+		double fixed_bandwidth = 0.0;
+		vector<size_t> strictly_concave_users;
+		for (size_t index = 0; index < profiles.size(); ++index)
+		{
+			const TonUserProfile& profile = profiles[index];
+			if (profile.max_extra <= EPS)
+				continue;
+			if (profile.end_derivative > upper_derivative ||
+				ton_nearly_equal(profile.end_derivative, upper_derivative))
+			{
+				allocations[index] = profile.max_extra;
+				fixed_bandwidth += profile.max_extra;
+			}
+			else if (profile.start_derivative < lower_derivative ||
+				ton_nearly_equal(profile.start_derivative, lower_derivative))
+			{
+				allocations[index] = 0.0;
+			}
+			else
+			{
+				if (profile.user_type != ELASTIC_UTILITY)
+					throw std::logic_error(
+						"A hard user cannot cross a derivative interval");
+				strictly_concave_users.push_back(index);
+			}
+		}
+		if (strictly_concave_users.empty())
+			throw std::logic_error("ToN derivative bracket has no elastic crossing user");
+
+		// 对跨越该导数区间的 elastic 用户，KKT 条件给出共同导数 lambda*。
+		// 将 x_i=w_i/(lambda* ln2)-1/C_i-b_i^{old} 代入预算约束可直接解出 lambda*。
+		double remaining = budget - fixed_bandwidth;
+		double numerator = 0.0;
+		double denominator = remaining;
+		for (size_t index : strictly_concave_users)
+		{
+			const TonUserProfile& profile = profiles[index];
+			numerator += profile.weight / std::log(2.0);
+			denominator += 1.0 / profile.channel + profile.base_bandwidth;
+		}
+		if (remaining < -EPS || denominator <= 0.0 || numerator <= 0.0)
+			throw std::logic_error("ToN shifted water level has invalid parameters");
+		double optimal_derivative = numerator / denominator;
+		for (size_t index : strictly_concave_users)
+		{
+			const TonUserProfile& profile = profiles[index];
+			double extra = profile.weight /
+				(optimal_derivative * std::log(2.0)) -
+				1.0 / profile.channel - profile.base_bandwidth;
+			allocations[index] = std::max(
+				profile.tau, std::min(profile.max_extra, extra));
+		}
+
+		// 仅修正浮点累计误差；若偏差超过容差，则说明临界区间或闭式水位计算有误。
+		double total_allocated = 0.0;
+		for (double bandwidth : allocations)
+			total_allocated += bandwidth;
+		double correction = budget - total_allocated;
+		double correction_tolerance = 1e-7 * std::max(1.0, budget);
+		if (std::abs(correction) > correction_tolerance)
+			throw std::logic_error("ToN shifted water-level allocation missed the budget");
+		if (std::abs(correction) > 0.0)
+		{
+			size_t index = strictly_concave_users.front();
+			allocations[index] = std::max(
+				profiles[index].tau,
+				std::min(profiles[index].max_extra, allocations[index] + correction));
+		}
+	}
+
+	// LCM 解中 0<x_i<tau_i 的用户在原始边际函数上不可直接实现，称为 unsafe 用户。
+	vector<size_t> unsafe_users;
+	for (size_t index = 0; index < profiles.size(); ++index)
+	{
+		double tolerance = 1e-8 * std::max(1.0, profiles[index].tau);
+		if (allocations[index] > EPS &&
+			allocations[index] < profiles[index].tau - tolerance)
+			unsafe_users.push_back(index);
+	}
+	if (unsafe_users.empty())
+		return ton_make_marginal_result(uav.ID, profiles, allocations);
+	if (unsafe_users.size() != 1)
+		throw std::logic_error("ToN canonical LCM solution has multiple unsafe users");
+
+	// canonical 解保证至多一个 unsafe 用户。比较：
+	// 1) 删除该用户并保留其余分配；2) 仅将该用户服务到 tau_i。返回真实边际值较大者。
+	const size_t unsafe_index = unsafe_users.front();
+	vector<double> without_unsafe = allocations;
+	without_unsafe[unsafe_index] = 0.0;
+	vector<double> unsafe_only(profiles.size(), 0.0);
+	unsafe_only[unsafe_index] = profiles[unsafe_index].tau;
+	KnapsackResult candidate_without = ton_make_marginal_result(
+		uav.ID, profiles, without_unsafe);
+	KnapsackResult candidate_only = ton_make_marginal_result(
+		uav.ID, profiles, unsafe_only);
+	return candidate_only.totalValue > candidate_without.totalValue + EPS
+		? candidate_only
+		: candidate_without;
+}
+
+/**
+ * @brief 使用 ToN Algorithm 2 求解平移后的单 UAV 边际效用问题。
+ *
+ * 函数缩放真实边际利润：elastic 用户层由局部 SMAWK 加速，hard 用户层只保留
+ * “不选/取得完整利润”两个有限选项；两行精确利润 DP 完成后再按逐层决策表回溯。
+ * @param uav 待评估 UAV；其 total_bandwidth 是本次可分配的新增带宽预算。
+ * @param candidate_users 本次调用考虑的可服务用户集合。
+ * @param current_utilities 按用户 ID 索引的当前网络绝对效用 m_j。
+ * @param base_bandwidths 按用户 ID 索引的当前 UAV 已有基准带宽 b_{kj}^{old}。
+ * @param epsilon 近似参数，必须满足 0 < epsilon < 1/2。
+ * @return 新增带宽以及回溯后重新计算的真实边际效用。
+ */
+KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
+	const Uav& uav,
+	const vector<User>& candidate_users,
+	const vector<double>& current_utilities,
+	const vector<double>& base_bandwidths,
+	double epsilon)
+{
+	if (!std::isfinite(epsilon) || epsilon <= 0.0 || epsilon >= 0.5)
+		throw std::invalid_argument("ToN epsilon must satisfy 0 < epsilon < 1/2");
+	ton_validate_single_inputs(
+		sysModel, uav, candidate_users, current_utilities, base_bandwidths);
+	KnapsackResult empty_result;
+	empty_result.uav_id = uav.ID;
+	const double budget = std::max(0.0, uav.total_bandwidth);
+	if (candidate_users.empty() || budget <= EPS)
+		return empty_result;
+
+	// Algorithm 1 的可行真实边际值 c 同时给出 opt/2 <= c <= opt，用于安全设置缩放粒度。
+	KnapsackResult fast_result = AlgFast_singleUAV_ToN(
+		uav, candidate_users, current_utilities, base_bandwidths);
+	const double reference_value = fast_result.totalValue;
+	if (reference_value <= EPS)
+		return empty_result;
+
+	// Delta=epsilon*c/n，P=floor(2n/epsilon)；P 覆盖由 c 下界推出的最优缩放利润范围。
+	const int user_count = static_cast<int>(candidate_users.size());
+	const double delta = epsilon * reference_value / user_count;
+	long double raw_state_limit = std::floor(
+		2.0L * static_cast<long double>(user_count) /
+		static_cast<long double>(epsilon));
+	if (raw_state_limit > static_cast<long double>(std::numeric_limits<int>::max()))
+		throw std::length_error("ToN scaled-profit state range exceeds int capacity");
+	const int state_limit = static_cast<int>(raw_state_limit);
+	if (delta <= 0.0 || !std::isfinite(delta) || state_limit <= 0)
+		throw std::logic_error("ToN scaling parameters are not finite and positive");
+
+	// maximum_scaled_profit[i] 即 p_i=floor(max_marginal_i/Delta)，并截断到 DP 状态上界 P。
+	vector<TonUserProfile> profiles(user_count);
+	vector<int> maximum_scaled_profit(user_count, 0);
+	for (int index = 0; index < user_count; ++index)
+	{
+		TonUserProfile profile;
+		bool retained = ton_build_profile(
+			sysModel,
+			uav,
+			candidate_users[index].ID,
+			current_utilities,
+			base_bandwidths,
+			profile);
+		profiles[index] = profile;
+		if (!retained || profile.max_marginal <= EPS)
+			continue;
+		double scaled = std::floor(profile.max_marginal / delta);
+		if (!std::isfinite(scaled) || scaled <= 0.0)
+			continue;
+		maximum_scaled_profit[index] = std::min(
+			state_limit, static_cast<int>(std::min(
+				scaled, static_cast<double>(std::numeric_limits<int>::max()))));
+	}
+
+	// previous/current 是 A(i-1,p) 与 A(i,p) 的两行滚动数组：值为取得精确利润 p
+	// 所需的最小新增带宽。choices[i][p] 记录第 i 个用户贡献的利润，用于最终回溯。
+	const double dp_sentinel = budget + std::max(1.0, std::abs(budget) + 1.0);
+	vector<double> previous(state_limit + 1, dp_sentinel);
+	vector<double> current(state_limit + 1, dp_sentinel);
+	vector<vector<int>> choices(
+		user_count, vector<int>(state_limit + 1, 0));
+	previous[0] = 0.0;
+	const double dp_tolerance = 1e-10 * std::max(1.0, budget);
+
+	for (int user_index = 0; user_index < user_count; ++user_index)
+	{
+		// current=previous 显式保留 q=0（不激活当前用户）选项。
+		current = previous;
+		const TonUserProfile& profile = profiles[user_index];
+		const int user_profit = maximum_scaled_profit[user_index];
+		if (user_profit <= 0)
+		{
+			previous.swap(current);
+			continue;
+		}
+
+		if (profile.user_type == HARD_UTILITY)
+		{
+			// hard 用户的中间正利润均不可实现/被支配，只允许 q=0 或 q=p_i 且补足完整阈值。
+			const double full_cost = profile.max_extra;
+			for (int profit = user_profit; profit <= state_limit; ++profit)
+			{
+				double prefix = previous[profit - user_profit];
+				if (prefix > budget + dp_tolerance)
+					continue;
+				double candidate_cost = prefix + full_cost;
+				if (candidate_cost <= budget + dp_tolerance &&
+					candidate_cost < current[profit] - dp_tolerance)
+				{
+					current[profit] = candidate_cost;
+					choices[user_index][profit] = user_profit;
+				}
+			}
+		}
+		else
+		{
+			// bandwidth_cost[q]=Phi_i(q)，即取得 q*Delta 真实边际效用所需的最小新增带宽。
+			vector<double> bandwidth_cost(user_profit + 1, 0.0);
+			for (int profit = 1; profit <= user_profit; ++profit)
+			{
+				bandwidth_cost[profit] = ton_scaled_bandwidth_cost(
+					profile, profit, delta);
+				if (!std::isfinite(bandwidth_cost[profit]) ||
+					bandwidth_cost[profit] < -EPS ||
+					bandwidth_cost[profit] > budget + 1e-7 * std::max(1.0, budget))
+					throw std::logic_error("ToN elastic scaled bandwidth cost is infeasible");
+			}
+
+			// 活跃转移矩阵仅在 1<=q<=p_i 的 staircase 区域有真实含义。completion_base
+			// 和 completion_step 用有限且足够大的凸延拓补齐矩阵，以满足标准 SMAWK 的完整矩阵
+			// 接口；补全项绝不作为真实 DP 选项，q=0 仍由上面的 current=previous 单独比较。
+			const double completion_base = 4.0 * dp_sentinel + 1.0;
+			const double completion_step = completion_base + budget + 1.0;
+			auto completed_entry = [&](int row, int column) {
+				// row=p 为本层总利润，column=r 为前一层利润，二者之差 q=p-r 是当前用户贡献。
+				int profit = row - column;
+				double transition_cost = 0.0;
+				if (profit <= 0)
+					transition_cost = completion_base +
+						static_cast<double>(-profit) * completion_step;
+				else if (profit > user_profit)
+					transition_cost = completion_base +
+						static_cast<double>(profit - user_profit - 1) * completion_step;
+				else
+					transition_cost = bandwidth_cost[profit];
+				return previous[column] + transition_cost;
+				};
+
+			// SMAWK 返回每个总利润状态 p 对应的最优前缀利润 r。
+			vector<int> row_minima = ton_smawk_row_minima(
+				state_limit, completed_entry);
+
+			// 小规模确定性调用逐行与 O(P^2) 穷举核对，专门防止有限补全或索引映射出错。
+			if (state_limit <= 128)
+			{
+				for (int row = 0; row <= state_limit; ++row)
+				{
+					double reference_minimum = completed_entry(row, 0);
+					for (int column = 1; column <= state_limit; ++column)
+						reference_minimum = std::min(
+							reference_minimum, completed_entry(row, column));
+					double smawk_minimum = completed_entry(row, row_minima[row]);
+					if (std::abs(reference_minimum - smawk_minimum) >
+						1e-8 * std::max(1.0, std::abs(reference_minimum)))
+						throw std::logic_error(
+							"ToN SMAWK row minimum disagrees with quadratic enumeration");
+				}
+			}
+
+			// 只把落回真实 staircase 区域的 SMAWK 最优列写入 DP；补全区域会被过滤。
+			for (int total_profit = 0; total_profit <= state_limit; ++total_profit)
+			{
+				int prefix_profit = row_minima[total_profit];
+				int contributed_profit = total_profit - prefix_profit;
+				if (contributed_profit < 1 || contributed_profit > user_profit ||
+					prefix_profit < 0 || prefix_profit > state_limit ||
+					previous[prefix_profit] > budget + dp_tolerance)
+					continue;
+				double candidate_cost = previous[prefix_profit] +
+					bandwidth_cost[contributed_profit];
+				if (candidate_cost <= budget + dp_tolerance &&
+					candidate_cost < current[total_profit] - dp_tolerance)
+				{
+					current[total_profit] = candidate_cost;
+					choices[user_index][total_profit] = contributed_profit;
+				}
+			}
+		}
+		// 滚动到下一用户层；完整 choices 表仍保留每层的回溯信息。
+		previous.swap(current);
+	}
+
+	// 从高到低选取预算内可达的最大精确缩放利润 p*。
+	int best_profit = 0;
+	for (int profit = state_limit; profit >= 0; --profit)
+	{
+		if (previous[profit] <= budget + dp_tolerance)
+		{
+			best_profit = profit;
+			break;
+		}
+	}
+	if (best_profit <= 0)
+		return empty_result;
+
+	// choices[i][remaining_profit] 给出第 i 个用户的 q_i，反向扣除直至回到利润 0。
+	vector<int> selected_profit(user_count, 0);
+	int remaining_profit = best_profit;
+	for (int user_index = user_count - 1; user_index >= 0; --user_index)
+	{
+		int contribution = choices[user_index][remaining_profit];
+		if (contribution < 0 || contribution > remaining_profit)
+			throw std::logic_error("ToN DP backtracking encountered an invalid choice");
+		selected_profit[user_index] = contribution;
+		remaining_profit -= contribution;
+	}
+	if (remaining_profit != 0)
+		throw std::logic_error("ToN DP backtracking did not reach the zero state");
+
+	// 缩放利润仅用于选解；回溯得到带宽后必须由原始 h_i(x) 重算真实边际效用。
+	vector<double> allocations(user_count, 0.0);
+	for (int user_index = 0; user_index < user_count; ++user_index)
+	{
+		if (selected_profit[user_index] > 0)
+			allocations[user_index] = ton_scaled_bandwidth_cost(
+				profiles[user_index], selected_profit[user_index], delta);
+	}
+	KnapsackResult result = ton_make_marginal_result(
+		uav.ID, profiles, allocations);
+	if (result.totalWeight > budget + 1e-7 * std::max(1.0, budget))
+		throw std::logic_error("ToN DP backtracking exceeds the UAV bandwidth budget");
+	double recorded_scaled_value = best_profit * delta;
+	if (result.totalValue + 1e-7 * std::max(1.0, recorded_scaled_value) <
+		recorded_scaled_value)
+		throw std::logic_error("ToN actual marginal value is below its recorded scaled profit");
+	return result;
+}
+
+/**
+ * @brief 执行 ToN 多 UAV 固定状态贪心选择及残余带宽分配。
+ *
+ * 每轮让所有未选 UAV 在同一份冻结效用状态上计算候选边际增益。初步分配完成后，
+ * 每个用户仅保留一架 owner UAV；随后按 UAV 的贪心选中顺序，把残余带宽只分给
+ * 当前 owner（a 类）和全局尚未服务的用户（c 类），排除已由其他 UAV 服务的 b 类用户。
+ * @param uavs 参与贪心选择的 UAV 集合。
+ * @param users 当前系统模型中的完整用户集合。
+ * @param used_single_alg 1 表示 AlgFast_singleUAV_ToN，2 表示 AlgBetter_singleUAV_ToN。
+ * @param epsilon AlgBetter_singleUAV_ToN 使用的近似参数，必须满足 0 < epsilon < 1/2。
+ * @return 满足旧实验约定的最终绝对 UAV 结果，以及与其一致的逐用户结果。
+ */
+pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN(
+	const vector<Uav>& uavs,
+	const vector<User>& users,
+	int used_single_alg,
+	double epsilon)
+{
+	if (used_single_alg != 1 && used_single_alg != 2)
+		throw std::invalid_argument("ToN single-UAV selector must be 1 or 2");
+	if (!std::isfinite(epsilon) || epsilon <= 0.0 || epsilon >= 0.5)
+		throw std::invalid_argument("ToN epsilon must satisfy 0 < epsilon < 1/2");
+	const int user_count = static_cast<int>(sysModel.users.size());
+	const int model_uav_count = static_cast<int>(sysModel.uavs.size());
+	if (users.size() != sysModel.users.size())
+		throw std::invalid_argument("ToN users must match sysModel.users.size()");
+
+	// 该实现仍以 ID 直接索引系统向量，因此先验证用户和系统 UAV 的 ID 完整且唯一。
+	vector<char> seen_users(user_count, 0);
+	for (const User& user : users)
+	{
+		if (user.ID < 0 || user.ID >= user_count || seen_users[user.ID])
+			throw std::invalid_argument("ToN users must have unique in-range IDs");
+		seen_users[user.ID] = 1;
+	}
+	vector<char> seen_model_uavs(model_uav_count, 0);
+	vector<KnapsackResult> uav_results(model_uav_count);
+	for (const Uav& model_uav : sysModel.uavs)
+	{
+		if (model_uav.ID < 0 || model_uav.ID >= model_uav_count ||
+			seen_model_uavs[model_uav.ID])
+			throw std::invalid_argument("ToN system UAVs must have unique in-range IDs");
+		seen_model_uavs[model_uav.ID] = 1;
+		uav_results[model_uav.ID].uav_id = model_uav.ID;
+	}
+
+	// participating 标记本次实际参与的 UAV；uav_by_id 保存其调用时预算，供残余阶段复用。
+	vector<Uav> uav_by_id(model_uav_count);
+	vector<char> participating(model_uav_count, 0);
+	for (const Uav& uav : uavs)
+	{
+		if (uav.ID < 0 || uav.ID >= model_uav_count || participating[uav.ID])
+			throw std::invalid_argument("ToN input UAVs must have unique in-range IDs");
+		if (!std::isfinite(uav.total_bandwidth) || uav.total_bandwidth < -EPS)
+			throw std::invalid_argument("ToN input UAV bandwidth must be nonnegative");
+		participating[uav.ID] = 1;
+		uav_by_id[uav.ID] = uav;
+	}
+	if (uavs.empty())
+		return { uav_results, construct_user_results(uav_results) };
+
+	// selected 防止同一 UAV 被重复选择；selection_order 同时决定后续平局和残余处理顺序。
+	vector<char> selected(model_uav_count, 0);
+	vector<int> selection_order;
+	selection_order.reserve(uavs.size());
+	vector<double> current_utilities(user_count, 0.0);
+	const vector<double> zero_base_bandwidths(user_count, 0.0);
+	const vector<User> empty_candidates;
+
+	// 将两种单 UAV oracle 统一为相同的“当前绝对效用 + 基准带宽”调用接口。
+	auto solve_single_uav = [&](const Uav& candidate_uav,
+		const vector<User>& candidates,
+		const vector<double>& state,
+		const vector<double>& bases) {
+		if (used_single_alg == 1)
+			return AlgFast_singleUAV_ToN(candidate_uav, candidates, state, bases);
+		return AlgBetter_singleUAV_ToN(
+			candidate_uav, candidates, state, bases, epsilon);
+		};
+
+	for (size_t round = 0; round < uavs.size(); ++round)
+	{
+		// frozen_state 是本轮所有候选共同看到的旧 m_j；候选评估期间严禁更新 current_utilities。
+		const vector<double> frozen_state = current_utilities;
+		int best_uav_id = -1;
+		double best_score = -INF;
+		KnapsackResult best_marginal_result;
+		// 分数使用单 UAV 返回的真实边际 totalValue；EPS 内平局选择较小 UAV ID 以保证复现。
+		for (const Uav& candidate_uav : uavs)
+		{
+			const int uav_id = candidate_uav.ID;
+			if (selected[uav_id])
+				continue;
+			auto service_it = sysModel.uav_serviceable_users_map.find(uav_id);
+			const vector<User>& candidates = service_it ==
+				sysModel.uav_serviceable_users_map.end()
+				? empty_candidates
+				: service_it->second;
+			KnapsackResult marginal_result = solve_single_uav(
+				candidate_uav, candidates, frozen_state, zero_base_bandwidths);
+			double score = marginal_result.totalValue;
+			if (best_uav_id < 0 || score > best_score + EPS ||
+				(std::abs(score - best_score) <= EPS && uav_id < best_uav_id))
+			{
+				best_uav_id = uav_id;
+				best_score = score;
+				best_marginal_result = marginal_result;
+			}
+		}
+		if (best_uav_id < 0)
+			throw std::logic_error("ToN greedy round could not select an unprocessed UAV");
+
+		// 初始阶段 base=0，因此选中解的新增带宽就是该 UAV 的绝对总带宽；在写入
+		// 旧实验框架前仍统一重算绝对效用与聚合字段。
+		map<int, double> absolute_bandwidths;
+		for (int user_id : best_marginal_result.allocatedList)
+		{
+			auto bandwidth_it = best_marginal_result.allocatedBandwidth.find(user_id);
+			if (bandwidth_it == best_marginal_result.allocatedBandwidth.end())
+				throw std::logic_error("ToN marginal result is missing a bandwidth entry");
+			absolute_bandwidths[user_id] = bandwidth_it->second;
+		}
+		uav_results[best_uav_id] = ton_make_absolute_result(
+			sysModel, best_uav_id, absolute_bandwidths);
+		selected[best_uav_id] = 1;
+		selection_order.push_back(best_uav_id);
+
+		// 只有本轮真正选中的 UAV 才能在所有候选评估结束后更新网络状态 m_j。
+		for (int user_id : uav_results[best_uav_id].allocatedList)
+			current_utilities[user_id] = std::max(
+				current_utilities[user_id],
+				uav_results[best_uav_id].allocatedValue.at(user_id));
+	}
+
+	// selection_rank 用于绝对效用平局：保留更早选中的 UAV，维持贪心过程的确定性。
+	vector<int> selection_rank(model_uav_count, std::numeric_limits<int>::max());
+	for (size_t rank = 0; rank < selection_order.size(); ++rank)
+		selection_rank[selection_order[rank]] = static_cast<int>(rank);
+	// owner[j] 是冲突消解后唯一服务用户 j 的 UAV；owner_utility[j] 是其绝对效用。
+	vector<int> owner(user_count, -1);
+	vector<double> owner_utility(user_count, 0.0);
+	for (const KnapsackResult& result : uav_results)
+	{
+		const int uav_id = result.uav_id;
+		for (int user_id : result.allocatedList)
+		{
+			double value = result.allocatedValue.at(user_id);
+			if (value > owner_utility[user_id] + EPS ||
+				(std::abs(value - owner_utility[user_id]) <= EPS && value > EPS &&
+					(owner[user_id] < 0 ||
+						selection_rank[uav_id] < selection_rank[owner[user_id]])))
+			{
+				owner[user_id] = uav_id;
+				owner_utility[user_id] = value;
+			}
+		}
+	}
+
+	// 不能只从 allocatedList 删除重复关联：那会令带宽/效用映射和 totalValue 等聚合字段
+	// 残留旧值。这里从唯一 owner 的带宽映射出发，完整重建每个 KnapsackResult。
+	vector<map<int, double>> associated_bandwidths(model_uav_count);
+	for (const KnapsackResult& result : uav_results)
+	{
+		const int uav_id = result.uav_id;
+		for (int user_id : result.allocatedList)
+		{
+			if (owner[user_id] == uav_id)
+				associated_bandwidths[uav_id][user_id] =
+					result.allocatedBandwidth.at(user_id);
+		}
+	}
+	for (int uav_id = 0; uav_id < model_uav_count; ++uav_id)
+		uav_results[uav_id] = ton_make_absolute_result(
+			sysModel, uav_id, associated_bandwidths[uav_id]);
+	for (int user_id = 0; user_id < user_count; ++user_id)
+	{
+		if (owner[user_id] >= 0)
+			owner_utility[user_id] =
+				uav_results[owner[user_id]].allocatedValue.at(user_id);
+	}
+
+	// 冲突消解后每个用户最多有一个 owner，因此各 UAV totalValue 之和就是当前网络效用。
+	auto total_network_utility = [&]() {
+		double total = 0.0;
+		for (const KnapsackResult& result : uav_results)
+			total += result.totalValue;
+		return total;
+		};
+
+	// 按实际选中顺序使用残余带宽；先处理的 UAV 新接纳用户后，后续 UAV 会将其视为 b 类。
+	for (int uav_id : selection_order)
+	{
+		const Uav& original_uav = uav_by_id[uav_id];
+		double residual_bandwidth = original_uav.total_bandwidth -
+			uav_results[uav_id].totalWeight;
+		if (residual_bandwidth <= EPS)
+			continue;
+		if (residual_bandwidth < -1e-7 *
+			std::max(1.0, original_uav.total_bandwidth))
+			throw std::logic_error("ToN associated allocation exceeds the UAV budget");
+
+		auto service_it = sysModel.uav_serviceable_users_map.find(uav_id);
+		if (service_it == sysModel.uav_serviceable_users_map.end() ||
+			service_it->second.empty())
+			continue;
+		// residual_state/residual_bases 只为候选用户赋值：a 类带入现有 m_j 与 b_old，
+		// c 类保持 0；b 类不进入 residual_candidates。
+		vector<User> residual_candidates;
+		vector<double> residual_state(user_count, 0.0);
+		vector<double> residual_bases(user_count, 0.0);
+		for (const User& serviceable_user : service_it->second)
+		{
+			const int user_id = serviceable_user.ID;
+			if (user_id < 0 || user_id >= user_count)
+				throw std::invalid_argument("ToN serviceable-user map contains an invalid ID");
+			if (owner[user_id] == uav_id)
+			{
+				// a 类：保留本 UAV 的已有带宽和绝对效用，只优化其新增带宽。
+				residual_candidates.push_back(serviceable_user);
+				residual_bases[user_id] =
+					uav_results[uav_id].allocatedBandwidth.at(user_id);
+				residual_state[user_id] = owner_utility[user_id];
+			}
+			else if (owner[user_id] < 0)
+			{
+				// c 类：全局尚未服务，从零基准带宽和零当前效用开始。
+				residual_candidates.push_back(serviceable_user);
+			}
+			// b 类：已由其他 UAV 服务，明确排除，防止残余阶段再次形成重复关联。
+		}
+		if (residual_candidates.empty())
+			continue;
+
+		Uav residual_uav = original_uav;
+		residual_uav.total_bandwidth = residual_bandwidth;
+		KnapsackResult marginal_result = solve_single_uav(
+			residual_uav, residual_candidates, residual_state, residual_bases);
+		if (marginal_result.totalValue <= EPS)
+			continue;
+
+		// marginal_result 中仍是“新增带宽/边际效用”，合并时需叠加到 a 类的已有带宽。
+		double utility_before = total_network_utility();
+		map<int, double> merged_bandwidths =
+			uav_results[uav_id].allocatedBandwidth;
+		for (int user_id : marginal_result.allocatedList)
+		{
+			if (owner[user_id] >= 0 && owner[user_id] != uav_id)
+				throw std::logic_error("ToN residual solver selected a class-b user");
+			double additional = marginal_result.allocatedBandwidth.at(user_id);
+			double old_bandwidth = merged_bandwidths.count(user_id)
+				? merged_bandwidths.at(user_id)
+				: 0.0;
+			double new_bandwidth = old_bandwidth + additional;
+			double new_utility = ton_absolute_utility(
+				sysModel.users[user_id],
+				sysModel.cap_list[uav_id][user_id],
+				new_bandwidth);
+			if (new_utility <= EPS)
+				continue;
+			merged_bandwidths[user_id] = new_bandwidth;
+			// c 类一旦被接纳，立即登记 owner；后续 UAV 因而会把它归为 b 类并排除。
+			if (owner[user_id] < 0)
+				owner[user_id] = uav_id;
+			owner_utility[user_id] = new_utility;
+		}
+		// 每轮合并后重新物化绝对结果，随后检查预算和网络效用单调性。
+		uav_results[uav_id] = ton_make_absolute_result(
+			sysModel, uav_id, merged_bandwidths);
+		if (uav_results[uav_id].totalWeight > original_uav.total_bandwidth +
+			1e-7 * std::max(1.0, original_uav.total_bandwidth))
+			throw std::logic_error("ToN residual merge exceeds the UAV bandwidth budget");
+		for (int user_id : uav_results[uav_id].allocatedList)
+			owner_utility[user_id] = uav_results[uav_id].allocatedValue.at(user_id);
+		double utility_after = total_network_utility();
+		if (utility_after + 1e-7 * std::max(1.0, utility_before) < utility_before)
+			throw std::logic_error("ToN residual allocation decreased network utility");
+	}
+
+	map<int, UserResult> user_results = construct_user_results(uav_results);
+	return { uav_results, user_results };
+}
 
 void BAProblem::PrintKnapsackResult(const KnapsackResult& result, int uav_id, int maxItemsToPrint, int indent)
 {

@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "EntityDefinition.h"
 #include "config.h"
+#include <stdexcept>
 
 // 本文件主要用于测试各个函数的功能
 
@@ -988,4 +989,485 @@ void test_multiUAV_allocation_comparison() {
 	cout << "Method 2 (FPTAS_singleUAV_new) Average Utility: " << fixed << setprecision(6) << average_utility_method2 << endl;
 
 
+}
+
+// ======================== ToN 三个新增算法的确定性测试 ========================
+
+/** @brief 当确定性检查失败时抛出带具体原因的异常，便于定位对应不变量。 */
+void ton_test_require(bool condition, const string& message) {
+	if (!condition)
+		throw runtime_error("ToN test failed: " + message);
+}
+
+/** @brief 按 UAV 键和有序用户 ID 比较可服务映射，用于确认新算法只读该映射。 */
+bool ton_test_service_maps_equal(
+	const map<int, vector<User>>& lhs,
+	const map<int, vector<User>>& rhs) {
+	if (lhs.size() != rhs.size())
+		return false;
+	auto left = lhs.begin();
+	auto right = rhs.begin();
+	for (; left != lhs.end(); ++left, ++right) {
+		if (left->first != right->first || left->second.size() != right->second.size())
+			return false;
+		for (size_t index = 0; index < left->second.size(); ++index) {
+			if (left->second[index].ID != right->second[index].ID)
+				return false;
+		}
+	}
+	return true;
+}
+
+/** @brief 独立于被测实现计算 hard/elastic 绝对效用，避免测试复用同一错误逻辑。 */
+double ton_test_absolute_utility(
+	const User& user, double channel, double bandwidth) {
+	if (user.uType == HARD_UTILITY) {
+		return channel > 0.0 && bandwidth * channel >= user.rMin - EPS
+			? user.weight * log2(1.0 + user.rMin)
+			: 0.0;
+	}
+	return user.weight * log2(1.0 + bandwidth * channel);
+}
+
+/** @brief 构造不依赖文件或随机数的小型混合 QoS 单 UAV 模型。 */
+SystemMd ton_test_make_single_uav_model() {
+	SystemMd model;
+	model.users.emplace_back(0, HARD_UTILITY, 2.0, 0, 0, 0, 2.0, 0.1);
+	model.users.emplace_back(1, HARD_UTILITY, 1.0, 0, 0, 0, 20.0, 0.1);
+	model.users.emplace_back(2, ELASTIC_UTILITY, 2.0, 0, 0, 0, 1.0, 0.0);
+	model.users.emplace_back(3, ELASTIC_UTILITY, 1.0, 0, 0, 0, 1.0, 0.0);
+	model.uavs.emplace_back(0, 0, 0, 100, 4.0);
+	model.m = 1;
+	model.n1 = 2;
+	model.n2 = 2;
+	model.cap_list = { { 2.0, 2.0, 1.0, 0.5 } };
+	model.SNRave_list = { { 0.0, 0.0, 0.0, 0.0 } };
+	model.Bth_list = { { 1.0, 10.0 } };
+	model.uav_serviceable_users_map[0] = model.users;
+	return model;
+}
+
+/** @brief 从输入状态逐字段复算单 UAV 边际结果，校验带宽、真实边际值及分类聚合量。 */
+void ton_test_verify_marginal_result(
+	const SystemMd& model,
+	const Uav& uav,
+	const vector<double>& current_utilities,
+	const vector<double>& base_bandwidths,
+	const KnapsackResult& result) {
+	// allocatedBandwidth 在单 UAV 接口中必须是新增带宽，因此绝对效用在 base+extra 处复算。
+	double total_weight = 0.0;
+	double total_value = 0.0;
+	double hard_weight = 0.0;
+	double hard_value = 0.0;
+	double elastic_weight = 0.0;
+	double elastic_value = 0.0;
+	for (int user_id : result.allocatedList) {
+		double extra = result.allocatedBandwidth.at(user_id);
+		double absolute = ton_test_absolute_utility(
+			model.users[user_id],
+			model.cap_list[uav.ID][user_id],
+			base_bandwidths[user_id] + extra);
+		double marginal = std::max(0.0, absolute - current_utilities[user_id]);
+		ton_test_require(abs(marginal - result.allocatedValue.at(user_id)) < 1e-7,
+			"reported marginal utility must equal the shifted utility difference");
+		total_weight += extra;
+		total_value += marginal;
+		if (model.users[user_id].uType == HARD_UTILITY) {
+			hard_weight += extra;
+			hard_value += marginal;
+		}
+		else {
+			elastic_weight += extra;
+			elastic_value += marginal;
+		}
+	}
+	ton_test_require(total_weight <= uav.total_bandwidth + 1e-7,
+		"single-UAV result must respect the additional-bandwidth budget");
+	ton_test_require(abs(total_weight - result.totalWeight) < 1e-7,
+		"single-UAV totalWeight must be recomputable");
+	ton_test_require(abs(total_value - result.totalValue) < 1e-7,
+		"single-UAV totalValue must be recomputable");
+	ton_test_require(abs(hard_weight - result.hardWeight) < 1e-7 &&
+		abs(hard_value - result.hardValue) < 1e-7,
+		"single-UAV hard aggregates must be recomputable");
+	ton_test_require(abs(elastic_weight - result.elasticWeight) < 1e-7 &&
+		abs(elastic_value - result.elasticValue) < 1e-7,
+		"single-UAV elastic aggregates must be recomputable");
+}
+
+/**
+ * @brief 覆盖 ToN 单 UAV 边界、基准带宽平移、混合 QoS、LCM 舍入和 SMAWK-DP。
+ *
+ * 每个小规模 AlgBetter 调用还会触发实现内部的逐行检查，将 SMAWK 最小值与
+ * O(P^2) 参考穷举对照，从而同时验证有限 Monge 补全与行列索引。
+ */
+void test_ToN_singleUAV_algorithms() {
+	SystemMd model = ton_test_make_single_uav_model();
+	BAProblem problem(model);
+	Uav uav = model.uavs[0];
+	vector<double> state(model.users.size(), 0.0);
+	vector<double> bases(model.users.size(), 0.0);
+
+	// 基本边界：空候选集、零预算、不可满足 hard、零信道 elastic 均应返回带 UAV ID 的空解。
+	KnapsackResult empty = problem.AlgFast_singleUAV_ToN(
+		uav, {}, state, bases);
+	ton_test_require(empty.uav_id == 0 && empty.allocatedList.empty(),
+		"empty candidate set must return an identified empty result");
+	Uav zero_budget = uav;
+	zero_budget.total_bandwidth = 0.0;
+	empty = problem.AlgFast_singleUAV_ToN(
+		zero_budget, model.users, state, bases);
+	ton_test_require(empty.uav_id == 0 && empty.totalValue == 0.0,
+		"zero budget must return an identified empty result");
+
+	vector<User> infeasible_hard = { model.users[1] };
+	empty = problem.AlgFast_singleUAV_ToN(uav, infeasible_hard, state, bases);
+	ton_test_require(empty.allocatedList.empty(),
+		"hard threshold above the remaining budget must be omitted");
+	SystemMd zero_channel_model = model;
+	zero_channel_model.cap_list[0][2] = 0.0;
+	BAProblem zero_channel_problem(zero_channel_model);
+	empty = zero_channel_problem.AlgFast_singleUAV_ToN(
+		uav, { zero_channel_model.users[2] }, state, bases);
+	ton_test_require(empty.allocatedList.empty(),
+		"zero-channel elastic user must produce no marginal allocation");
+
+	// 将所有用户的 m_i 提升到预算内最大可达效用，验证 c=0 时不构造 Delta 或 DP。
+	vector<double> saturated_state(model.users.size(), 0.0);
+	saturated_state[0] = model.users[0].weight * log2(1.0 + model.users[0].rMin);
+	saturated_state[1] = model.users[1].weight * log2(1.0 + model.users[1].rMin);
+	saturated_state[2] = ton_test_absolute_utility(model.users[2], 1.0, uav.total_bandwidth);
+	saturated_state[3] = ton_test_absolute_utility(model.users[3], 0.5, uav.total_bandwidth);
+	empty = problem.AlgBetter_singleUAV_ToN(
+		uav, model.users, saturated_state, bases, 0.1);
+	ton_test_require(empty.allocatedList.empty(),
+		"c=0 must return the zero allocation without constructing Delta");
+
+	// 参数防御：epsilon、状态向量长度和用户 ID 越界都必须显式拒绝。
+	bool caught = false;
+	try {
+		problem.AlgBetter_singleUAV_ToN(uav, model.users, state, bases, 0.5);
+	}
+	catch (const invalid_argument&) {
+		caught = true;
+	}
+	ton_test_require(caught, "epsilon outside (0,1/2) must throw invalid_argument");
+	caught = false;
+	try {
+		problem.AlgFast_singleUAV_ToN(
+			uav, model.users, vector<double>(1, 0.0), bases);
+	}
+	catch (const invalid_argument&) {
+		caught = true;
+	}
+	ton_test_require(caught, "wrong state-vector length must throw invalid_argument");
+	caught = false;
+	try {
+		User invalid_user = model.users[0];
+		invalid_user.ID = 99;
+		problem.AlgFast_singleUAV_ToN(uav, { invalid_user }, state, bases);
+	}
+	catch (const invalid_argument&) {
+		caught = true;
+	}
+	ton_test_require(caught, "out-of-range user ID must throw invalid_argument");
+
+	// 纯 hard 可行实例必须一次性补足阈值，不能返回部分带宽。
+	KnapsackResult hard_only = problem.AlgFast_singleUAV_ToN(
+		uav, { model.users[0] }, state, bases);
+	ton_test_require(hard_only.allocatedList.size() == 1 &&
+		abs(hard_only.allocatedBandwidth.at(0) - 1.0) < 1e-7,
+		"reachable hard user must receive its complete threshold bandwidth");
+	ton_test_verify_marginal_result(model, uav, state, bases, hard_only);
+
+	// 该构造使 LCM 松弛向低斜率 hard 用户仅分配 1 单位带宽，从而产生唯一 unsafe 用户；
+	// 二候选舍入应保留价值更高且完整满足阈值的用户。AlgBetter 还验证 hard DP 只有 0/p_i。
+	SystemMd unsafe_model;
+	unsafe_model.users.emplace_back(0, HARD_UTILITY, 4.0, 0, 0, 0, 1.0, 0.1);
+	unsafe_model.users.emplace_back(1, HARD_UTILITY, 1.0, 0, 0, 0, 1.0, 0.1);
+	unsafe_model.uavs.emplace_back(0, 0, 0, 100, 3.0);
+	unsafe_model.m = 1;
+	unsafe_model.n1 = 2;
+	unsafe_model.n2 = 0;
+	unsafe_model.cap_list = { { 0.5, 0.5 } };
+	unsafe_model.SNRave_list = { { 0.0, 0.0 } };
+	unsafe_model.Bth_list = { { 2.0, 2.0 } };
+	unsafe_model.uav_serviceable_users_map[0] = unsafe_model.users;
+	BAProblem unsafe_problem(unsafe_model);
+	vector<double> unsafe_state(2, 0.0);
+	vector<double> unsafe_bases(2, 0.0);
+	KnapsackResult unsafe_fast = unsafe_problem.AlgFast_singleUAV_ToN(
+		unsafe_model.uavs[0], unsafe_model.users, unsafe_state, unsafe_bases);
+	ton_test_require(unsafe_fast.allocatedList == vector<int>{ 0 } &&
+		abs(unsafe_fast.allocatedBandwidth.at(0) - 2.0) < 1e-7 &&
+		abs(unsafe_fast.totalValue - 4.0) < 1e-7,
+		"unsafe hard-user rounding must choose the higher-value complete candidate");
+	ton_test_verify_marginal_result(
+		unsafe_model, unsafe_model.uavs[0], unsafe_state, unsafe_bases, unsafe_fast);
+	KnapsackResult unsafe_better = unsafe_problem.AlgBetter_singleUAV_ToN(
+		unsafe_model.uavs[0], unsafe_model.users, unsafe_state, unsafe_bases, 0.1);
+	for (int user_id : unsafe_better.allocatedList)
+		ton_test_require(
+			abs(unsafe_better.allocatedBandwidth.at(user_id) - 2.0) < 1e-7,
+			"hard DP options must allocate either zero or the full threshold");
+	ton_test_verify_marginal_result(
+		unsafe_model, unsafe_model.uavs[0], unsafe_state, unsafe_bases, unsafe_better);
+
+	// 混合 hard/elastic 实例同时检查两种算法的预算与所有边际聚合字段。
+	KnapsackResult mixed_fast = problem.AlgFast_singleUAV_ToN(
+		uav, model.users, state, bases);
+	ton_test_verify_marginal_result(model, uav, state, bases, mixed_fast);
+	KnapsackResult mixed_better = problem.AlgBetter_singleUAV_ToN(
+		uav, model.users, state, bases, 0.1);
+	ton_test_verify_marginal_result(model, uav, state, bases, mixed_better);
+
+	// 基准带宽平移：a 类 elastic 用户的增益必须是 g(base+x)-g(base)，而非 g(x)-m。
+	Uav residual_uav = uav;
+	residual_uav.total_bandwidth = 1.0;
+	bases[2] = 1.0;
+	state[2] = ton_test_absolute_utility(model.users[2], 1.0, bases[2]);
+	KnapsackResult shifted = problem.AlgFast_singleUAV_ToN(
+		residual_uav, { model.users[2] }, state, bases);
+	double expected_gain = ton_test_absolute_utility(model.users[2], 1.0, 2.0) -
+		ton_test_absolute_utility(model.users[2], 1.0, 1.0);
+	ton_test_require(abs(shifted.allocatedBandwidth.at(2) - 1.0) < 1e-7 &&
+		abs(shifted.allocatedValue.at(2) - expected_gain) < 1e-7,
+		"elastic residual gain must be evaluated at base+x");
+	ton_test_verify_marginal_result(model, residual_uav, state, bases, shifted);
+
+	// 已由基准带宽满足的 hard 用户边际效用为零，不能因残余带宽产生虚假收益。
+	bases.assign(model.users.size(), 0.0);
+	state.assign(model.users.size(), 0.0);
+	bases[0] = model.Bth_list[0][0];
+	state[0] = model.users[0].weight * log2(1.0 + model.users[0].rMin);
+	empty = problem.AlgFast_singleUAV_ToN(
+		residual_uav, { model.users[0] }, state, bases);
+	ton_test_require(empty.allocatedList.empty(),
+		"already satisfied hard user must have zero residual marginal utility");
+
+	// 两个 m>0、base=0 的 elastic 用户分别触发内部接触点与预算端点接触点；
+	// 预算 B 处切线残差符号相反，用来证明测试确实覆盖了两条构造分支。
+	SystemMd contact_model;
+	contact_model.users.emplace_back(0, ELASTIC_UTILITY, 1.0, 0, 0, 0, 1.0, 0.0);
+	contact_model.users.emplace_back(1, ELASTIC_UTILITY, 1.0, 0, 0, 0, 1.0, 0.0);
+	contact_model.uavs.emplace_back(0, 0, 0, 100, 4.0);
+	contact_model.m = 1;
+	contact_model.n1 = 0;
+	contact_model.n2 = 2;
+	contact_model.cap_list = { { 1.0, 1.0 } };
+	contact_model.SNRave_list = { { 0.0, 0.0 } };
+	contact_model.Bth_list = { {} };
+	contact_model.uav_serviceable_users_map[0] = contact_model.users;
+	vector<double> contact_state = { 0.2, 1.5 };
+	vector<double> contact_bases(2, 0.0);
+	const double tangent_term = 4.0 / (log(2.0) * 5.0);
+	ton_test_require(tangent_term - (log2(5.0) - contact_state[0]) < 0.0 &&
+		tangent_term - (log2(5.0) - contact_state[1]) > 0.0,
+		"contact-point fixture must cover internal and endpoint roots");
+	BAProblem contact_problem(contact_model);
+	KnapsackResult contact_fast = contact_problem.AlgFast_singleUAV_ToN(
+		contact_model.uavs[0], contact_model.users, contact_state, contact_bases);
+	KnapsackResult contact_better = contact_problem.AlgBetter_singleUAV_ToN(
+		contact_model.uavs[0], contact_model.users, contact_state, contact_bases, 0.2);
+	ton_test_verify_marginal_result(
+		contact_model, contact_model.uavs[0], contact_state, contact_bases, contact_fast);
+	ton_test_verify_marginal_result(
+		contact_model, contact_model.uavs[0], contact_state, contact_bases, contact_better);
+
+	// 固定随机种子的 elastic 小实例让 SMAWK 与 O(P^2) 逐行参考穷举反复对照，
+	// 同时覆盖 m=0、m>0 和非零 base，并保持回归结果可复现。
+	mt19937 generator(20260904);
+	uniform_real_distribution<double> weight_distribution(0.5, 3.0);
+	uniform_real_distribution<double> channel_distribution(0.2, 3.0);
+	uniform_real_distribution<double> budget_distribution(0.4, 1.6);
+	uniform_real_distribution<double> base_distribution(0.0, 0.3);
+	uniform_real_distribution<double> dominance_distribution(0.0, 0.8);
+	for (int trial = 0; trial < 12; ++trial) {
+		SystemMd random_model;
+		const int random_user_count = 1 + trial % 4;
+		random_model.uavs.emplace_back(
+			0, 0, 0, 100, budget_distribution(generator));
+		random_model.m = 1;
+		random_model.n1 = 0;
+		random_model.n2 = random_user_count;
+		random_model.cap_list.emplace_back();
+		random_model.SNRave_list.emplace_back();
+		random_model.Bth_list = { {} };
+		for (int user_id = 0; user_id < random_user_count; ++user_id) {
+			random_model.users.emplace_back(
+				user_id, ELASTIC_UTILITY, weight_distribution(generator),
+				0, 0, 0, 1.0, 0.0);
+			random_model.cap_list[0].push_back(channel_distribution(generator));
+			random_model.SNRave_list[0].push_back(0.0);
+		}
+		random_model.uav_serviceable_users_map[0] = random_model.users;
+		vector<double> random_bases(random_user_count, 0.0);
+		vector<double> random_state(random_user_count, 0.0);
+		for (int user_id = 0; user_id < random_user_count; ++user_id) {
+			random_bases[user_id] = base_distribution(generator);
+			double utility_at_base = ton_test_absolute_utility(
+				random_model.users[user_id], random_model.cap_list[0][user_id],
+				random_bases[user_id]);
+			double utility_at_max = ton_test_absolute_utility(
+				random_model.users[user_id], random_model.cap_list[0][user_id],
+				random_bases[user_id] + random_model.uavs[0].total_bandwidth);
+			// dominance 控制 m_i 从基准效用向预算端效用抬升的比例；每三轮保留一次 m=base 情形。
+			double dominance = trial % 3 == 0
+				? 0.0
+				: dominance_distribution(generator);
+			random_state[user_id] = utility_at_base +
+				dominance * (utility_at_max - utility_at_base);
+		}
+		BAProblem random_problem(random_model);
+		KnapsackResult random_fast = random_problem.AlgFast_singleUAV_ToN(
+			random_model.uavs[0], random_model.users, random_state, random_bases);
+		KnapsackResult random_better = random_problem.AlgBetter_singleUAV_ToN(
+			random_model.uavs[0], random_model.users, random_state, random_bases, 0.2);
+		ton_test_verify_marginal_result(
+			random_model, random_model.uavs[0], random_state, random_bases, random_fast);
+		ton_test_verify_marginal_result(
+			random_model, random_model.uavs[0], random_state, random_bases, random_better);
+	}
+}
+
+/** @brief 构造双 UAV elastic 模型，覆盖冻结状态贪心、唯一关联及 a+c 残余分配。 */
+SystemMd ton_test_make_multi_uav_model() {
+	SystemMd model;
+	model.users.emplace_back(0, ELASTIC_UTILITY, 3.0, 0, 0, 0, 1.0, 0.0);
+	model.users.emplace_back(1, ELASTIC_UTILITY, 3.0, 0, 0, 0, 1.0, 0.0);
+	model.users.emplace_back(2, ELASTIC_UTILITY, 3.0, 0, 0, 0, 1.0, 0.0);
+	model.uavs.emplace_back(0, 0, 0, 100, 1.0);
+	model.uavs.emplace_back(1, 0, 0, 100, 1.0);
+	model.m = 2;
+	model.n1 = 0;
+	model.n2 = 3;
+	model.cap_list = {
+		{ 2.0, 5.0, 1.0 },
+		{ 4.0, 0.0, 0.05 }
+	};
+	model.SNRave_list = {
+		{ 0.0, 0.0, 0.0 },
+		{ 0.0, 0.0, 0.0 }
+	};
+	model.Bth_list = { {}, {} };
+	model.uav_serviceable_users_map[0] = model.users;
+	model.uav_serviceable_users_map[1] = { model.users[0], model.users[2] };
+	return model;
+}
+
+/** @brief 复算最终绝对效用和全部聚合字段，并验证每个用户至多有一个 owner UAV。 */
+void ton_test_verify_multi_result(
+	const SystemMd& model,
+	const vector<KnapsackResult>& results,
+	const map<int, UserResult>& user_results) {
+	// seen 同时检测跨 UAV 重复关联；UserResult 必须与唯一 UAV 记录逐字段一致。
+	vector<char> seen(model.users.size(), 0);
+	for (const KnapsackResult& result : results) {
+		double total_weight = 0.0;
+		double total_value = 0.0;
+		double hard_weight = 0.0;
+		double hard_value = 0.0;
+		double elastic_weight = 0.0;
+		double elastic_value = 0.0;
+		for (int user_id : result.allocatedList) {
+			ton_test_require(!seen[user_id], "a final user may have at most one UAV owner");
+			seen[user_id] = 1;
+			double bandwidth = result.allocatedBandwidth.at(user_id);
+			double utility = ton_test_absolute_utility(
+				model.users[user_id],
+				model.cap_list[result.uav_id][user_id],
+				bandwidth);
+			ton_test_require(abs(utility - result.allocatedValue.at(user_id)) < 1e-7,
+				"final allocatedValue must be absolute utility");
+			total_weight += bandwidth;
+			total_value += utility;
+			if (model.users[user_id].uType == HARD_UTILITY) {
+				hard_weight += bandwidth;
+				hard_value += utility;
+			}
+			else {
+				elastic_weight += bandwidth;
+				elastic_value += utility;
+			}
+			const UserResult& user_result = user_results.at(user_id);
+			ton_test_require(user_result.uav_id == result.uav_id &&
+				abs(user_result.allocated_bandwidth - bandwidth) < 1e-7 &&
+				abs(user_result.utility - utility) < 1e-7,
+				"UserResult must match the UAV result exactly");
+		}
+		ton_test_require(total_weight <= model.uavs[result.uav_id].total_bandwidth + 1e-7,
+			"final UAV allocation must respect its budget");
+		ton_test_require(abs(total_weight - result.totalWeight) < 1e-7 &&
+			abs(total_value - result.totalValue) < 1e-7,
+			"final total aggregates must be recomputable");
+		ton_test_require(abs(hard_weight - result.hardWeight) < 1e-7 &&
+			abs(hard_value - result.hardValue) < 1e-7 &&
+			abs(elastic_weight - result.elasticWeight) < 1e-7 &&
+			abs(elastic_value - result.elasticValue) < 1e-7,
+			"final type-specific aggregates must be recomputable");
+	}
+	for (size_t user_id = 0; user_id < model.users.size(); ++user_id) {
+		if (!seen[user_id])
+			ton_test_require(user_results.at(static_cast<int>(user_id)).uav_id == -1,
+				"unserved UserResult must retain the default owner");
+	}
+}
+
+/** @brief 覆盖冻结状态贪心、确定性平局、owner 冲突消解及 a+c/b 残余流程。 */
+void test_ToN_multiUAV_algorithm() {
+	SystemMd model = ton_test_make_multi_uav_model();
+	auto service_map_before = model.uav_serviceable_users_map;
+	BAProblem problem(model);
+	// 共同用户应由绝对效用更高的 UAV 保留；先处理 UAV 可用残余带宽接纳 c 类用户 2，
+	// 且原始 uav_serviceable_users_map 在全过程中不得被删除或改写。
+	auto result = problem.Appro_multiUAV_ToN(
+		model.uavs, model.users, 1, 0.1);
+	ton_test_verify_multi_result(model, result.first, result.second);
+	ton_test_require(
+		ton_test_service_maps_equal(
+			problem.sysModel.uav_serviceable_users_map, service_map_before),
+		"the ToN multi-UAV algorithm must not mutate serviceable-user sets");
+	ton_test_require(result.second.at(0).uav_id == 1,
+		"the common user must retain the UAV providing larger absolute utility");
+	ton_test_require(result.second.at(2).uav_id == 0 &&
+		result.second.at(2).allocated_bandwidth > EPS,
+		"the earlier residual pass must admit its class-c user exactly once");
+
+	// 两架完全相同的单用户 UAV 用于验证：边际分数平局时先选较小 ID，
+	// 冲突效用再次平局时也保留更早选中的同一架 UAV。
+	SystemMd tie_model;
+	tie_model.users.emplace_back(0, ELASTIC_UTILITY, 1.0, 0, 0, 0, 1.0, 0.0);
+	tie_model.uavs.emplace_back(0, 0, 0, 100, 1.0);
+	tie_model.uavs.emplace_back(1, 0, 0, 100, 1.0);
+	tie_model.m = 2;
+	tie_model.n1 = 0;
+	tie_model.n2 = 1;
+	tie_model.cap_list = { { 1.0 }, { 1.0 } };
+	tie_model.SNRave_list = { { 0.0 }, { 0.0 } };
+	tie_model.Bth_list = { {}, {} };
+	tie_model.uav_serviceable_users_map[0] = tie_model.users;
+	tie_model.uav_serviceable_users_map[1] = tie_model.users;
+	BAProblem tie_problem(tie_model);
+	auto tie_result = tie_problem.Appro_multiUAV_ToN(
+		tie_model.uavs, tie_model.users, 2, 0.1);
+	ton_test_verify_multi_result(tie_model, tie_result.first, tie_result.second);
+	ton_test_require(tie_result.second.at(0).uav_id == 0,
+		"equal utility must retain the earlier selected smaller-ID UAV");
+
+	bool caught = false;
+	try {
+		tie_problem.Appro_multiUAV_ToN(tie_model.uavs, tie_model.users, 3, 0.1);
+	}
+	catch (const invalid_argument&) {
+		caught = true;
+	}
+	ton_test_require(caught, "invalid multi-UAV single-algorithm selector must throw");
+}
+
+/** @brief 统一运行三个 ToN 新增算法的全部确定性测试。 */
+void test_ToN_algorithms() {
+	cout << "Running deterministic ToN algorithm tests..." << endl;
+	test_ToN_singleUAV_algorithms();
+	test_ToN_multiUAV_algorithm();
+	cout << "All deterministic ToN algorithm tests passed." << endl;
 }

@@ -1,4 +1,5 @@
 #pragma once
+// 本文件负责实验调度、断点结果持久化以及按算法版本隔离导出结果。
 #include "EntityDefinition.h"
 #include "config.h"
 #include <filesystem>
@@ -9,6 +10,7 @@
 #include <string>
 #include <iostream>
 #include <chrono>
+#include <stdexcept>
 
 namespace fs = std::filesystem;
 
@@ -43,6 +45,9 @@ vector<string> method_name_list = {
 	"ApproBetter", "ApproFast", "AlgDRL",
 	"AlgMatching", "AlgHardFirst", "AlgSADA"
 };
+
+// 所有 ToN 运行都写入独立版本目录，避免覆盖、追加或混用历史 MASS 结果。
+const string TON_RESULT_VERSION_DIR = "ToN_marginal_eps0p1/";
 
 // 核心数据结构：Key 是实验条件，Value 是各个算法对应的平均结果
 map<string, vector<EXPResult>> experiment_data;
@@ -106,11 +111,8 @@ void ensureIntermediateDir(const string& dir) {
  * @brief 读取某个中间CSV已有的数据行数（不含表头），用于断点续跑
  * @return 已完成的实例数
  */
-int getCompletedCount(const string& dir) {
-	// 以第一个方法的CSV为基准判断
-	string filepath = dir + method_name_list[0] + ".csv";
+int countCompletedRows(const string& filepath) {
 	if (!fs::exists(filepath)) return 0;
-
 	ifstream file(filepath);
 	string line;
 	int count = 0;
@@ -120,6 +122,37 @@ int getCompletedCount(const string& dir) {
 		if (!line.empty()) count++;
 	}
 	return count;
+}
+
+/**
+ * @brief 核对六种方法的 CSV 行数，并返回一致的已完成实例数。
+ * @throws std::runtime_error 当六个方法文件的数据行数不一致时立即停止续跑。
+ */
+int getCompletedCount(const string& dir) {
+	// 先完整收集各方法行数，异常时可以把每个文件的实际状态一并报告给用户。
+	vector<pair<string, int>> row_counts;
+	row_counts.reserve(method_name_list.size());
+	for (const string& method : method_name_list) {
+		string filepath = dir + method + ".csv";
+		row_counts.push_back({ method, countCompletedRows(filepath) });
+	}
+
+	int expected_count = row_counts.empty() ? 0 : row_counts.front().second;
+	bool consistent = true;
+	for (const auto& entry : row_counts) {
+		if (entry.second != expected_count) {
+			consistent = false;
+			break;
+		}
+	}
+	if (!consistent) {
+		cerr << "ERROR: checkpoint CSV row counts are inconsistent in " << dir << "\n";
+		for (const auto& entry : row_counts)
+			cerr << "  " << entry.first << ".csv: " << entry.second << " data rows\n";
+		throw runtime_error(
+			"Checkpoint stopped: method CSV row counts differ; no files were modified");
+	}
+	return expected_count;
 }
 
 /**
@@ -351,11 +384,10 @@ void run_Instance_with_checkpoint(const string& intermediate_dir,
 	vector<string>& uavFiles,
 	const string& config_file,
 	int total_count, double total_bandwidth = 40) {
-	// 确保目录和CSV文件存在
-	ensureIntermediateDir(intermediate_dir);
-
-	// 断点续跑：检查已完成的实例数
+	// 必须先检查六个文件、再创建缺失文件：若 checkpoint 不完整，先原样报告磁盘证据，
+	// 不通过自动补文件、删行或截断来掩盖不一致状态。
 	int completed = getCompletedCount(intermediate_dir);
+	ensureIntermediateDir(intermediate_dir);
 	if (completed >= total_count) {
 		cout << "  All " << total_count << " instances already completed, skipping." << endl;
 		return;
@@ -376,12 +408,13 @@ void run_Instance_with_checkpoint(const string& intermediate_dir,
 		{
 			uav.total_bandwidth = total_bandwidth;
 		}
-		// ---------- 方法0: approM+alg1 (FPTAS) ----------
+		// ---------- 方法0: ApproBetter -> ToN Algorithm 2，显式使用 epsilon=0.1 ----------
 		{
 			cout << "\t[" << method_name_list[0] << "]..." << endl;
 			BAProblem problem(sysModel);
 			auto t0 = chrono::high_resolution_clock::now();
-			auto results = problem.approposed_multiUAV_allocation_new(sysModel.uavs, sysModel.users, 2);
+			auto results = problem.Appro_multiUAV_ToN(
+				sysModel.uavs, sysModel.users, 2, 0.1);
 			auto t1 = chrono::high_resolution_clock::now();
 			double ms = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
 			auto uavResults = results.first;
@@ -389,12 +422,13 @@ void run_Instance_with_checkpoint(const string& intermediate_dir,
 			appendResult(intermediate_dir, 0, r);
 		}
 
-		// ---------- 方法1: approM+alg2 (Greedy) ----------
+		// ---------- 方法1: ApproFast -> ToN Algorithm 1；epsilon 仅用于统一接口校验 ----------
 		{
 			cout << "\t[" << method_name_list[1] << "]..." << endl;
 			BAProblem problem(sysModel);
 			auto t0 = chrono::high_resolution_clock::now();
-			auto results = problem.approposed_multiUAV_allocation_new(sysModel.uavs, sysModel.users, 1);
+			auto results = problem.Appro_multiUAV_ToN(
+				sysModel.uavs, sysModel.users, 1, 0.1);
 			auto t1 = chrono::high_resolution_clock::now();
 			double ms = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
 			auto uavResults = results.first;
@@ -491,7 +525,8 @@ void exp1_different_user_number() {
 	// 1. 路径配置
 	string config_file = experimentDataPath + "ExperimentsResults/EXP1_user_num/def_config.json";
 	string dataSetPath = experimentDataPath + "data/variable_user_num/";
-	string EXP_result_path = experimentDataPath + "ExperimentsResults/EXP1_user_num/";
+	string EXP_result_path = experimentDataPath +
+		"ExperimentsResults/EXP1_user_num/" + TON_RESULT_VERSION_DIR;
 
 	vector<string> user_num_dirs = { "1000", "2000", "3000", "4000", "5000" };
 	string uav_num = "10";
@@ -550,7 +585,8 @@ void exp2_different_uav_number() {
 	string fixedUserPath = experimentDataPath + "data/variable_user_num/3000u_num/";
 	// 无人机数据根路径
 	string uavBaseSetPath = experimentDataPath + "data/variable_uav_num/";
-	string EXP_result_path = experimentDataPath + "ExperimentsResults/EXP2_uav_num/";
+	string EXP_result_path = experimentDataPath +
+		"ExperimentsResults/EXP2_uav_num/" + TON_RESULT_VERSION_DIR;
 
 	vector<string> uav_num_dirs = { "5", "10", "15", "20" };
 	string user_pattern = "3000users_data";
@@ -602,7 +638,8 @@ void exp3_different_hard_user_ratio() {
 
 	// 数据根路径
 	string dataSetPath = experimentDataPath + "data/variable_hard_user_ratio/";
-	string EXP_result_path = experimentDataPath + "ExperimentsResults/EXP3_hard_user_ratio/";
+	string EXP_result_path = experimentDataPath +
+		"ExperimentsResults/EXP3_hard_user_ratio/" + TON_RESULT_VERSION_DIR;
 
 	vector<string> hard_ratio_dirs = { "0", "2", "4", "6", "8", "10"};
 	string uav_num = "10";
@@ -657,7 +694,8 @@ void exp4_different_total_bandwidth() {
 
 	// 数据根路径
 	string dataSetPath = experimentDataPath + "data/variable_user_num/";
-	string EXP_result_path = experimentDataPath + "ExperimentsResults/EXP4_bandwidth/";
+	string EXP_result_path = experimentDataPath +
+		"ExperimentsResults/EXP4_bandwidth/" + TON_RESULT_VERSION_DIR;
 
 	vector<int> bandwidth_dirs_int = { 10, 20, 30, 40, 50 };
 	vector<string> bandwidth_dirs_str = { "10", "20", "30", "40", "50" };

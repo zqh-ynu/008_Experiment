@@ -1,4 +1,5 @@
 #pragma once
+// 本文件集中定义共享常量、第三方依赖、本机项目路径及信道配置。
 using namespace std;
 #include<string>
 #include<vector>
@@ -83,13 +84,13 @@ inline double min_se_threshold; // spectral efficiency
 
 
 
-// 当前算法项目的绝对路径地址: E:\Research\My paper\2_Papers\008\008_Experiment\Algorithms\LP_for_SAP
-const static string algProjPath = "E:\\Research\\My paper\\2_Papers\\008\\008_Experiment\\Algorithms\\UAVBandwidthAllocation\\";
+// 当前算法项目的绝对路径地址: E:\Research\My_paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation
+const static string algProjPath = "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\Algorithms\\UAVBandwidthAllocation\\";
 
 
-// 当前论文项目的实验数据文件夹路径：E:\Research\My paper\2_Papers\008\008_Experiment\ExperimentsData\\
+// 当前论文项目的实验数据文件夹路径：E:\Research\My_paper\2_Papers\008\008_Experiment\ExperimentsData\\
 
-const static string experimentDataPath = "E:\\Research\\My paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\";
+const static string experimentDataPath = "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\";
 
 
 // 读取函数示例

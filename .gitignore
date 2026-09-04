@@ -16,6 +16,7 @@
 # Main experiment instances and archives are deliberately excluded.  JSON
 # generation-condition files and the directory guide remain versioned.
 /ExperimentsData/data/**/*.csv
+/ExperimentsData/data_ToN/**/*.csv
 /ExperimentsData/data/**/*.zip
 /ExperimentsData/data/County_loc_Type_req/simulated_data/*.png
 

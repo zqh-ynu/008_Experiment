@@ -3,7 +3,7 @@
 `DatasetTest` 是 `008_Experiment` 中用于构造实验输入实例的 Python 项目。它把行政区中心和人口密度栅格转换为用户空间位置，再为用户生成 Hard/Elastic 类型、权重、QoS 需求和业务标签，最后根据用户位置生成 UAV 部署文件。历史 user/UAV 配对实例由 `ExperimentsData/data` 管理；新的 ToN 扩展实例将在 `ExperimentsData/data_ToN/YYYY-MM-DD` 中按日期批次隔离。
 
 > [!IMPORTANT]
-> 本目录保留了存在路径和接口漂移的历史生成链，同时新增了 `generate_user_data_ToN.py` 和 `instance_generator/generate_instances_ToN.py`。ScientificData2025 Table 3/6 规则已经接入这两个新文件，但本次没有执行完整生成，因此**现有历史 CSV 未改变，`data_ToN` 中也尚无正式日期批次**。
+> 本目录保留了存在路径和接口漂移的历史生成链，同时提供 `generate_user_data_ToN.py` 和 `instance_generator/generate_instances_ToN.py`。固定批次 `data_ToN/2026-09-07` 已于 2026-09-08 完成生成，经 ID 19 的定向修复后通过全部输入结构检查；历史 `data` CSV 未改变。批次来源和修复信息见其 `generation_config_ToN.json`，C++ 实验尚未由本次操作执行。
 
 `main.py` 读取 `Autonomous_Medical_Aid_Dataset.csv` 并生成 Plotly 医疗救援地图动画。它是一个独立的历史可视化示例，**不是**人口驱动实验实例生成链的主入口。
 
@@ -42,7 +42,7 @@ get_county_center.py
 | `uav_deployment.py` | 将用户位置归一化到固定区域，在网格候选点上贪心部署 UAV | 读取完整用户实例 CSV；输出 UAV 坐标和带宽 CSV |
 | `instance_generator/` | 保存历史入口和新的 ToN 批次入口 | `inst1.py`–`inst3.py` 保留历史行为；`generate_instances_ToN.py` 组织配对实例和日期批次 |
 | `../data/**/*.json` | 保存正式实验的历史生成条件 | 包含用户数、`hard_ratio`、实例数量和 Hard/Elastic QoS 配置；不是 C++ 主程序直接读取的运行配置 |
-| `../data_ToN/` | 保存新的日期化 ToN 批次 | 详细目录、schema 和 Git 边界见 [data_ToN/README.md](../data_ToN/README.md)；当前尚未生成正式批次 |
+| `../data_ToN/` | 保存新的日期化 ToN 批次 | 详细目录、schema 和 Git 边界见 [data_ToN/README.md](../data_ToN/README.md)；固定批次 `2026-09-07` 已备好 30 个重复实例 |
 | `data/` | 保存本机原始/中间数据的目录约定 | 详细资产、恢复和 Git 边界见 [data/README.md](data/README.md) |
 | `uav_visualization.py` | 绘制或检查历史 UAV 部署结果 | 不是实例生成的必要阶段 |
 | `main.py` | 生成医疗救援数据的 Plotly 地图动画 | 独立示例，不属于上述人口驱动主链 |
@@ -104,6 +104,8 @@ user_requirement_1,user_requirement_2,app_category
 
 部署器遍历 100 m 网格中心，在满足连通约束的候选点中，贪心选择能新增覆盖最多用户的位置。第一架 UAV 因尚无已部署节点而不受连通约束；后续 UAV 必须位于任一已部署 UAV 的 800 m 范围内。部署结束后，坐标被反归一化并转换回经纬度。
 
+为满足指定 UAV 数量，最大新增覆盖为 0 时也从未使用的合法连通点中按原网格顺序选择；只有没有合法连通候选时才提前结束。2026-09-08 的最小修复将 `best_coverage` 初值从 0 改为 -1，不改变正增益选择和平局顺序。固定批次的 ID 19（20 UAV 条件）原有 1171 个连通候选却均为零增益；定向重算后为 20 架，原 15 行保持不变，几何覆盖人数仍为 2975。其余 779 个 CSV 未变，原文件保留为 `.before_zero_gain_fix.bak`；未放宽最终完整性检查。
+
 UAV CSV 的字段为：
 
 ```text
@@ -121,7 +123,7 @@ uav_id,longitude,latitude,bandwidth
 | EXP3 | Hard 用户比例 $\alpha_H$ | 固定 3000 用户、10 架 UAV；$\alpha_H\in\{0,0.2,0.4,0.6,0.8,1.0\}$ | **不使用 ScientificData2025**；按固定排列生成嵌套 Hard 集合，并使用历史受控 QoS 配置 |
 | EXP4 | 每架 UAV 的带宽 | 固定 3000 用户、10 架 UAV；带宽为 10、20、30、40、50 | 复用 EXP1 的 3000 用户和 10-UAV 文件，由 C++ 运行时覆盖带宽，不另存一套 CSV |
 
-这些规则已在两个 `_ToN` 文件中实现，但尚未正式运行，所以现有 `ExperimentsData/data` CSV 并不包含新的 Table 3 标签或 Table 6 抽样结果，`data_ToN` 也尚无日期批次。
+这些规则已用于固定的 `data_ToN/2026-09-07` 批次。现有 `ExperimentsData/data` CSV 保持历史内容，不应将旧实例或其结果按新的 Table 3/6 数据来源描述。
 
 ## ScientificData2025 Table 3/6 的 ToN 接入规则
 
@@ -253,19 +255,21 @@ rng = np.random.default_rng(effective_seed)
 
 ### 日期版本标识
 
-生成器、输入数据、配置和输出实例不使用独立 SemVer，也不做文件哈希验证。一次正式生成批次统一放入实际生成日期命名的文件夹：
+生成器、输入数据、配置和输出实例不使用独立 SemVer，也不做文件哈希验证。一次正式生成批次放入显式选定的日期标识文件夹；通用函数省略日期时使用当天日期，而本轮 Python `main()` 与 C++ 输入路径统一固定为 `2026-09-07`：
 
 ```text
 ExperimentsData/data_ToN/YYYY-MM-DD/
 ```
 
-该日期文件夹是本批次唯一的版本标识；实验说明或日志引用实例时应同时记录日期文件夹和 `replicate_id`。同一日期目录中的生成器、输入数据、配置和输出实例视为一组，不覆盖既有日期批次。日期只表示生成批次，不表示 ScientificData2025 的官方数据版本。
+该日期文件夹是本批次唯一的版本标识；实验说明或日志引用实例时应同时记录日期文件夹和 `replicate_id`。同一日期目录中的生成器、输入数据、配置和输出实例视为一组，不覆盖既有日期批次。日期只表示生成批次，不表示 ScientificData2025 的官方数据版本，也不会在 C++ 续跑时自动切换。
 
 ### 实现状态与实验边界
 
-上述 Table 3/6 抽样、业务映射、QoS/权重、NumPy-only 种子、条件配对和日期目录已经在 `generate_user_data_ToN.py` 与 `instance_generator/generate_instances_ToN.py` 中实现。新模块在导入时没有生成副作用，同名日期目录存在时拒绝覆盖；一次成功正式生成才会在日期根目录写入 `generation_config_ToN.json`。
+上述 Table 3/6 抽样、业务映射、QoS/权重、NumPy-only 种子、条件配对和日期目录已经在 `generate_user_data_ToN.py` 与 `instance_generator/generate_instances_ToN.py` 中实现。新模块在导入时没有生成副作用，同名日期目录存在时拒绝覆盖。生成结束后检查所有条件的准确文件名/ID/县区配对、表头和实际用户/UAV 数；全部通过后才在日期根目录写入带 `generation_status="complete"` 的 `generation_config_ToN.json`。部署器打印错误后继续、漏文件或 UAV 数不足均不会被当作完整批次。
 
-本次仅实现和轻量验证代码，**没有调用完整入口，也没有运行 UAV 批处理或 C++ 实验**。因此“代码已实现”不等于“正式实例已经生成”。EXP1、EXP2 和 EXP4 使用上述 ScientificData2025 规则；EXP3 始终排除 ScientificData2025，并继续把 $\alpha_H$ 作为受控自变量。
+本轮手动运行生成器的 `main()`：固定 `batch_date="2026-09-07"`、`master_seed=20260904`、`replicate_count=30`，需要 Python 3.10+、NumPy、pandas。准备完成后再由用户在 Visual Studio 中编译、执行 C++ `main()`，四个实验每条件先算 ID 1–10。后续只把 C++ `instance_count` 改为 30，在同一批输入和 `run_ton_01` 输出中补算 ID 11–30；不重新生成输入、不实现生成器追加功能。
+
+代码实现阶段未运行正式生成；后续经用户授权于 2026-09-08 生成固定批次，并定向修复上述一个 UAV 文件后，通过所有输入目录的完整性检查。当前已生成 330 个用户 CSV、450 个 UAV CSV 和一份完成配置，另保留一份原错误文件备份；**没有编译或执行 C++ 实验**。EXP1、EXP2 和 EXP4 使用上述 ScientificData2025 规则；EXP3 始终排除 ScientificData2025，并继续把 $\alpha_H$ 作为受控自变量。
 
 ## 当前复现限制
 
@@ -280,7 +284,7 @@ ExperimentsData/data_ToN/YYYY-MM-DD/
 - 用户坐标抽样、用户类型打乱、应用/QoS 抽样和批量输入文件抽样分别使用 pandas、Python `random` 和 NumPy 随机源，但当前流程没有统一设置或记录随机种子。
 - 仓库没有一套经验证、冻结的环境和命令把原始数据逐字节重建为现有正式 CSV；保留 JSON 条件并不等于现有实例可逐字节复现。
 
-这些问题是历史状态说明。新的 `_ToN` 入口已改用相对脚本路径和统一的 NumPy RNG，但尚未经过完整 30 个重复实例和 UAV 部署的正式运行；不能据此声称已有结果已逐字节重现。
+这些问题是历史状态说明。新的 `_ToN` 入口已使用相对脚本路径和统一的 NumPy RNG，固定批次已完成 30 个重复实例及 UAV 部署并通过输入结构检查；尚未独立从头重复生成全批，不能据此声称完成了全批逐字节复现。
 
 ## 数据、算法与版本控制边界
 
@@ -288,7 +292,7 @@ ExperimentsData/data_ToN/YYYY-MM-DD/
 - EXP1–EXP4 正式 user/UAV 实例、条件配置和文件命名约定见 [../data/README.md](../data/README.md)。
 - 新 ToN 日期批次的结构和同步边界见 [../data_ToN/README.md](../data_ToN/README.md)。
 - 读取这些实例的 C++ 算法工程见 [../../Algorithms/UAVBandwidthAllocation/README.md](../../Algorithms/UAVBandwidthAllocation/README.md)。
-- 当前 C++ EXP1–EXP4 仍硬编码读取 `ExperimentsData/data`，不会自动消费 `data_ToN/YYYY-MM-DD`；正式运行前需另行切换目标批次。
+- 当前 C++ `main()` 显式设置 `input_root` 为 `ExperimentsData/data_ToN/2026-09-07` 并顺序调用 EXP1–EXP4；完成配置或目标输入缺失就停止，不回退到旧 `data`。旧路径仅保留为 `ExperimentRunOptions.input_root` 的兼容默认值。
 - `.gitignore` 忽略 `DatasetTest/data/**`，但显式保留 `DatasetTest/data/README.md`；`ExperimentsData/data` 和 `data_ToN` 下的派生 CSV 也不随 Git 同步。
 - JSON 条件配置和说明文档用于保存生成意图与恢复边界，不能替代未提交的大型/派生数据资产。
 - 本顶层 `README.md` 不位于上述忽略范围内，应作为项目文档正常纳入版本控制。

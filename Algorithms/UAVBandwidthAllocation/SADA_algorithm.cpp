@@ -8,6 +8,7 @@
 #include "IpSmartPtr.hpp"
 
 using namespace Ipopt;
+// AlgSA-DD retains the original dual/IPOPT heuristic and association-initialization limitations.
 
 // ============================================================================
 // SADA-IPOPT算法 v3
@@ -373,8 +374,17 @@ static vector<double> dual_decomposition_solve(
 // 主算法
 // ============================================================================
 
+/// Run the existing SA-DD heuristic; config controls its unchanged algorithmic defaults.
+/// Return the legacy allocation pair, recording optional solver/fallback diagnostics and throwing on initialization failure.
 std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
-BAProblem::SADA_Allocation(SADAConfig config) {
+BAProblem::SADA_Allocation(SADAConfig config, AllocationDiagnostics* diagnostics) {
+    if (diagnostics) *diagnostics = AllocationDiagnostics();
+    if (sysModel.users.empty() || sysModel.uavs.empty() ||
+        std::none_of(sysModel.uavs.begin(), sysModel.uavs.end(), [](const Uav& uav) {return uav.total_bandwidth > 0;})) {
+        vector<KnapsackResult> empty(sysModel.m);
+        for (int k = 0; k < sysModel.m; ++k) empty[k].uav_id = k;
+        return {empty, construct_user_results(empty)};
+    }
 
     const int M = sysModel.m;
     const int N1 = sysModel.n1;
@@ -464,6 +474,10 @@ BAProblem::SADA_Allocation(SADAConfig config) {
                     theta[k][u] = calc_utility(k, u, b[k][u]) / S;
         }
         else {
+            if (diagnostics) {
+                diagnostics->used_fallback = true;
+                diagnostics->events.push_back("sadd.initialize_theta: zero-utility uniform-theta fallback");
+            }
             double val = 1.0 / (double)(M * N);
             for (int k = 0; k < M; k++)
                 for (int u = 0; u < N; u++)
@@ -475,13 +489,12 @@ BAProblem::SADA_Allocation(SADAConfig config) {
     // 4. 预创建IPOPT Application
     // ----------------------------------------------------------------
     SmartPtr<IpoptApplication> app = IpoptApplicationFactory();
-
-    ApplicationReturnStatus app_status = app->Initialize("SADA_ipopt.opt");
+    if (IsNull(app))
+        throw AllocationFailure(AlgorithmRunStatus::SolverFailure, "SA-DD: IPOPT creation failed");
+    ApplicationReturnStatus app_status = app->Initialize(algProjPath + "SADA_ipopt.opt");
+    if (diagnostics) diagnostics->record("sadd.initialize", static_cast<int>(app_status));
     if (app_status != Solve_Succeeded) {
-        // cout << "[SADA-IPOPT] FATAL: IPOPT initialization failed!" << endl;
-        vector<KnapsackResult> allResults(M);
-        map<int, UserResult> userResults;
-        return { allResults, userResults };
+        throw AllocationFailure(AlgorithmRunStatus::SolverFailure, "SA-DD: IPOPT initialization failed");
     }
 
     // ----------------------------------------------------------------
@@ -594,17 +607,20 @@ BAProblem::SADA_Allocation(SADAConfig config) {
                 }
             }
 
+            if (diagnostics) diagnostics->record("sadd.refine." + std::to_string(tau) +
+                ".uav." + std::to_string(k), static_cast<int>(status), !use_ipopt);
+
             // 写入结果
             for (int u = 0; u < N; u++) b[k][u] = 0.0;
 
             if (use_ipopt) {
                 for (int i = 0; i < n_active; i++) {
-                    b[k][active_users[i]] = max(0.0, nlp->solution[i]);
+                    b[k][active_users[i]] = checked_solver_bandwidth(nlp->solution.at(i), "SA-DD.refinement");
                 }
             }
             else {
                 for (int i = 0; i < n_active; i++) {
-                    b[k][active_users[i]] = max(0.0, dual_sol[i]);
+                    b[k][active_users[i]] = checked_solver_bandwidth(dual_sol.at(i), "SA-DD.dual");
                 }
             }
 
@@ -703,7 +719,7 @@ BAProblem::SADA_Allocation(SADAConfig config) {
         if (user_to_uav[u] < 0) continue;
         int k = user_to_uav[u];
         double C_s = sysModel.cap_list[k][u];
-        if (user_bw[u] * C_s < users[u].rMin - EPS) {
+        if (!hard_qos_satisfied(user_bw[u], C_s, users[u].rMin)) {
             double needed = users[u].rMin / C_s;
             user_bw[u] = needed;
         }
@@ -757,7 +773,7 @@ BAProblem::SADA_Allocation(SADAConfig config) {
         if (user_to_uav[u] < 0) continue;
         int k = user_to_uav[u];
         double C_s = sysModel.cap_list[k][u];
-        if (user_bw[u] * C_s < users[u].rMin - EPS) {
+        if (!hard_qos_satisfied(user_bw[u], C_s, users[u].rMin)) {
             user_to_uav[u] = -1; user_bw[u] = 0.0;
         }
     }
@@ -819,6 +835,8 @@ BAProblem::SADA_Allocation(SADAConfig config) {
             add_KnapsackResult(allResults[k], users[u], user_bw[u], final_util);
         }
         else {
+            ur.uav_id = -1;
+            ur.allocated_bandwidth = 0.0;
             ur.utility = 0.0;
         }
         userResults[users[u].ID] = ur;

@@ -5,14 +5,18 @@
 来自 ScientificData2025 Table 3/6；Hard/Elastic 映射、QoS 和权重则是本研究
 明确规定的建模规则。这些来源不是同一批真实用户的联合观测。
 
-当前只建立了目录说明和生成器，**尚未执行正式批次生成**，因此本目录下没有
-`YYYY-MM-DD` 日期批次、用户 CSV、UAV CSV 或 `generation_config_ToN.json`。
+固定 `2026-09-07` 批次已于 **2026-09-08** 完成生成和一次定向修复，全部输入结构检查通过。
+当前备好 ID 1–30，共 330 个用户 CSV、450 个 UAV CSV；完成配置中的
+`generation_status` 为 `complete`。仅 ID 19 的 20-UAV 文件重算，原 15 行及其他 779 个 CSV
+保持不变，原文件另存为 `.before_zero_gain_fix.bak`；原因和实际修复记录写在完成配置中。
+这是输入生成完成，不代表 C++ 实验已经运行；后续扩算无需重新运行生成器。
 生成规则的完整说明见 [DatasetTest README](../DatasetTest/README.md)。
 
 ## 日期批次结构
 
-未来显式运行 `DatasetTest/instance_generator/generate_instances_ToN.py` 后，输出按
-实际生成日期隔离：
+用户手动运行 `DatasetTest/instance_generator/generate_instances_ToN.py` 后，输出到
+`main()` 中固定的批次标识 `2026-09-07`；它与 C++ 的 `input_root` 一致，不随续跑日期变化。
+通用结构如下（本轮 `YYYY-MM-DD` 为 `2026-09-07`）：
 
 ```text
 data_ToN/
@@ -49,6 +53,10 @@ effective_seed = master_seed + replicate_id - 1
 同一日期目录不会被自动覆盖或清理。若目录已经存在，生成入口会在写入批次
 文件前停止；需要保留失败现场或由维护者逐项处理，而不是自动删除。
 
+生成器不支持原目录追加。一次备好 30 个输入后，C++ 第一轮各条件只计算 ID 1–10；
+后续只把 C++ `instance_count` 改为 30，沿用同一批输入及结果目录补算 ID 11–30，
+不要重新运行生成器。初次生成需要 Python 3.10+、NumPy 和 pandas。
+
 ## 实例关系与文件格式
 
 - EXP1 生成 1000、2000、3000、4000、5000 用户的嵌套前缀及对应 10-UAV 文件。
@@ -77,7 +85,12 @@ uav_id,longitude,latitude,bandwidth
 
 ## 批次记录和版本边界
 
-每次成功生成后，日期根目录中的 `generation_config_ToN.json` 记录生成日期、
+全部生成结束后只做一次输出完整性检查：各输入目录必须准确包含 ID 1–30 与县区代码
+对应的文件，表头及实际用户数/UAV 数必须符合条件。部署器只打印错误、文件缺失、
+实际 UAV 数少于文件名等情况均会使生成入口抛错，不写完成配置，不打印批次成功。
+检查不会修改部署算法、自动重试或修复已有文件。
+
+检查通过后，日期根目录中的 `generation_config_ToN.json` 记录 `generation_status="complete"`、批次日期标识、
 生成器文件名、输入位置目录、Python/NumPy/pandas 版本、主种子、有效种子公式、
 30 个县区与重复实例的对应关系，以及 EXP1–EXP4 和 Table 3/6 的生成规则。
 它不保存逐 CSV manifest、文件哈希、SemVer 或 Git 提交哈希；日期目录是该批次
@@ -88,6 +101,7 @@ uav_id,longitude,latitude,bandwidth
 两者不会互相覆盖。
 
 当前 [UAVBandwidthAllocation](../../Algorithms/UAVBandwidthAllocation/README.md)
-中的 EXP1–EXP4 仍读取 `ExperimentsData/data`，不会自动使用这里的日期批次。
-正式运行 ToN 实验前，应另行明确目标日期并修改或配置 C++ 读取根目录；本次
-生成器修改不改变算法端的默认行为。
+的 `main()` 已显式选择 `ExperimentsData/data_ToN/2026-09-07`，依次调用 EXP1–EXP4。
+生成完成配置缺失、状态不完整或目标 ID 输入缺失时直接报错，绝不退回旧 `data`。
+四个实验的结果分别保存到对应实验目录的 `ToN_simple/run_ton_01`，不会导入旧 EXP1 结果。
+`ExperimentRunOptions.input_root` 的结构体默认值仍保留旧 `data`，仅用于兼容已有调用。

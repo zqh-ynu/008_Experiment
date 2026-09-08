@@ -1,92 +1,103 @@
-#pragma once
-// ±¾ÎÄ¼şÉùÃ÷ UAV ´ø¿í·ÖÅäÏµÍ³Ä£ĞÍ¡¢½á¹û½á¹¹ÒÔ¼°¸÷ÀàËã·¨½Ó¿Ú¡£
+ï»¿#pragma once
+// æœ¬æ–‡ä»¶å£°æ˜ UAV å¸¦å®½åˆ†é…ç³»ç»Ÿæ¨¡å‹ã€ç»“æœç»“æ„ä»¥åŠå„ç±»ç®—æ³•æ¥å£ã€‚
 #include "predefine.h"
+#include "allocation_contract.h"
 
 
-/// @brief SADAËã·¨: »ùÓÚÁ¬Ğø½üËÆÓë¶ÔÅ¼·Ö½âµÄÁªºÏ×ÊÔ´·ÖÅäËã·¨µÄÅäÖÃ²ÎÊı
+/// @brief AlgSA-DD çš„è¿ç»­è¿‘ä¼¼ã€å¯¹å¶å¸¦å®½æ±‚è§£åŠç°æœ‰åå¤„ç†å‚æ•°ï¼›ä¸ä¿è¯æ¿€æ´»æ–°çš„å…³è”ã€‚
 struct SADAConfig {
-	// Sigmoid²ÎÊı
-	double m_init = 5.0;     // Sigmoid³õÊ¼¶¸ÇÍÒò×Ó
-	double m_scale = 1.5;     // Ã¿ÂÖÍâ²ãµü´úµÄ·Å´óÏµÊı
-	double m_max = 100.0;   // Sigmoid¶¸ÇÍÒò×ÓÉÏÏŞ
+	// Sigmoidå‚æ•°
+	double m_init = 5.0;     // Sigmoidåˆå§‹é™¡å³­å› å­
+	double m_scale = 1.5;     // æ¯è½®å¤–å±‚è¿­ä»£çš„æ”¾å¤§ç³»æ•°
+	double m_max = 100.0;   // Sigmoidé™¡å³­å› å­ä¸Šé™
 
-	// Íâ²ãÑ­»·²ÎÊı
-	int    max_outer_iter = 30;    // ×î´óÍâ²ãµü´ú´ÎÊı
-	double theta_tol = 1e-8;  // thetaÊÕÁ²ãĞÖµ
+	// å¤–å±‚å¾ªç¯å‚æ•°
+	int    max_outer_iter = 30;    // æœ€å¤§å¤–å±‚è¿­ä»£æ¬¡æ•°
+	double theta_tol = 1e-8;  // thetaæ”¶æ•›é˜ˆå€¼
 
-	// ÄÚ²ã¶ÔÅ¼·Ö½â²ÎÊı
-	int    max_inner_iter = 200;   // ×î´óÄÚ²ãµü´ú´ÎÊı
-	double alpha_init = 0.1;   // ¶ÔÅ¼±äÁ¿³õÊ¼²½³¤
-	double mu_init = 1.0;   // ¶ÔÅ¼±äÁ¿³õÊ¼Öµ
-	double dual_tol = 1e-8;  // ¶ÔÅ¼ÊÕÁ²ãĞÖµ
+	// å†…å±‚å¯¹å¶åˆ†è§£å‚æ•°
+	int    max_inner_iter = 200;   // æœ€å¤§å†…å±‚è¿­ä»£æ¬¡æ•°
+	double alpha_init = 0.1;   // å¯¹å¶å˜é‡åˆå§‹æ­¥é•¿
+	double mu_init = 1.0;   // å¯¹å¶å˜é‡åˆå§‹å€¼
+	double dual_tol = 1e-8;  // å¯¹å¶æ”¶æ•›é˜ˆå€¼
 
-	// ¶ş·Ö·¨²ÎÊı (ÓÃÓÚÇó½âUEÓÃ»§KKT·½³Ì)
+	// äºŒåˆ†æ³•å‚æ•° (ç”¨äºæ±‚è§£UEç”¨æˆ·KKTæ–¹ç¨‹)
 	int    bisect_max_iter = 5000;
 	double bisect_tol = 1e-8;
 
 	bool   verbose = true;
 };
 struct MatchingSQPConfig {
-	double nu_init = 5.0;    // Sigmoid ³õÊ¼¶¸ÇÍÒò×Ó
-	double nu_step = 5.0;    // Ã¿ÂÖµİÔö
-	double nu_max = 50.0;   // ÉÏÏŞ
-	double conv_eps = 1e-4;   // Íâ²ãÊÕÁ²ãĞÖµ
-	int    max_outer_iter = 1;    // ×î´óÍâ²ãµü´ú´ÎÊı
-	int    max_ipopt_iter = 200;   // IPOPT ×î´óµü´ú
-	double ipopt_tol = 1e-6;  // IPOPT ÊÕÁ²Èİ²î
+	double nu_init = 5.0;    // Sigmoid åˆå§‹é™¡å³­å› å­
+	double nu_step = 5.0;    // æ¯è½®é€’å¢
+	double nu_max = 50.0;   // ä¸Šé™
+	double conv_eps = 1e-4;   // å¤–å±‚æ”¶æ•›é˜ˆå€¼
+	int    max_outer_iter = 1;    // æœ€å¤§å¤–å±‚è¿­ä»£æ¬¡æ•°
+	int    max_ipopt_iter = 200;   // IPOPT æœ€å¤§è¿­ä»£
+	double ipopt_tol = 1e-6;  // IPOPT æ”¶æ•›å®¹å·®
 };
 
 class Point;
 class User;
 class Uav;
 class Channel;
-class SystemMd;     // ÏµÍ³Ä£ĞÍ
-class BAProblem;    // ´ø¿í·ÖÅäÎÊÌâÀà
-#define AllocationResult map<double, KnapsackResult> // ´ø¿í·ÖÅä½á¹û£¬keyÎª×Ü´ø¿í£¬valueÎª¶ÔÓ¦µÄ·ÖÅä½á¹û
-#define UtiFunc std::function<double(double, double)> // ÓÃ»§Ğ§ÓÃº¯ÊıÀàĞÍ
+class SystemMd;     // ç³»ç»Ÿæ¨¡å‹
+class BAProblem;    // å¸¦å®½åˆ†é…é—®é¢˜ç±»
+#define AllocationResult map<double, KnapsackResult> // å¸¦å®½åˆ†é…ç»“æœï¼Œkeyä¸ºæ€»å¸¦å®½ï¼Œvalueä¸ºå¯¹åº”çš„åˆ†é…ç»“æœ
+#define UtiFunc std::function<double(double, double)> // ç”¨æˆ·æ•ˆç”¨å‡½æ•°ç±»å‹
 
 
 
 
 /// <summary>
-/// °üº¬ÁË±³°üÎÊÌâµÄ·ÖÅä½á¹û£¬°üÀ¨Ñ¡ÖĞµÄÎïÆ·ÁĞ±í¼°Æä¶ÔÓ¦µÄ·ÖÅäÖµ£¬×Ü¼ÛÖµ£¬×ÜÖØÁ¿£¬Á¬Ğø²¿·ÖµÄ×Ü¼ÛÖµºÍ×ÜÖØÁ¿£¬ÀëÉ¢²¿·ÖµÄ×Ü¼ÛÖµºÍ×ÜÖØÁ¿¡£
+/// åŒ…å«äº†èƒŒåŒ…é—®é¢˜çš„åˆ†é…ç»“æœï¼ŒåŒ…æ‹¬é€‰ä¸­çš„ç‰©å“åˆ—è¡¨åŠå…¶å¯¹åº”çš„åˆ†é…å€¼ï¼Œæ€»ä»·å€¼ï¼Œæ€»é‡é‡ï¼Œè¿ç»­éƒ¨åˆ†çš„æ€»ä»·å€¼å’Œæ€»é‡é‡ï¼Œç¦»æ•£éƒ¨åˆ†çš„æ€»ä»·å€¼å’Œæ€»é‡é‡ã€‚
 /// </summary>
 struct KnapsackResult {
-	int uav_id = -1; // ËùÊôµÄUAV ID
-	vector<int> allocatedList; // Ñ¡ÖĞµÄÎïÆ·IDÁĞ±í
-	map<int, double> allocatedBandwidth; // Ñ¡ÖĞµÄÎïÆ·¶ÔÓ¦µÄ·ÖÅäÖµ£¨´ø¿í£©
-	map<int, double> allocatedValue; // Ñ¡ÖĞµÄÎïÆ·¶ÔÓ¦µÄ¼ÛÖµ
-	double totalValue = 0;         // ×Ü¼ÛÖµ
-	double totalWeight = 0;        // ×ÜÖØÁ¿
-	double elasticValue = 0;         // ½öÁ¬Ğø²¿·ÖµÄ×Ü¼ÛÖµ
-	double hardValue = 0;         // ½öÀëÉ¢²¿·ÖµÄ×Ü¼ÛÖµ
-	double elasticWeight = 0;        // ½öÁ¬Ğø²¿·ÖµÄ×ÜÖØÁ¿
-	double hardWeight = 0;        // ½öÀëÉ¢²¿·ÖµÄ×ÜÖØÁ¿
+	int uav_id = -1; // æ‰€å±çš„UAV ID
+	vector<int> allocatedList; // é€‰ä¸­çš„ç‰©å“IDåˆ—è¡¨
+	map<int, double> allocatedBandwidth; // é€‰ä¸­çš„ç‰©å“å¯¹åº”çš„åˆ†é…å€¼ï¼ˆå¸¦å®½ï¼‰
+	map<int, double> allocatedValue; // é€‰ä¸­çš„ç‰©å“å¯¹åº”çš„ä»·å€¼
+	double totalValue = 0;         // æ€»ä»·å€¼
+	double totalWeight = 0;        // æ€»é‡é‡
+	double elasticValue = 0;         // ä»…è¿ç»­éƒ¨åˆ†çš„æ€»ä»·å€¼
+	double hardValue = 0;         // ä»…ç¦»æ•£éƒ¨åˆ†çš„æ€»ä»·å€¼
+	double elasticWeight = 0;        // ä»…è¿ç»­éƒ¨åˆ†çš„æ€»é‡é‡
+	double hardWeight = 0;        // ä»…ç¦»æ•£éƒ¨åˆ†çš„æ€»é‡é‡
 };
 struct UserResult {
 	int uav_id = -1;
-	double allocated_bandwidth = 0; // ·ÖÅäµÄ´ø¿í
-	double utility = 0; // ÓÃ»§Ğ§ÓÃ
+	double allocated_bandwidth = 0; // åˆ†é…çš„å¸¦å®½
+	double utility = 0; // ç”¨æˆ·æ•ˆç”¨
 };
 
 /// <summary>
-/// ¸Ã½á¹¹ÌåÊÇÔÚº¯ÊıBAProblem::WaterFillingAlgorithm_singleUAVºÍBAProblem::FPTAS_singleUAVÖĞÊ¹ÓÃµÄ¡£ÕâÁ½¸öº¯Êı¶¼Éæ¼°µ½KKTÌõ¼şºÍ×¢Ë®Ëã·¨¡£
+/// è¯¥ç»“æ„ä½“æ˜¯åœ¨å‡½æ•°BAProblem::WaterFillingAlgorithm_singleUAVå’ŒBAProblem::FPTAS_singleUAVä¸­ä½¿ç”¨çš„ã€‚è¿™ä¸¤ä¸ªå‡½æ•°éƒ½æ¶‰åŠåˆ°KKTæ¡ä»¶å’Œæ³¨æ°´ç®—æ³•ã€‚
 /// </summary>
 struct KKT_parameters
 {
-	int user_id = -1;		// ÓÃ»§ÏÂ±ê
-	double W_sum = 0.0;		// µ±Ç°ÏÂ±êÖ®Ç°ËùÓĞelasticÓÃ»§µÄÈ¨ÖØÖ®ºÍ
-	double C_inv_sum = 0.0;	// µ±Ç°ÏÂ±êÖ®Ç°ËùÓĞelasticÓÃ»§µÄĞÅµÀÈİÁ¿µ¹ÊıÖ®ºÍ
-	double efficient = 0.0;	// µ±Ç°elasticÓÃ»§ÔÚÎ´·ÖÅä´ø¿íÊ±(»ò·ÖÅäÈ«²¿´ø¿íÊ±£©µÄ±ß¼ÊĞ§ÓÃ
-	double B_elastic_sum = 0.0; // µ±Ç°ÏÂ±êÖ®Ç°ËùÓĞelasticÓÃ»§µÄ·ÖÅä´ø¿íÖ®ºÍ
-	double B_hard_sum = 0.0;	// µ±Ç°ÏÂ±êÖ®Ç°ËùÓĞhardÓÃ»§µÄ×îĞ¡´ø¿íĞèÇóÖ®ºÍ
+	int user_id = -1;		// ç”¨æˆ·ä¸‹æ ‡
+	double W_sum = 0.0;		// å½“å‰ä¸‹æ ‡ä¹‹å‰æ‰€æœ‰elasticç”¨æˆ·çš„æƒé‡ä¹‹å’Œ
+	double C_inv_sum = 0.0;	// å½“å‰ä¸‹æ ‡ä¹‹å‰æ‰€æœ‰elasticç”¨æˆ·çš„ä¿¡é“å®¹é‡å€’æ•°ä¹‹å’Œ
+	double efficient = 0.0;	// å½“å‰elasticç”¨æˆ·åœ¨æœªåˆ†é…å¸¦å®½æ—¶(æˆ–åˆ†é…å…¨éƒ¨å¸¦å®½æ—¶ï¼‰çš„è¾¹é™…æ•ˆç”¨
+	double B_elastic_sum = 0.0; // å½“å‰ä¸‹æ ‡ä¹‹å‰æ‰€æœ‰elasticç”¨æˆ·çš„åˆ†é…å¸¦å®½ä¹‹å’Œ
+	double B_hard_sum = 0.0;	// å½“å‰ä¸‹æ ‡ä¹‹å‰æ‰€æœ‰hardç”¨æˆ·çš„æœ€å°å¸¦å®½éœ€æ±‚ä¹‹å’Œ
 };
 
 void clean_KnapsackResult(KnapsackResult& result);
 void add_KnapsackResult(KnapsackResult& result, User& user, double bandwidth, double value);
 
+/// Count guard-inclusive slots from total/effective bandwidth in internal units; invalid/overflow throws.
+int hard_first_slot_count(double total_bandwidth, double effective_bandwidth);
+/// Minimum positive slots meeting reliable QoS, or zero when no bundle fits max_slots.
+int hard_first_min_slots(int max_slots, double width, double capacity, double minimum_rate);
+/// Independently check integer effective slots, guard budgets and minimal hard bundles; never repair.
+void validate_hard_first_allocation(const SystemMd& model, const std::vector<KnapsackResult>& results);
 
-// É¾³ı vector ÖĞµÚÒ»¸öµÈÓÚ value µÄÔªËØ£¬ÕÒµ½·µ»Ø true£¬·ñÔò·µ»Ø false
+/// Verify the relaxation/fixed-association objective, Jacobian and Hessian against finite differences.
+void verify_relax_round_derivatives(const SystemMd& model);
+
+
+// åˆ é™¤ vector ä¸­ç¬¬ä¸€ä¸ªç­‰äº value çš„å…ƒç´ ï¼Œæ‰¾åˆ°è¿”å› trueï¼Œå¦åˆ™è¿”å› false
 template<typename T>
 bool remove_first(std::vector<T>& vec, const T& value) {
 	auto it = std::find(vec.begin(), vec.end(), value);
@@ -95,7 +106,7 @@ bool remove_first(std::vector<T>& vec, const T& value) {
 	return true;
 }
 
-// É¾³ı vector ÖĞËùÓĞµÈÓÚ value µÄÔªËØ£¬·µ»ØÉ¾³ıµÄÊıÁ¿
+// åˆ é™¤ vector ä¸­æ‰€æœ‰ç­‰äº value çš„å…ƒç´ ï¼Œè¿”å›åˆ é™¤çš„æ•°é‡
 template<typename T>
 size_t remove_all(std::vector<T>& vec, const T& value) {
 	auto new_end = std::remove(vec.begin(), vec.end(), value);
@@ -104,7 +115,7 @@ size_t remove_all(std::vector<T>& vec, const T& value) {
 	return removed;
 }
 
-// °´Î½´ÊÉ¾³ı£¨¸üÍ¨ÓÃ£©£¬·µ»ØÉ¾³ıµÄÊıÁ¿
+// æŒ‰è°“è¯åˆ é™¤ï¼ˆæ›´é€šç”¨ï¼‰ï¼Œè¿”å›åˆ é™¤çš„æ•°é‡
 template<typename T, typename Pred>
 size_t remove_if_pred(std::vector<T>& vec, Pred pred) {
 	auto new_end = std::remove_if(vec.begin(), vec.end(), pred);
@@ -113,17 +124,17 @@ size_t remove_if_pred(std::vector<T>& vec, Pred pred) {
 	return removed;
 }
 
-/* Ê¹ÓÃÊ¾Àı£º
+/* ä½¿ç”¨ç¤ºä¾‹ï¼š
    vector<int> v = {1,2,3,2,4};
    remove_first(v, 2);        // v -> {1,3,2,4}
    remove_all(v, 2);          // v -> {1,3,4}
-   remove_if_pred(v, [](int x){ return x % 2 == 0; }); // É¾³ıÅ¼Êı
+   remove_if_pred(v, [](int x){ return x % 2 == 0; }); // åˆ é™¤å¶æ•°
 */
 
-/* ×¢ÒâÊÂÏî£º
- - Ê¹ÓÃ erase-remove ¹ßÓÃ·¨£¨remove_all/remove_if_pred£©ÊÇ¸ßĞ§ÇÒ°²È«µÄ·½Ê½¡£
- - Èç¹û vector ÔªËØ²»ÊÇ¿ÉÓÃ operator== ±È½ÏµÄÀàĞÍ£¬Ìá¹©ÏàÓ¦µÄÎ½´Ê¡£
- - ÈôÒªÍ¬Ê±´ÓÓëÖ®ÅäÌ×µÄ map/Êı×é ÖĞÒÆ³ı¶ÔÓ¦¹ØÁªÊı¾İ£¬ĞèÒªÏÈ±£´æÒªÉ¾³ıµÄ key ÁĞ±í£¬ÔÙÍ³Ò»É¾³ı£¬±ÜÃâÔÚ±éÀúÊ±ĞŞ¸ÄÈİÆ÷µ¼ÖÂÎ´¶¨ÒåĞĞÎª¡£
+/* æ³¨æ„äº‹é¡¹ï¼š
+ - ä½¿ç”¨ erase-remove æƒ¯ç”¨æ³•ï¼ˆremove_all/remove_if_predï¼‰æ˜¯é«˜æ•ˆä¸”å®‰å…¨çš„æ–¹å¼ã€‚
+ - å¦‚æœ vector å…ƒç´ ä¸æ˜¯å¯ç”¨ operator== æ¯”è¾ƒçš„ç±»å‹ï¼Œæä¾›ç›¸åº”çš„è°“è¯ã€‚
+ - è‹¥è¦åŒæ—¶ä»ä¸ä¹‹é…å¥—çš„ map/æ•°ç»„ ä¸­ç§»é™¤å¯¹åº”å…³è”æ•°æ®ï¼Œéœ€è¦å…ˆä¿å­˜è¦åˆ é™¤çš„ key åˆ—è¡¨ï¼Œå†ç»Ÿä¸€åˆ é™¤ï¼Œé¿å…åœ¨éå†æ—¶ä¿®æ”¹å®¹å™¨å¯¼è‡´æœªå®šä¹‰è¡Œä¸ºã€‚
 */
 
 
@@ -136,8 +147,8 @@ size_t remove_if_pred(std::vector<T>& vec, Pred pred) {
 
 class Point {
 public:
-	double X = 0;	// X×ø±ê
-	double Y = 0;	// Y×ø±ê
+	double X = 0;	// Xåæ ‡
+	double Y = 0;	// Yåæ ‡
 	double Z = 0;
 
 	int ID = -1;
@@ -148,20 +159,20 @@ public:
 	~Point() {}
 
 	///<summary>
-	/// ¼ÆËãµãsÓëµãtµÄÖ±Ïß¾àÀë
-	/// ±¸×¢£º¾²Ì¬º¯Êı£¬Í¨¹ıÀàÃûµ÷ÓÃ
+	/// è®¡ç®—ç‚¹sä¸ç‚¹tçš„ç›´çº¿è·ç¦»
+	/// å¤‡æ³¨ï¼šé™æ€å‡½æ•°ï¼Œé€šè¿‡ç±»åè°ƒç”¨
 	/// </summary>
 	/// <param name="s">The s.</param>
 	/// <param name="t">The t.</param>
-	/// <returns>µãsÓëµãtµÄÖ±Ïß¾àÀë</returns>
+	/// <returns>ç‚¹sä¸ç‚¹tçš„ç›´çº¿è·ç¦»</returns>
 	static double cal_distance(const Point& s, const Point& t);
 	/// <summary>
-	/// ¼ÆËãµãsÓëµãtµÄË®Æ½¾àÀë
-	/// ±¸×¢£º¾²Ì¬º¯Êı£¬Í¨¹ıÀàÃûµ÷ÓÃ
+	/// è®¡ç®—ç‚¹sä¸ç‚¹tçš„æ°´å¹³è·ç¦»
+	/// å¤‡æ³¨ï¼šé™æ€å‡½æ•°ï¼Œé€šè¿‡ç±»åè°ƒç”¨
 	/// </summary>
 	/// <param name="s">The s.</param>
 	/// <param name="t">The t.</param>
-	/// <returns>µãsÓëµãtµÄË®Æ½¾àÀë</returns>
+	/// <returns>ç‚¹sä¸ç‚¹tçš„æ°´å¹³è·ç¦»</returns>
 	static double cal_horizontal_distance(const Point& s, const Point& t);
 	void set_location(double lx, double ly, double lz) { X = lx; Y = ly; Z = lz; }
 	const int get_index() { return ID; }
@@ -172,14 +183,14 @@ public:
 
 class User : public Point {
 public:
-	int uType = HARD_UTILITY; // ÓÃ»§Ğ§ÓÃÀàĞÍ£¬Ä¬ÈÏÓ²Ğ§ÓÃ
-	double weight = 1; // ÓÃ»§È¨ÖØ£¬Ä¬ÈÏ1
-	double rData = 0;		// ĞèÇóµÄ×îĞ¡Êı¾İÁ¿
-	double rMin = 0;		// ĞèÇóµÄ×îĞ¡Êı¾İËÙÂÊ Mbps
-	double pOut = 0;		// ĞèÇóµÄ×î´óÖĞ¶Ï¸ÅÂÊ
+	int uType = HARD_UTILITY; // ç”¨æˆ·æ•ˆç”¨ç±»å‹ï¼Œé»˜è®¤ç¡¬æ•ˆç”¨
+	double weight = 1; // ç”¨æˆ·æƒé‡ï¼Œé»˜è®¤1
+	double rData = 0;		// éœ€æ±‚çš„æœ€å°æ•°æ®é‡
+	double rMin = 0;		// éœ€æ±‚çš„æœ€å°æ•°æ®é€Ÿç‡ Mbps
+	double pOut = 0;		// éœ€æ±‚çš„æœ€å¤§ä¸­æ–­æ¦‚ç‡
 
 	double B = 0.18; // 180 KHz
-	double BSub = 0.18;   // ×ÓÔØ²¨´ø¿í 180 KHz
+	double BSub = 0.18;   // å­è½½æ³¢å¸¦å®½ 180 KHz
 	// double B = 20e6;    // 20 MHz
 
 	User() {}
@@ -207,55 +218,55 @@ public:
 	void set_Bandwidth();
 
 	/// <summary>
-	/// Ó²Ğ§ÓÃº¯Êı, ÓÃ»§µÄĞ§ÓÃº¯ÊıÊÇÒ»¸ö½×Ô¾º¯Êı£¬µ±·ÖÅä¸øÓÃ»§µÄ´ø¿íºÍĞÅµÀÈİÁ¿µÄ³Ë»ı´óÓÚµÈÓÚÓÃ»§µÄ×îĞ¡ËÙÂÊĞèÇóÊ±£¬ÓÃ»§µÄĞ§ÓÃÎªÆäÈ¨ÖØ£¬·ñÔòÎª0¡£
+	/// ç¡¬æ•ˆç”¨å‡½æ•°, ç”¨æˆ·çš„æ•ˆç”¨å‡½æ•°æ˜¯ä¸€ä¸ªé˜¶è·ƒå‡½æ•°ï¼Œå½“åˆ†é…ç»™ç”¨æˆ·çš„å¸¦å®½å’Œä¿¡é“å®¹é‡çš„ä¹˜ç§¯å¤§äºç­‰äºç”¨æˆ·çš„æœ€å°é€Ÿç‡éœ€æ±‚æ—¶ï¼Œç”¨æˆ·çš„æ•ˆç”¨ä¸ºå…¶æƒé‡ï¼Œå¦åˆ™ä¸º0ã€‚
 	/// </summary>
-	/// <param name="bandwidth_">ÓÃ»§±»·ÖÅäµÄ´ø¿í.</param>
-	/// <param name="capacity_">ÓÃ»§Óë·¢ËÍÕßÖ®¼äµÄĞÅµÀÈİÁ¿.</param>
-	/// <returns>Ğ§ÓÃÖµ</returns>
+	/// <param name="bandwidth_">ç”¨æˆ·è¢«åˆ†é…çš„å¸¦å®½.</param>
+	/// <param name="capacity_">ç”¨æˆ·ä¸å‘é€è€…ä¹‹é—´çš„ä¿¡é“å®¹é‡.</param>
+	/// <returns>æ•ˆç”¨å€¼</returns>
 	double hard_utility(double bandwidth_, double capacity_, double SNR_avg_dB) const;
 
 	double hard_utility_SNR_avg(double bandwidth_, double SNR_avg_dB) const;
 
 	/// <summary>
-	/// ÒÔÖĞ¶Ï¸ÅÂÊÎª×Ô±äÁ¿µÄÓ²Ğ§ÓÃº¯Êı, ÓÃ»§µÄĞ§ÓÃº¯ÊıÊÇÒ»¸ö½×Ô¾º¯Êı£¬µ±ÓÃ»§µÄÖĞ¶Ï¸ÅÂÊĞ¡ÓÚµÈÓÚÆä×î´óÖĞ¶Ï¸ÅÂÊÊ±£¬ÓÃ»§µÄĞ§ÓÃÎªÆäÈ¨ÖØ£¬·ñÔòÎª0¡£
+	/// ä»¥ä¸­æ–­æ¦‚ç‡ä¸ºè‡ªå˜é‡çš„ç¡¬æ•ˆç”¨å‡½æ•°, ç”¨æˆ·çš„æ•ˆç”¨å‡½æ•°æ˜¯ä¸€ä¸ªé˜¶è·ƒå‡½æ•°ï¼Œå½“ç”¨æˆ·çš„ä¸­æ–­æ¦‚ç‡å°äºç­‰äºå…¶æœ€å¤§ä¸­æ–­æ¦‚ç‡æ—¶ï¼Œç”¨æˆ·çš„æ•ˆç”¨ä¸ºå…¶æƒé‡ï¼Œå¦åˆ™ä¸º0ã€‚
 	/// </summary>
-	/// <param name="outage_">ÖĞ¶Ï¸ÅÂÊ.</param>
-	/// <returns>Ğ§ÓÃ</returns>
+	/// <param name="outage_">ä¸­æ–­æ¦‚ç‡.</param>
+	/// <returns>æ•ˆç”¨</returns>
 	double hard_utility(double outage_) const;
 
 	/// <summary>
-	/// µ¯ĞÔĞ§ÓÃº¯Êı, ÓÃ»§µÄĞ§ÓÃº¯ÊıÊÇÒ»¸ö°¼º¯Êı,
+	/// å¼¹æ€§æ•ˆç”¨å‡½æ•°, ç”¨æˆ·çš„æ•ˆç”¨å‡½æ•°æ˜¯ä¸€ä¸ªå‡¹å‡½æ•°,
 	/// weight * log(1 + r) / log(1 + rMin);
 	/// </summary>
-	/// <param name="bandwidth_">ÓÃ»§±»·ÖÅäµÄ´ø¿í.</param>
-	/// <param name="capacity_">ÓÃ»§Óë·¢ËÍÕßÖ®¼äµÄĞÅµÀÈİÁ¿.</param>
-	/// <returns>Ğ§ÓÃÖµ</returns>
+	/// <param name="bandwidth_">ç”¨æˆ·è¢«åˆ†é…çš„å¸¦å®½.</param>
+	/// <param name="capacity_">ç”¨æˆ·ä¸å‘é€è€…ä¹‹é—´çš„ä¿¡é“å®¹é‡.</param>
+	/// <returns>æ•ˆç”¨å€¼</returns>
 	double elastic_utility(double bandwidth_, double capacity_) const;
 	/// <summary>
-	/// ÓÒ°ë±ßÈíĞ§ÓÃº¯Êı, ÓÃ»§µÄĞ§ÓÃº¯ÊıÊÇÒ»¸öÓÒ°ë±ßµÄÈí½×Ô¾º¯Êı,
-	/// ±¸×¢£ºµ±r Ğ¡ÓÚ rMinÊ±£¬Ğ§ÓÃÎª0£»µ±r ´óÓÚµÈÓÚ rMinÊ±£¬
-	/// ¾ßÌå¶¨Òå²Î¼ûtanUtilityMaximizationResource2015
+	/// å³åŠè¾¹è½¯æ•ˆç”¨å‡½æ•°, ç”¨æˆ·çš„æ•ˆç”¨å‡½æ•°æ˜¯ä¸€ä¸ªå³åŠè¾¹çš„è½¯é˜¶è·ƒå‡½æ•°,
+	/// å¤‡æ³¨ï¼šå½“r å°äº rMinæ—¶ï¼Œæ•ˆç”¨ä¸º0ï¼›å½“r å¤§äºç­‰äº rMinæ—¶ï¼Œ
+	/// å…·ä½“å®šä¹‰å‚è§tanUtilityMaximizationResource2015
 	/// </summary>
-	/// <param name="bandwidth_">ÓÃ»§±»·ÖÅäµÄ´ø¿í.</param>
-	/// <param name="capacity_r">ÓÃ»§Óë·¢ËÍÕßÖ®¼äµÄĞÅµÀÈİÁ¿.</param>
-	/// <returns>Ğ§ÓÃÖµ</returns>
-	double halfsoft_utility(double bandwidth_, double capacity_r) const; // ÓÒ°ë±ßÈíĞ§ÓÃº¯Êı
+	/// <param name="bandwidth_">ç”¨æˆ·è¢«åˆ†é…çš„å¸¦å®½.</param>
+	/// <param name="capacity_r">ç”¨æˆ·ä¸å‘é€è€…ä¹‹é—´çš„ä¿¡é“å®¹é‡.</param>
+	/// <returns>æ•ˆç”¨å€¼</returns>
+	double halfsoft_utility(double bandwidth_, double capacity_r) const; // å³åŠè¾¹è½¯æ•ˆç”¨å‡½æ•°
 
-	double utility(double bandwidth_, double capacity_, double SNR_avg_dB); // ÓÃ»§Ğ§ÓÃº¯Êı
+	double utility(double bandwidth_, double capacity_, double SNR_avg_dB); // ç”¨æˆ·æ•ˆç”¨å‡½æ•°
 
 
 
 	/// <summary>
-	/// ÔÚ´ø¿íÎª bandwidth_£¬ĞÅµÀÈİÁ¿Îª capacity_£¬ÇÒÒÑ¾­´æÔÚĞ§ÓÃÖµ existed_utility µÄÇé¿öÏÂ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃ
+	/// åœ¨å¸¦å®½ä¸º bandwidth_ï¼Œä¿¡é“å®¹é‡ä¸º capacity_ï¼Œä¸”å·²ç»å­˜åœ¨æ•ˆç”¨å€¼ existed_utility çš„æƒ…å†µä¸‹ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨
 	/// </summary>
 	/// <param name="bandwidth_">The bandwidth.</param>
 	/// <param name="capacity_">The capacity.</param>
-	/// <param name="existed_utility">ÓÃ»§µÄÒÑÓĞĞ§ÓÃ.</param>
-	/// <returns>±ß¼ÊĞ§ÓÃ</returns>
+	/// <param name="existed_utility">ç”¨æˆ·çš„å·²æœ‰æ•ˆç”¨.</param>
+	/// <returns>è¾¹é™…æ•ˆç”¨</returns>
 	double marginal_utility(double bandwidth_, double capacity_, double existed_utility);
 
 	/// <summary>
-	/// ÓÃ»§ÔÚ·ÖÅä´ø¿íÎªbandwidth_Ê±µÄµ¼Êı. ¶ÔÓÚhardÓÃ»§£¬²ÎÊıcapacity±íÊ¾ÆäĞèÇóµÄ´ø¿íãĞÖµ. ¶ÔÓÚelasticÓÃ»§£¬²ÎÊıcapacity±íÊ¾ĞÅµÀÈİÁ¿£¬¼´log(1+SNR)
+	/// ç”¨æˆ·åœ¨åˆ†é…å¸¦å®½ä¸ºbandwidth_æ—¶çš„å¯¼æ•°. å¯¹äºhardç”¨æˆ·ï¼Œå‚æ•°capacityè¡¨ç¤ºå…¶éœ€æ±‚çš„å¸¦å®½é˜ˆå€¼. å¯¹äºelasticç”¨æˆ·ï¼Œå‚æ•°capacityè¡¨ç¤ºä¿¡é“å®¹é‡ï¼Œå³log(1+SNR)
 	/// </summary>
 	/// <param name="bandwidth_">The bandwidth.</param>
 	/// <param name="capacity_">The capacity.</param>
@@ -267,10 +278,10 @@ public:
 
 class Uav : public Point {
 public:
-	double total_bandwidth = 20;	// UAVµÄ×Ü´ø¿íÈİÁ¿,20MHz
-	double hard_bandwidth = 0;      // ÎªÓ²Ğ§ÓÃÓÃ»§·ÖÅäµÄ´ø¿í£¬ÕâÁ½¸ö±äÁ¿Ö»ÓĞÔÚ´ø¿í±ÈÀıËÑË÷Ëã·¨ÖĞ²Å»á±»Ê¹ÓÃ
-	double elastic_bandwidth = 0;      // Îªµ¯ĞÔĞ§ÓÃÓÃ»§·ÖÅäµÄ´ø¿í£¬ÕâÁ½¸ö±äÁ¿Ö»ÓĞÔÚ´ø¿í±ÈÀıËÑË÷Ëã·¨ÖĞ²Å»á±»Ê¹ÓÃ
-	double pTrans = 2;      // ·¢Éä¹¦ÂÊ 2W
+	double total_bandwidth = 20;	// UAVçš„æ€»å¸¦å®½å®¹é‡,20MHz
+	double hard_bandwidth = 0;      // ä¸ºç¡¬æ•ˆç”¨ç”¨æˆ·åˆ†é…çš„å¸¦å®½ï¼Œè¿™ä¸¤ä¸ªå˜é‡åªæœ‰åœ¨å¸¦å®½æ¯”ä¾‹æœç´¢ç®—æ³•ä¸­æ‰ä¼šè¢«ä½¿ç”¨
+	double elastic_bandwidth = 0;      // ä¸ºå¼¹æ€§æ•ˆç”¨ç”¨æˆ·åˆ†é…çš„å¸¦å®½ï¼Œè¿™ä¸¤ä¸ªå˜é‡åªæœ‰åœ¨å¸¦å®½æ¯”ä¾‹æœç´¢ç®—æ³•ä¸­æ‰ä¼šè¢«ä½¿ç”¨
+	double pTrans = 2;      // å‘å°„åŠŸç‡ 2W
 
 	Uav() {}
 	Uav(int id_, double x1, double y1, double z1, double total_bandwidth_) : Point(id_, x1, y1, z1)
@@ -286,32 +297,32 @@ public:
 	Uav P_tr;
 	User P_re;
 	double d = 0;
-	double theta = 0;       // Ñö½Ç
+	double theta = 0;       // ä»°è§’
 	double P_LoS = 0;
 	double P_NLoS = 0;
 	double L_LoS = 0;
 	double L_NLoS = 0;
 	double PL = 0;
-	double K_R = 0;         // À³Ë¹Òò×Ó
-	double M = 0;           // Nakagami-M·Ö²¼µÄ²ÎÊı
+	double K_R = 0;         // è±æ–¯å› å­
+	double M = 0;           // Nakagami-Måˆ†å¸ƒçš„å‚æ•°
 	double beta = 0;
-	double h_miu = 0;       // h·ş´Ó¸´¸ßË¹·Ö²¼£¬h_miuÊÇÆä¾ùÖµ
-	double h_sigma = 0;     // h·ş´Ó¸´¸ßË¹·Ö²¼£¬h_sigmaÊÇÆä·½²î
+	double h_miu = 0;       // hæœä»å¤é«˜æ–¯åˆ†å¸ƒï¼Œh_miuæ˜¯å…¶å‡å€¼
+	double h_sigma = 0;     // hæœä»å¤é«˜æ–¯åˆ†å¸ƒï¼Œh_sigmaæ˜¯å…¶æ–¹å·®
 	double eta = 0;
-	double h = 0;           // ¼ÆËãh
+	double h = 0;           // è®¡ç®—h
 	double g = 0;
-	double SNRa_dB = 0;        // Æ½¾ùĞÅÔë±È average SNR, in dB
-	double SNRt_dB = 0;     // ĞÅÔë±ÈãĞÖµ SNR threshold, in dB
-	double channel_capacity = 0;    // ĞÅµÀÈİÁ¿ Capacity, in bit/s/Hz
+	double SNRa_dB = 0;        // å¹³å‡ä¿¡å™ªæ¯” average SNR, in dB
+	double SNRt_dB = 0;     // ä¿¡å™ªæ¯”é˜ˆå€¼ SNR threshold, in dB
+	double channel_capacity = 0;    // ä¿¡é“å®¹é‡ Capacity, in bit/s/Hz
 
 	~Channel() {}
 
 	/// <summary>
-	/// ³õÊ¼»¯Àà <see= default;ref="Channel"/> µÄÒ»¸öĞÂµÄÊµÀı.
-	/// ¼ÆËã·¢ËÍÕßP_trµ½½ÓÊÜÕßP_reÖ®¼äµÄ¸÷ÖÖĞÅµÀ²ÎÊı
+	/// åˆå§‹åŒ–ç±» <see= default;ref="Channel"/> çš„ä¸€ä¸ªæ–°çš„å®ä¾‹.
+	/// è®¡ç®—å‘é€è€…P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„å„ç§ä¿¡é“å‚æ•°
 	/// </summary>
-	/// <param name="p_tr_">ĞÅºÅ·¢ËÍÕß£¬Ò»°ãÖ¸ÎŞÈË»ú</param>
-	/// <param name="p_re_">ĞÅºÅ½ÓÊÕÕß£¬Ò»°ãÖ¸ÓÃ»§</param>
+	/// <param name="p_tr_">ä¿¡å·å‘é€è€…ï¼Œä¸€èˆ¬æŒ‡æ— äººæœº</param>
+	/// <param name="p_re_">ä¿¡å·æ¥æ”¶è€…ï¼Œä¸€èˆ¬æŒ‡ç”¨æˆ·</param>
 	Channel(Uav& p_tr_, User& p_re_);
 
 	/// <summary>
@@ -322,59 +333,59 @@ public:
 	void set_P(Uav& p_tr_, User& p_re_) { P_tr = p_tr_; P_re = p_re_; }
 
 	/// <summary>
-	/// ¼ÆËãµÍµãP_reµ½¸ßµãP_reµÄÑö½Ç
+	/// è®¡ç®—ä½ç‚¹P_reåˆ°é«˜ç‚¹P_reçš„ä»°è§’
 	/// theta = arctan((z1 - z2) / sqrt((x1 - x2)^2 + (y1 - y2)^2))
 	/// </summary>
-	/// <returns>P_reµ½P_trµÄÑö½Ç£¬µ¥Î»Îª¶È</returns>
+	/// <returns>P_reåˆ°P_trçš„ä»°è§’ï¼Œå•ä½ä¸ºåº¦</returns>
 	double cal_theta() const;
 	/// <summary>
-	/// ¼ÆËã·¢ËÍÕßP_trµ½½ÓÊÜÕßP_reÖ®¼äµÄÊÓ¾à¸ÅÂÊ
+	/// è®¡ç®—å‘é€è€…P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„è§†è·æ¦‚ç‡
 	/// P_LoS = 1 / (1 + param_a * exp(-param_b * (theta - param_a)))
 	/// </summary>
-	/// <returns>P_trµ½P_reµÄÊÓ¾à¸ÅÂÊ, 0-1Ö®¼ä</returns>
+	/// <returns>P_tråˆ°P_reçš„è§†è·æ¦‚ç‡, 0-1ä¹‹é—´</returns>
 	double cal_P_LoS() const;
 	/// <summary>
-	/// ¼ÆËã·¢ËÍÕßP_trµ½½ÓÊÜÕßP_reÖ®¼äµÄÊÓ¾à×ÔÓÉ¿Õ¼äÂ·¾¶ËğºÄL_LoS
-	/// L_LoS = 20log10(4¦Ğfd/speed_light) + ¦Ç_LoS
+	/// è®¡ç®—å‘é€è€…P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„è§†è·è‡ªç”±ç©ºé—´è·¯å¾„æŸè€—L_LoS
+	/// L_LoS = 20log10(4Ï€fd/speed_light) + Î·_LoS
 	/// </summary>
-	/// <returns>P_trµ½½ÓÊÜÕßP_reÖ®¼äµÄÊÓ¾à×ÔÓÉ¿Õ¼äÂ·¾¶ËğºÄL_LoS£¬µ¥Î»ÎªdB</returns>
+	/// <returns>P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„è§†è·è‡ªç”±ç©ºé—´è·¯å¾„æŸè€—L_LoSï¼Œå•ä½ä¸ºdB</returns>
 	double cal_L_LoS() const;
 	/// <summary>
-	/// ¼ÆËã·¢ËÍÕßP_trµ½½ÓÊÜÕßP_reÖ®¼äµÄ·ÇÊÓ¾à×ÔÓÉ¿Õ¼äÂ·¾¶ËğºÄL_NLoS
-	/// L_NLoS = 20log10(4¦Ğfd/speed_light) + ¦Ç_NLoS
+	/// è®¡ç®—å‘é€è€…P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„éè§†è·è‡ªç”±ç©ºé—´è·¯å¾„æŸè€—L_NLoS
+	/// L_NLoS = 20log10(4Ï€fd/speed_light) + Î·_NLoS
 	/// </summary>
-	/// <returns>P_trµ½½ÓÊÜÕßP_reÖ®¼äµÄ·ÇÊÓ¾à×ÔÓÉ¿Õ¼äÂ·¾¶ËğºÄL_LoS£¬µ¥Î»ÎªdB</returns>
+	/// <returns>P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„éè§†è·è‡ªç”±ç©ºé—´è·¯å¾„æŸè€—L_LoSï¼Œå•ä½ä¸ºdB</returns>
 	double cal_L_NLoS() const;
 	/// <summary>
-	/// ¼ÆËãĞ¡³ß¶ÈNakagami-MË¥ÂäµÄ²ÎÊıM
-	/// M = (K + 1)^2 / (2K + 1)£¬ÆäÖĞK = P_LoS / P_NLoS
+	/// è®¡ç®—å°å°ºåº¦Nakagami-Mè¡°è½çš„å‚æ•°M
+	/// M = (K + 1)^2 / (2K + 1)ï¼Œå…¶ä¸­K = P_LoS / P_NLoS
 	/// </summary>
-	/// <returns>Ğ¡³ß¶ÈNakagami-MË¥ÂäµÄ²ÎÊıM</returns>
+	/// <returns>å°å°ºåº¦Nakagami-Mè¡°è½çš„å‚æ•°M</returns>
 	double cal_Nakagami_M() const;
 	/// <summary>
-	/// ¼ÆËã·¢ËÍÕßP_trµ½½ÓÊÜÕßP_reÖ®¼äµÄ´ó³ß¶ÈË¥¼õÏµÊıPL
+	/// è®¡ç®—å‘é€è€…P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„å¤§å°ºåº¦è¡°å‡ç³»æ•°PL
 	/// PL = P_LoS * L_LoS + P_NLoS * L_NLoS
 	/// </summary>
-	/// <returns>P_trµ½½ÓÊÜÕßP_reÖ®¼äµÄ´ó³ß¶ÈË¥¼õÏµÊıPL£¬µ¥Î»dB</returns>
+	/// <returns>P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„å¤§å°ºåº¦è¡°å‡ç³»æ•°PLï¼Œå•ä½dB</returns>
 	double cal_PL() const;
 	/// <summary>
-	/// ¼ÆËã·¢ËÍÕßP_trµ½½ÓÊÜÕßP_reÖ®¼äµÄÆ½¾ùĞÅÔë±ÈSNR
+	/// è®¡ç®—å‘é€è€…P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„å¹³å‡ä¿¡å™ªæ¯”SNR
 	/// SNR = (P_tr.pTrans * g^2) / (noise_dbm * PL)
 	/// </summary>
-	/// <returns>P_trµ½½ÓÊÜÕßP_reÖ®¼äµÄÆ½¾ùĞÅÔë±ÈSNR£¬µ¥Î»ÎªdB</returns>
+	/// <returns>P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„å¹³å‡ä¿¡å™ªæ¯”SNRï¼Œå•ä½ä¸ºdB</returns>
 	double cal_average_SNR() const;
 	/// <summary>
-	/// ¸ù¾İÓÃ»§µÄ×î´óÖĞ¶Ï¸ÅÂÊpOut£¬¼ÆËãP_trÂú×ãP_reÖĞ¶Ï¸ÅÂÊĞèÇóµÄĞÅÔë±ÈãĞÖµSNR_th¡£¸ù¾İNakagamiË¥ÂäÖĞµÄÖĞ¶Ï¸ÅÂÊ¹«Ê½£¬Í¨¹ıÇó½â·´º¯ÊıµÃµ½SNR_th¡£
-	/// pOut = 1/¦£(M) * ¦Ã(M, (M * SNR_th) / SNR_avg)
-	/// Èç¹û·¢ËÍÕß½«ÆäËùÓĞ´ø¿í·ÖÅä¸ø¸ÃÓÃ»§Ê±£¬ÈÔÈ»ÎŞ·¨Âú×ãÓÃ»§µÄÖĞ¶Ï¸ÅÂÊĞèÇó£¬Ôò·µ»Ø¸ºÎŞÇî¡£
+	/// æ ¹æ®ç”¨æˆ·çš„æœ€å¤§ä¸­æ–­æ¦‚ç‡pOutï¼Œè®¡ç®—P_træ»¡è¶³P_reä¸­æ–­æ¦‚ç‡éœ€æ±‚çš„ä¿¡å™ªæ¯”é˜ˆå€¼SNR_thã€‚æ ¹æ®Nakagamiè¡°è½ä¸­çš„ä¸­æ–­æ¦‚ç‡å…¬å¼ï¼Œé€šè¿‡æ±‚è§£åå‡½æ•°å¾—åˆ°SNR_thã€‚
+	/// pOut = 1/Î“(M) * Î³(M, (M * SNR_th) / SNR_avg)
+	/// å¦‚æœå‘é€è€…å°†å…¶æ‰€æœ‰å¸¦å®½åˆ†é…ç»™è¯¥ç”¨æˆ·æ—¶ï¼Œä»ç„¶æ— æ³•æ»¡è¶³ç”¨æˆ·çš„ä¸­æ–­æ¦‚ç‡éœ€æ±‚ï¼Œåˆ™è¿”å›è´Ÿæ— ç©·ã€‚
 	/// </summary>
-	/// <returns>P_trÂú×ãP_reÖĞ¶Ï¸ÅÂÊĞèÇóµÄĞÅÔë±ÈãĞÖµSNR_th, µ¥Î»ÎªdB</returns>
+	/// <returns>P_træ»¡è¶³P_reä¸­æ–­æ¦‚ç‡éœ€æ±‚çš„ä¿¡å™ªæ¯”é˜ˆå€¼SNR_th, å•ä½ä¸ºdB</returns>
 	double cal_SNR_th() const;
 	/// <summary>
-	/// ¼ÆËã·¢ËÍÕßP_trµ½½ÓÊÜÕßP_reÖ®¼äµÄĞÅµÀÈİÁ¿Capacity
-	/// ¹«Ê½: Capacity = (1 - pOut) * log2(1 + SNR_th)
+	/// è®¡ç®—å‘é€è€…P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„ä¿¡é“å®¹é‡Capacity
+	/// Hard: log2(1 + SNR_th); reliability is already encoded in SNR_th.
 	/// </summary>
-	/// <returns>P_trµ½½ÓÊÜÕßP_reÖ®¼äµÄĞÅµÀÈİÁ¿Capacity, µ¥Î»Îªbit/s/Hz</returns>
+	/// <returns>P_tråˆ°æ¥å—è€…P_reä¹‹é—´çš„ä¿¡é“å®¹é‡Capacity, å•ä½ä¸ºbit/s/Hz</returns>
 	double cal_capacity() const;
 
 
@@ -396,32 +407,32 @@ public:
 
 //
 /// <summary>
-/// ÏµÍ³Ä£ĞÍÀà£¬°üº¬ÁËÏµÍ³ÖĞµÄÓÃ»§ºÍÎŞÈË»úÁĞ±í£¬ÒÔ¼°ËüÃÇÖ®¼äµÄĞÅµÀ²ÎÊı¾ØÕó¡£
+/// ç³»ç»Ÿæ¨¡å‹ç±»ï¼ŒåŒ…å«äº†ç³»ç»Ÿä¸­çš„ç”¨æˆ·å’Œæ— äººæœºåˆ—è¡¨ï¼Œä»¥åŠå®ƒä»¬ä¹‹é—´çš„ä¿¡é“å‚æ•°çŸ©é˜µã€‚
 /// </summary>
 class SystemMd {
 public:
-	int m = 0;      // ÎŞÈË»úÊıÁ¿
-	int n1 = 0;     // ÀëÉ¢Ğ§ÓÃÓÃ»§ÊıÁ¿
-	int n2 = 0;     // Á¬ĞøĞ§ÓÃÓÃ»§ÊıÁ¿
-	double max_user_utility = 0; // ÏµÍ³ÖĞÓÃ»§µÄ×î´óĞ§ÓÃÖµ
+	int m = 0;      // æ— äººæœºæ•°é‡
+	int n1 = 0;     // ç¦»æ•£æ•ˆç”¨ç”¨æˆ·æ•°é‡
+	int n2 = 0;     // è¿ç»­æ•ˆç”¨ç”¨æˆ·æ•°é‡
+	double max_user_utility = 0; // ç³»ç»Ÿä¸­ç”¨æˆ·çš„æœ€å¤§æ•ˆç”¨å€¼
 
 	vector<User> users;
 	vector<Uav> uavs;
 
-	vector<vector<double>> dis_list;    // m*(n1+n2) ¼ÇÂ¼¸÷¸öÓÃ»§ÓëÎŞÈË»úÖ®¼äµÄ¾àÀë
-	vector<vector<double>> SNRave_list;    // m*(n1+n2) ¼ÇÂ¼¸÷¸öÓÃ»§ÓëÎŞÈË»úÖ®¼äµÄĞÅÔë±È
-	vector<vector<double>> SNRth_list;    // m*(n1+n2) ¼ÇÂ¼¸÷¸öÓÃ»§ÓëÎŞÈË»úÖ®¼äµÄĞÅÔë±È
-	vector<vector<double>> M_list;      // m*(n1+n2) ¼ÇÂ¼¸÷¸öÓÃ»§ÓëÎŞÈË»úÖ®¼äµÄNakagami-M²ÎÊı
-	vector<vector<double>> cap_list;    // m*(n1+n2) ¼ÇÂ¼¸÷¸öÓÃ»§ÓëÎŞÈË»úÖ®¼äµÄĞÅµÀÈİÁ¿
-	vector<vector<double>> Bth_list; // m*n1 ¼ÇÂ¼¸÷¸öÀëÉ¢Ğ§ÓÃÓÃ»§ÓëÎŞÈË»úÖ®¼äµÄ×îĞ¡´ø¿íĞèÇó
-	map<int, vector<User>> uav_serviceable_users_map;	// ¼ÇÂ¼Ã¿¸öÎŞÈË»ú¿É·şÎñµÄÓÃ»§ÁĞ±í£¬keyÎªuav_id£¬valueÎª¸Ãuav¿É·şÎñµÄÓÃ»§ÁĞ±í£¬·ÖÀëÓ²Ğ§ÓÃÓÃ»§ºÍµ¯ĞÔĞ§ÓÃÓÃ»§
+	vector<vector<double>> dis_list;    // m*(n1+n2) è®°å½•å„ä¸ªç”¨æˆ·ä¸æ— äººæœºä¹‹é—´çš„è·ç¦»
+	vector<vector<double>> SNRave_list;    // m*(n1+n2) è®°å½•å„ä¸ªç”¨æˆ·ä¸æ— äººæœºä¹‹é—´çš„ä¿¡å™ªæ¯”
+	vector<vector<double>> SNRth_list;    // m*(n1+n2) è®°å½•å„ä¸ªç”¨æˆ·ä¸æ— äººæœºä¹‹é—´çš„ä¿¡å™ªæ¯”
+	vector<vector<double>> M_list;      // m*(n1+n2) è®°å½•å„ä¸ªç”¨æˆ·ä¸æ— äººæœºä¹‹é—´çš„Nakagami-Må‚æ•°
+	vector<vector<double>> cap_list;    // m*(n1+n2) è®°å½•å„ä¸ªç”¨æˆ·ä¸æ— äººæœºä¹‹é—´çš„ä¿¡é“å®¹é‡
+	vector<vector<double>> Bth_list; // m*n1 è®°å½•å„ä¸ªç¦»æ•£æ•ˆç”¨ç”¨æˆ·ä¸æ— äººæœºä¹‹é—´çš„æœ€å°å¸¦å®½éœ€æ±‚
+	map<int, vector<User>> uav_serviceable_users_map;	// è®°å½•æ¯ä¸ªæ— äººæœºå¯æœåŠ¡çš„ç”¨æˆ·åˆ—è¡¨ï¼Œkeyä¸ºuav_idï¼Œvalueä¸ºè¯¥uavå¯æœåŠ¡çš„ç”¨æˆ·åˆ—è¡¨ï¼Œåˆ†ç¦»ç¡¬æ•ˆç”¨ç”¨æˆ·å’Œå¼¹æ€§æ•ˆç”¨ç”¨æˆ·
 
 	SystemMd() {}
 	/// <summary>
-	/// ¹¹Ôì SystemMD ÀàµÄÊµÀı£¬²¢³õÊ¼»¯ÏµÍ³Ä£ĞÍ¡£
+	/// æ„é€  SystemMD ç±»çš„å®ä¾‹ï¼Œå¹¶åˆå§‹åŒ–ç³»ç»Ÿæ¨¡å‹ã€‚
 	///= default;/summary>
-	/// <param name="u_">ÓÃ»§¶ÔÏóµÄ vector ÒıÓÃ£¬ÓÃÓÚ³õÊ¼»¯ÏµÍ³ÖĞµÄÓÃ»§ÁĞ±í¡£</param>
-	/// <param name="a_">UAV£¨ÎŞÈË»ú£©¶ÔÏóµÄ vector ÒıÓÃ£¬ÓÃÓÚ³õÊ¼»¯ÏµÍ³ÖĞµÄ UAV ÁĞ±í¡£</param>
+	/// <param name="u_">ç”¨æˆ·å¯¹è±¡çš„ vector å¼•ç”¨ï¼Œç”¨äºåˆå§‹åŒ–ç³»ç»Ÿä¸­çš„ç”¨æˆ·åˆ—è¡¨ã€‚</param>
+	/// <param name="a_">UAVï¼ˆæ— äººæœºï¼‰å¯¹è±¡çš„ vector å¼•ç”¨ï¼Œç”¨äºåˆå§‹åŒ–ç³»ç»Ÿä¸­çš„ UAV åˆ—è¡¨ã€‚</param>
 	SystemMd(vector<User> u_, vector<Uav> a_);
 	/// <summary>
 	/// Initializes param_a new instance of the <see cref="SystemMD"/> class.
@@ -449,10 +460,10 @@ public:
 class BAProblem {
 public:
 	SystemMd sysModel;
-	double epsilon = 0.001;	// FPTAS¾«¶È²ÎÊı
-	double delta = 0.1;		// ËÑË÷Ëã·¨²½³¤
-	vector<vector<double>> alloc_matrix; // m*(n1+n2) ¼ÇÂ¼¸÷¸öÓÃ»§´Ó¸÷¸öÎŞÈË»ú·ÖÅäµ½µÄ´ø¿í
-	vector<vector<int>> connect_matrix;  // m*(n1+n2) ¼ÇÂ¼¸÷¸öÓÃ»§ÓëÎŞÈË»úµÄÁ¬½Ó¹ØÏµ£¬1±íÊ¾Á¬½Ó£¬0±íÊ¾²»Á¬½Ó
+	double epsilon = 0.001;	// FPTASç²¾åº¦å‚æ•°
+	double delta = 0.1;		// æœç´¢ç®—æ³•æ­¥é•¿
+	vector<vector<double>> alloc_matrix; // m*(n1+n2) è®°å½•å„ä¸ªç”¨æˆ·ä»å„ä¸ªæ— äººæœºåˆ†é…åˆ°çš„å¸¦å®½
+	vector<vector<int>> connect_matrix;  // m*(n1+n2) è®°å½•å„ä¸ªç”¨æˆ·ä¸æ— äººæœºçš„è¿æ¥å…³ç³»ï¼Œ1è¡¨ç¤ºè¿æ¥ï¼Œ0è¡¨ç¤ºä¸è¿æ¥
 
 
 
@@ -469,165 +480,165 @@ public:
 	~BAProblem() {}
 
 	/// <summary>
-	/// ¸ù¾İ·ÖÅä¾ØÕó¼Æ= default;Í³µÄ×ÜĞ§ÓÃÖµ
+	/// æ ¹æ®åˆ†é…çŸ©é˜µè®¡= default;ç»Ÿçš„æ€»æ•ˆç”¨å€¼
 	/// </summary>
-	/// <param name="allResult"> Ã¿¸öÎŞÈË»úµÄ·ÖÅä½á¹ûÁĞ±í.</param>
-	/// <returns> ÏµÍ³µÄ×ÜĞ§ÓÃÖµ</returns>
+	/// <param name="allResult"> æ¯ä¸ªæ— äººæœºçš„åˆ†é…ç»“æœåˆ—è¡¨.</param>
+	/// <returns> ç³»ç»Ÿçš„æ€»æ•ˆç”¨å€¼</returns>
 	static double get_total_utility(const vector<KnapsackResult>& allResult);
 
 	/// <summary>
-	/// ÊµÏÖ¾Ö²¿ËÑË÷Ëã·¨£¬(1+alpha)½üËÆ´ø¿í·ÖÅäËã·¨
-	/// ²Î¿¼ÂÛÎÄ£º"Knapsack problems with sigmoid utilities: Approximation algorithms via hybrid optimization"
+	/// å®ç°å±€éƒ¨æœç´¢ç®—æ³•ï¼Œ(1+alpha)è¿‘ä¼¼å¸¦å®½åˆ†é…ç®—æ³•
+	/// å‚è€ƒè®ºæ–‡ï¼š"Knapsack problems with sigmoid utilities: Approximation algorithms via hybrid optimization"
 	/// </summary>
-	/// <param name="epsilon_"> ×ÓÎÊÌâFPTAS¾«¶È²ÎÊı</param>
-	/// <param name="delta_"> ËÑË÷Ëã·¨²½³¤</param>
-	/// <returns> Ëã·¨½á¹û</returns>
+	/// <param name="epsilon_"> å­é—®é¢˜FPTASç²¾åº¦å‚æ•°</param>
+	/// <param name="delta_"> æœç´¢ç®—æ³•æ­¥é•¿</param>
+	/// <returns> ç®—æ³•ç»“æœ</returns>
 	std::pair< std::vector<KnapsackResult>, std::vector<UserResult> > local_search_allocation(double epsilon_ = 0.1, double delta_ = 0.5);
 
 	/// <summary>
-	/// È·¶¨ÎŞÈË»úuav_idµÄÁÙÊ±·ÖÅä½á¹û£¬ÊÇÒ»¸öµİ¹éº¯Êı
-	/// ²Î¿¼ÂÛÎÄ£º"Knapsack problems with sigmoid utilities: Approximation algorithms via hybrid optimization"
+	/// ç¡®å®šæ— äººæœºuav_idçš„ä¸´æ—¶åˆ†é…ç»“æœï¼Œæ˜¯ä¸€ä¸ªé€’å½’å‡½æ•°
+	/// å‚è€ƒè®ºæ–‡ï¼š"Knapsack problems with sigmoid utilities: Approximation algorithms via hybrid optimization"
 	/// </summary>
-	/// <param name="uav_id">µ±Ç°·ÖÅäµÄUAV.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <param name="allResult">×îÖÕ·ÖÅä½á¹û£¬µİ¹é¹ı³ÌÖĞ°´ÏÂ±íµ¹ĞòÌî³ä</param>
-	/// <returns> ÎŞÈË»úuav_idµÄ·ÖÅä½á¹û</returns>
+	/// <param name="uav_id">å½“å‰åˆ†é…çš„UAV.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <param name="allResult">æœ€ç»ˆåˆ†é…ç»“æœï¼Œé€’å½’è¿‡ç¨‹ä¸­æŒ‰ä¸‹è¡¨å€’åºå¡«å……</param>
+	/// <returns> æ— äººæœºuav_idçš„åˆ†é…ç»“æœ</returns>
 	KnapsackResult GAP(int uav_id, vector<double>& uti_max, vector<KnapsackResult>& allResult);
 
 	map<int, UserResult> construct_user_results(const vector<KnapsackResult>& allResults);
 
-	// ¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı¡ı
-	// µ¥ÎŞÈË»ú·ÖÅäÎÊÌâµÄËã·¨
+	// â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“â†“
+	// å•æ— äººæœºåˆ†é…é—®é¢˜çš„ç®—æ³•
 
 	/// <summary>
-	/// »ùÓÚ×ÊÔ´±ÈÀıËÑË÷µÄ×ÓÎÊÌâ½üËÆËã·¨
-	/// ±¸×¢£º¸Ãº¯ÊıÍ¨¹ı±éÀú²»Í¬µÄÁ¬Ğø×ÊÔ´£¬·Ö±ğÇó½âÀëÉ¢²¿·ÖºÍÁ¬Ğø²¿·ÖµÄ·ÖÅäÎÊÌâ£¬²¢½«½á¹ûºÏ²¢£¬×îÖÕ·µ»Ø²»Í¬Á¬Ğø×ÊÔ´±ÈÀıÏÂµÄ·ÖÅä½á¹û¡£
-	/// ¸ÃËã·¨ÀëÉ¢ÓÃ»§Î´Ê¹ÓÃµÄ×ÊÔ´²»»á±»Á¬ĞøÓÃ»§Ê¹ÓÃ
+	/// åŸºäºèµ„æºæ¯”ä¾‹æœç´¢çš„å­é—®é¢˜è¿‘ä¼¼ç®—æ³•
+	/// å¤‡æ³¨ï¼šè¯¥å‡½æ•°é€šè¿‡éå†ä¸åŒçš„è¿ç»­èµ„æºï¼Œåˆ†åˆ«æ±‚è§£ç¦»æ•£éƒ¨åˆ†å’Œè¿ç»­éƒ¨åˆ†çš„åˆ†é…é—®é¢˜ï¼Œå¹¶å°†ç»“æœåˆå¹¶ï¼Œæœ€ç»ˆè¿”å›ä¸åŒè¿ç»­èµ„æºæ¯”ä¾‹ä¸‹çš„åˆ†é…ç»“æœã€‚
+	/// è¯¥ç®—æ³•ç¦»æ•£ç”¨æˆ·æœªä½¿ç”¨çš„èµ„æºä¸ä¼šè¢«è¿ç»­ç”¨æˆ·ä½¿ç”¨
 	/// </summary>
-	/// <param name="uav_id">µ±Ç°Çó½âµÄUAVµÄID.</param>
-	/// <param name="capacity">uav_id¶ÔÓ¦uavµÄÊ£ÓàÈİÁ¿</param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <returns>key: Á¬Ğø²¿·Ö±ÈÀı£¬value: ²»Í¬Á¬Ğø×ÊÔ´±ÈÀıÏÂµÄ·ÖÅä½á¹û</returns>
+	/// <param name="uav_id">å½“å‰æ±‚è§£çš„UAVçš„ID.</param>
+	/// <param name="capacity">uav_idå¯¹åº”uavçš„å‰©ä½™å®¹é‡</param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <returns>key: è¿ç»­éƒ¨åˆ†æ¯”ä¾‹ï¼Œvalue: ä¸åŒè¿ç»­èµ„æºæ¯”ä¾‹ä¸‹çš„åˆ†é…ç»“æœ</returns>
 	map<double, KnapsackResult> RP_based_subproblem_allocation_experiment1(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
-	/// »ùÓÚ×ÊÔ´±ÈÀıËÑË÷µÄ×ÓÎÊÌâ½üËÆËã·¨, ·µ»ØËùÓĞ¶Ïµã´¦µÄ·ÖÅä½á¹û
-	/// ±¸×¢£º¸Ãº¯ÊıÍ¨¹ı±éÀú²»Í¬µÄÁ¬Ğø×ÊÔ´±ÈÀı£¬·Ö±ğÇó½âÀëÉ¢²¿·ÖºÍÁ¬Ğø²¿·ÖµÄ·ÖÅäÎÊÌâ£¬²¢½«½á¹ûºÏ²¢£¬×îÖÕ·µ»Ø²»Í¬Á¬Ğø×ÊÔ´±ÈÀıÏÂµÄ·ÖÅä½á¹û¡£
-	/// ¸ÃËã·¨ÀëÉ¢ÓÃ»§Î´Ê¹ÓÃµÄ×ÊÔ´»á±»Á¬ĞøÓÃ»§Ê¹ÓÃ
+	/// åŸºäºèµ„æºæ¯”ä¾‹æœç´¢çš„å­é—®é¢˜è¿‘ä¼¼ç®—æ³•, è¿”å›æ‰€æœ‰æ–­ç‚¹å¤„çš„åˆ†é…ç»“æœ
+	/// å¤‡æ³¨ï¼šè¯¥å‡½æ•°é€šè¿‡éå†ä¸åŒçš„è¿ç»­èµ„æºæ¯”ä¾‹ï¼Œåˆ†åˆ«æ±‚è§£ç¦»æ•£éƒ¨åˆ†å’Œè¿ç»­éƒ¨åˆ†çš„åˆ†é…é—®é¢˜ï¼Œå¹¶å°†ç»“æœåˆå¹¶ï¼Œæœ€ç»ˆè¿”å›ä¸åŒè¿ç»­èµ„æºæ¯”ä¾‹ä¸‹çš„åˆ†é…ç»“æœã€‚
+	/// è¯¥ç®—æ³•ç¦»æ•£ç”¨æˆ·æœªä½¿ç”¨çš„èµ„æºä¼šè¢«è¿ç»­ç”¨æˆ·ä½¿ç”¨
 	/// </summary>
-	/// <param name="uav_id">µ±Ç°Çó½âµÄUAVµÄID.</param>
-	/// <param name="capacity">uav_id¶ÔÓ¦uavµÄÊ£ÓàÈİÁ¿</param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <returns>key: ËùÓĞ¶Ïµã¶ÔÓ¦µÄÁ¬Ğø×ÊÔ´±ÈÀı£¬value: ²»Í¬Á¬Ğø×ÊÔ´±ÈÀıÏÂµÄ·ÖÅä½á¹û</returns>
+	/// <param name="uav_id">å½“å‰æ±‚è§£çš„UAVçš„ID.</param>
+	/// <param name="capacity">uav_idå¯¹åº”uavçš„å‰©ä½™å®¹é‡</param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <returns>key: æ‰€æœ‰æ–­ç‚¹å¯¹åº”çš„è¿ç»­èµ„æºæ¯”ä¾‹ï¼Œvalue: ä¸åŒè¿ç»­èµ„æºæ¯”ä¾‹ä¸‹çš„åˆ†é…ç»“æœ</returns>
 	map<double, KnapsackResult> RP_based_subproblem_allocation_experiment2(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
-	/// »ùÓÚ×ÊÔ´±ÈÀıËÑË÷µÄ×ÓÎÊÌâ½üËÆËã·¨
-	/// ±¸×¢£º¸Ãº¯ÊıÍ¨¹ı±éÀú²»Í¬µÄÁ¬Ğø×ÊÔ´£¬·Ö±ğÇó½âÀëÉ¢²¿·ÖºÍÁ¬Ğø²¿·ÖµÄ·ÖÅäÎÊÌâ£¬²¢½«½á¹ûºÏ²¢£¬×îÖÕ·µ»Ø²»Í¬Á¬Ğø×ÊÔ´±ÈÀıÏÂµÄ·ÖÅä½á¹û¡£
-	/// ¸ÃËã·¨ÊÇRP_based_subproblem_allocation_experiment1µÄËÉ³Ú°æ±¾£¬ÀëÉ¢ÓÃ»§µÄĞ§ÓÃº¯Êı²»ÔÙÊÇ½×Ô¾º¯Êı£¬¶øÊÇÒ»¸öÏßĞÔº¯Êı£¬±íÊ¾ÀëÉ¢ÓÃ»§¿ÉÒÔ²¿·Ö·ÖÅä×ÊÔ´£¬´Ó¶ø»ñµÃ²¿·ÖĞ§ÓÃ¡£
+	/// åŸºäºèµ„æºæ¯”ä¾‹æœç´¢çš„å­é—®é¢˜è¿‘ä¼¼ç®—æ³•
+	/// å¤‡æ³¨ï¼šè¯¥å‡½æ•°é€šè¿‡éå†ä¸åŒçš„è¿ç»­èµ„æºï¼Œåˆ†åˆ«æ±‚è§£ç¦»æ•£éƒ¨åˆ†å’Œè¿ç»­éƒ¨åˆ†çš„åˆ†é…é—®é¢˜ï¼Œå¹¶å°†ç»“æœåˆå¹¶ï¼Œæœ€ç»ˆè¿”å›ä¸åŒè¿ç»­èµ„æºæ¯”ä¾‹ä¸‹çš„åˆ†é…ç»“æœã€‚
+	/// è¯¥ç®—æ³•æ˜¯RP_based_subproblem_allocation_experiment1çš„æ¾å¼›ç‰ˆæœ¬ï¼Œç¦»æ•£ç”¨æˆ·çš„æ•ˆç”¨å‡½æ•°ä¸å†æ˜¯é˜¶è·ƒå‡½æ•°ï¼Œè€Œæ˜¯ä¸€ä¸ªçº¿æ€§å‡½æ•°ï¼Œè¡¨ç¤ºç¦»æ•£ç”¨æˆ·å¯ä»¥éƒ¨åˆ†åˆ†é…èµ„æºï¼Œä»è€Œè·å¾—éƒ¨åˆ†æ•ˆç”¨ã€‚
 	/// </summary>
-	/// <param name="uav_id">µ±Ç°Çó½âµÄUAVµÄID.</param>
-	/// <param name="capacity">uav_id¶ÔÓ¦uavµÄÊ£ÓàÈİÁ¿</param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <returns>key: Á¬Ğø²¿·Ö±ÈÀı£¬value: ²»Í¬Á¬Ğø×ÊÔ´±ÈÀıÏÂµÄ·ÖÅä½á¹û</returns>
+	/// <param name="uav_id">å½“å‰æ±‚è§£çš„UAVçš„ID.</param>
+	/// <param name="capacity">uav_idå¯¹åº”uavçš„å‰©ä½™å®¹é‡</param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <returns>key: è¿ç»­éƒ¨åˆ†æ¯”ä¾‹ï¼Œvalue: ä¸åŒè¿ç»­èµ„æºæ¯”ä¾‹ä¸‹çš„åˆ†é…ç»“æœ</returns>
 	map<double, KnapsackResult> RP_based_subproblem_allocation_experiment1_relaxed(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
-	/// »ùÓÚ×ÊÔ´±ÈÀıËÑË÷µÄ×ÓÎÊÌâ½üËÆËã·¨, ·µ»Ø×î´óĞ§ÓÃ´¦µÄ·ÖÅä½á¹û
-	/// ±¸×¢£º¸Ãº¯ÊıÍ¨¹ı±éÀú²»Í¬µÄÁ¬Ğø×ÊÔ´±ÈÀı£¬·Ö±ğÇó½âÀëÉ¢²¿·ÖºÍÁ¬Ğø²¿·ÖµÄ·ÖÅäÎÊÌâ£¬²¢½«½á¹ûºÏ²¢£¬×îÖÕ·µ»Ø²»Í¬Á¬Ğø×ÊÔ´±ÈÀıÏÂµÄ·ÖÅä½á¹û¡£ÀëÉ¢²¿·ÖÊ¹ÓÃFPTASËã·¨¡£
-	/// ¸ÃËã·¨ÀëÉ¢ÓÃ»§Î´Ê¹ÓÃµÄ×ÊÔ´»á±»Á¬ĞøÓÃ»§Ê¹ÓÃ
+	/// åŸºäºèµ„æºæ¯”ä¾‹æœç´¢çš„å­é—®é¢˜è¿‘ä¼¼ç®—æ³•, è¿”å›æœ€å¤§æ•ˆç”¨å¤„çš„åˆ†é…ç»“æœ
+	/// å¤‡æ³¨ï¼šè¯¥å‡½æ•°é€šè¿‡éå†ä¸åŒçš„è¿ç»­èµ„æºæ¯”ä¾‹ï¼Œåˆ†åˆ«æ±‚è§£ç¦»æ•£éƒ¨åˆ†å’Œè¿ç»­éƒ¨åˆ†çš„åˆ†é…é—®é¢˜ï¼Œå¹¶å°†ç»“æœåˆå¹¶ï¼Œæœ€ç»ˆè¿”å›ä¸åŒè¿ç»­èµ„æºæ¯”ä¾‹ä¸‹çš„åˆ†é…ç»“æœã€‚ç¦»æ•£éƒ¨åˆ†ä½¿ç”¨FPTASç®—æ³•ã€‚
+	/// è¯¥ç®—æ³•ç¦»æ•£ç”¨æˆ·æœªä½¿ç”¨çš„èµ„æºä¼šè¢«è¿ç»­ç”¨æˆ·ä½¿ç”¨
 	/// </summary>
-	/// <param name="uav_id">µ±Ç°Çó½âµÄUAVµÄID.</param>
-	/// <param name="capacity">uav_id¶ÔÓ¦uavµÄÊ£ÓàÈİÁ¿</param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <returns>µ¥ÎŞÈË»ú·ÖÅäÎÊÌâµÄ·ÖÅä½á¹û£¬KnapsackResult ÀàĞÍ</returns>
+	/// <param name="uav_id">å½“å‰æ±‚è§£çš„UAVçš„ID.</param>
+	/// <param name="capacity">uav_idå¯¹åº”uavçš„å‰©ä½™å®¹é‡</param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <returns>å•æ— äººæœºåˆ†é…é—®é¢˜çš„åˆ†é…ç»“æœï¼ŒKnapsackResult ç±»å‹</returns>
 	KnapsackResult RP_based_subproblem_allocation_FPTAS(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
-	/// »ùÓÚ×ÊÔ´±ÈÀıËÑË÷µÄ×ÓÎÊÌâ½üËÆËã·¨, ·µ»Ø×î´óĞ§ÓÃ´¦µÄ·ÖÅä½á¹û
-	/// ±¸×¢£º¸Ãº¯ÊıÍ¨¹ı±éÀú²»Í¬µÄÁ¬Ğø×ÊÔ´±ÈÀı£¬·Ö±ğÇó½âÀëÉ¢²¿·ÖºÍÁ¬Ğø²¿·ÖµÄ·ÖÅäÎÊÌâ£¬²¢½«½á¹ûºÏ²¢£¬×îÖÕ·µ»Ø²»Í¬Á¬Ğø×ÊÔ´±ÈÀıÏÂµÄ·ÖÅä½á¹û¡£ÀëÉ¢²¿·ÖÊ¹ÓÃÌ°ĞÄËã·¨¡£
-	/// ¸ÃËã·¨ÀëÉ¢ÓÃ»§Î´Ê¹ÓÃµÄ×ÊÔ´»á±»Á¬ĞøÓÃ»§Ê¹ÓÃ
+	/// åŸºäºèµ„æºæ¯”ä¾‹æœç´¢çš„å­é—®é¢˜è¿‘ä¼¼ç®—æ³•, è¿”å›æœ€å¤§æ•ˆç”¨å¤„çš„åˆ†é…ç»“æœ
+	/// å¤‡æ³¨ï¼šè¯¥å‡½æ•°é€šè¿‡éå†ä¸åŒçš„è¿ç»­èµ„æºæ¯”ä¾‹ï¼Œåˆ†åˆ«æ±‚è§£ç¦»æ•£éƒ¨åˆ†å’Œè¿ç»­éƒ¨åˆ†çš„åˆ†é…é—®é¢˜ï¼Œå¹¶å°†ç»“æœåˆå¹¶ï¼Œæœ€ç»ˆè¿”å›ä¸åŒè¿ç»­èµ„æºæ¯”ä¾‹ä¸‹çš„åˆ†é…ç»“æœã€‚ç¦»æ•£éƒ¨åˆ†ä½¿ç”¨è´ªå¿ƒç®—æ³•ã€‚
+	/// è¯¥ç®—æ³•ç¦»æ•£ç”¨æˆ·æœªä½¿ç”¨çš„èµ„æºä¼šè¢«è¿ç»­ç”¨æˆ·ä½¿ç”¨
 	/// </summary>
-	/// <param name="uav_id">µ±Ç°Çó½âµÄUAVµÄID.</param>
-	/// <param name="capacity">uav_id¶ÔÓ¦uavµÄÊ£ÓàÈİÁ¿</param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <returns>µ¥ÎŞÈË»ú·ÖÅäÎÊÌâµÄ·ÖÅä½á¹û£¬KnapsackResult ÀàĞÍ</returns>
+	/// <param name="uav_id">å½“å‰æ±‚è§£çš„UAVçš„ID.</param>
+	/// <param name="capacity">uav_idå¯¹åº”uavçš„å‰©ä½™å®¹é‡</param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <returns>å•æ— äººæœºåˆ†é…é—®é¢˜çš„åˆ†é…ç»“æœï¼ŒKnapsackResult ç±»å‹</returns>
 	KnapsackResult RP_based_subproblem_allocation_Greedy(int uav_id, double capacity, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
-	/// ¶ÔÓÚhard_utilityÓÃ»§µÄ´ø¿í·ÖÅäÎÊÌâ£¬ÊÇÒ»¸ö0-1±³°üÎÊÌâ£¬FPTASËã·¨. Ê±¼ä¸´ÔÓ¶ÈÎª O(n^3 / ¦Å)
-	/// ¸ø¶¨ÎŞÈË»úuav_id£¬ÓÃ¸ÃËã·¨Îª¸ÃÎŞÈË»ú·ÖÅä´ø¿í
-	/// ÔÚ¸ÃÎÊÌâÖĞ£¬ÓÃ»§µÄ×îĞ¡´ø¿íĞèÇó¶ÔÓ¦ÓÚ±³°üÎÊÌâÖĞµÄÎïÆ·ÖØÁ¿£¬ÓÃ»§µÄÈ¨ÖØ¶ÔÓ¦ÓÚÎïÆ·¼ÛÖµ	
+	/// å¯¹äºhard_utilityç”¨æˆ·çš„å¸¦å®½åˆ†é…é—®é¢˜ï¼Œæ˜¯ä¸€ä¸ª0-1èƒŒåŒ…é—®é¢˜ï¼ŒFPTASç®—æ³•. æ—¶é—´å¤æ‚åº¦ä¸º O(n^3 / Îµ)
+	/// ç»™å®šæ— äººæœºuav_idï¼Œç”¨è¯¥ç®—æ³•ä¸ºè¯¥æ— äººæœºåˆ†é…å¸¦å®½
+	/// åœ¨è¯¥é—®é¢˜ä¸­ï¼Œç”¨æˆ·çš„æœ€å°å¸¦å®½éœ€æ±‚å¯¹åº”äºèƒŒåŒ…é—®é¢˜ä¸­çš„ç‰©å“é‡é‡ï¼Œç”¨æˆ·çš„æƒé‡å¯¹åº”äºç‰©å“ä»·å€¼
 	/// </summary>
-	/// <param name="uav">Îªuav½øĞĞ·ÖÅä¾ö²ß£¬ÆäÖĞ°üº¬ÁËÈİÁ¿ĞÅÏ¢.</param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓ²Ğ§ÓÃÓÃ»§¼¯ºÏ.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <returns>±³°üÎÊÌâµÄ·ÖÅä½á¹û£¬KnapsackResult ÀàĞÍ</returns>
+	/// <param name="uav">ä¸ºuavè¿›è¡Œåˆ†é…å†³ç­–ï¼Œå…¶ä¸­åŒ…å«äº†å®¹é‡ä¿¡æ¯.</param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç¡¬æ•ˆç”¨ç”¨æˆ·é›†åˆ.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <returns>èƒŒåŒ…é—®é¢˜çš„åˆ†é…ç»“æœï¼ŒKnapsackResult ç±»å‹</returns>
 	KnapsackResult Fptas01Knapsack(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
 
 
 
 
 	/// <summary>
-	/// Ì°ĞÄËã·¨½â¾ö0-1±³°üÎÊÌâ£¬Ê±¼ä¸´ÔÓ¶ÈÎªO(n log n)
+	/// è´ªå¿ƒç®—æ³•è§£å†³0-1èƒŒåŒ…é—®é¢˜ï¼Œæ—¶é—´å¤æ‚åº¦ä¸ºO(n log n)
 	/// </summary>
-	/// <param name="uav">Îªuav½øĞĞ·ÖÅä¾ö²ß£¬ÆäÖĞ°üº¬ÁËÈİÁ¿ĞÅÏ¢.</param>
-	/// <param name="sorted_unproc_users">´ı´¦ÀíµÄÓ²Ğ§ÓÃÓÃ»§¼¯ºÏ, ÒÑ°´µ¥Î»´ø¿íĞ§ÓÃÅÅĞò.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
+	/// <param name="uav">ä¸ºuavè¿›è¡Œåˆ†é…å†³ç­–ï¼Œå…¶ä¸­åŒ…å«äº†å®¹é‡ä¿¡æ¯.</param>
+	/// <param name="sorted_unproc_users">å¾…å¤„ç†çš„ç¡¬æ•ˆç”¨ç”¨æˆ·é›†åˆ, å·²æŒ‰å•ä½å¸¦å®½æ•ˆç”¨æ’åº.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
 	/// <returns></returns>
 	KnapsackResult Greedy01Knapsack(Uav& uav, vector<User>& sorted_unproc_users, vector<double>& uti_max);
 
 	/// <summary>
-	/// ÕâÊÇÒ»¸ö»ùÓÚKKTÌõ¼şºÍ×¢Ë®Ô­Àí (Water-filling) µÄ×ÊÔ´·ÖÅäËã·¨¡£¸ÃËã·¨µÄºËĞÄË¼ÏëÊÇÍ¨¹ı±ß¼ÊĞ§ÓÃÅÅĞò£¬ÕÒµ½¡°Ë®Î»¡±£¨¼´À­¸ñÀÊÈÕ³Ë×Ó $\lambda$£©µÄÁÙ½çµã£¬´Ó¶øÈ·¶¨ÄÄĞ©ÓÃ»§¿ÉÒÔ»ñµÃ×ÊÔ´¡£
+	/// è¿™æ˜¯ä¸€ä¸ªåŸºäºKKTæ¡ä»¶å’Œæ³¨æ°´åŸç† (Water-filling) çš„èµ„æºåˆ†é…ç®—æ³•ã€‚è¯¥ç®—æ³•çš„æ ¸å¿ƒæ€æƒ³æ˜¯é€šè¿‡è¾¹é™…æ•ˆç”¨æ’åºï¼Œæ‰¾åˆ°â€œæ°´ä½â€ï¼ˆå³æ‹‰æ ¼æœ—æ—¥ä¹˜å­ $\lambda$ï¼‰çš„ä¸´ç•Œç‚¹ï¼Œä»è€Œç¡®å®šå“ªäº›ç”¨æˆ·å¯ä»¥è·å¾—èµ„æºã€‚
 	/// </summary>
-	/// <param name="uav_id"> µ±Ç°ÎŞÈË»úµÄID </param>
-	/// <param name="capacity"> µ±Ç°ÎŞÈË»úµÄÊ£ÓàÈİÁ¿ </param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ</param>
-	/// <param name="is_rounding"> ÊÇ·ñ¶Ô·ÖÅä½á¹ûÖĞµÄ×îºóÒ»¸öhardÓÃ»§½øĞĞÉáÈë£¬Ä¬ÈÏÎª1£¬±íÊ¾½øĞĞÉáÈë </param>
-	/// <returns> ±³°üÎÊÌâ·ÖÅä½á¹û£¬KnapsackResult ÀàĞÍ </returns>
+	/// <param name="uav_id"> å½“å‰æ— äººæœºçš„ID </param>
+	/// <param name="capacity"> å½“å‰æ— äººæœºçš„å‰©ä½™å®¹é‡ </param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ</param>
+	/// <param name="is_rounding"> æ˜¯å¦å¯¹åˆ†é…ç»“æœä¸­çš„æœ€åä¸€ä¸ªhardç”¨æˆ·è¿›è¡Œèˆå…¥ï¼Œé»˜è®¤ä¸º1ï¼Œè¡¨ç¤ºè¿›è¡Œèˆå…¥ </param>
+	/// <returns> èƒŒåŒ…é—®é¢˜åˆ†é…ç»“æœï¼ŒKnapsackResult ç±»å‹ </returns>
 	KnapsackResult WaterFillingAlgorithm_singleUAV(Uav uav, vector<User> unproc_users, int is_rounding = 1);
 
 	/// <summary>
-	/// ¸Ã·½·¨ÓëWaterFillingAlgorithm_singleUAVµÄÎ¨Ò»Çø±ğÊÇ£¬ÔÚËÑË÷Ë®Î»¦ËÊ±£¬²ÉÓÃ¶ş·Ö·¨½øĞĞËÑË÷£¬´Ó¶øÌá¸ßÁËËÑË÷Ğ§ÂÊ¡£
+	/// è¯¥æ–¹æ³•ä¸WaterFillingAlgorithm_singleUAVçš„å”¯ä¸€åŒºåˆ«æ˜¯ï¼Œåœ¨æœç´¢æ°´ä½Î»æ—¶ï¼Œé‡‡ç”¨äºŒåˆ†æ³•è¿›è¡Œæœç´¢ï¼Œä»è€Œæé«˜äº†æœç´¢æ•ˆç‡ã€‚
 	/// </summary>
-	/// <param name="uav_id"> µ±Ç°ÎŞÈË»úµÄID </param>
-	/// <param name="capacity"> µ±Ç°ÎŞÈË»úµÄÊ£ÓàÈİÁ¿ </param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ</param>
-	/// <param name="is_rounding"> ÊÇ·ñ¶Ô·ÖÅä½á¹ûÖĞµÄ×îºóÒ»¸öhardÓÃ»§½øĞĞÉáÈë£¬Ä¬ÈÏÎª1£¬±íÊ¾½øĞĞÉáÈë </param>
-	/// <returns> ±³°üÎÊÌâ·ÖÅä½á¹û£¬KnapsackResult ÀàĞÍ </returns>
+	/// <param name="uav_id"> å½“å‰æ— äººæœºçš„ID </param>
+	/// <param name="capacity"> å½“å‰æ— äººæœºçš„å‰©ä½™å®¹é‡ </param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ</param>
+	/// <param name="is_rounding"> æ˜¯å¦å¯¹åˆ†é…ç»“æœä¸­çš„æœ€åä¸€ä¸ªhardç”¨æˆ·è¿›è¡Œèˆå…¥ï¼Œé»˜è®¤ä¸º1ï¼Œè¡¨ç¤ºè¿›è¡Œèˆå…¥ </param>
+	/// <returns> èƒŒåŒ…é—®é¢˜åˆ†é…ç»“æœï¼ŒKnapsackResult ç±»å‹ </returns>
 	KnapsackResult WaterFillingAlgorithm_singleUAV_new(Uav uav, vector<User> unproc_users, int is_rounding = 1);
 
 	/// <summary>
-	/// Ò»¸öĞÂµÄFPTASËã·¨£¬ÓÃÓÚ½â¾öµ¥ÎŞÈË»úµÄ´ø¿í·ÖÅäÎÊÌâ£¬Ê±¼ä¸´ÔÓ¶ÈÎªO(n^2 / ¦Å)¡£¿¼ÂÇÁËÓÃ»§µÄ»ìºÏĞ§ÓÃº¯Êı£¨Ó²Ğ§ÓÃºÍµ¯ĞÔĞ§ÓÃ£©¡£
+	/// ä¸€ä¸ªæ–°çš„FPTASç®—æ³•ï¼Œç”¨äºè§£å†³å•æ— äººæœºçš„å¸¦å®½åˆ†é…é—®é¢˜ï¼Œæ—¶é—´å¤æ‚åº¦ä¸ºO(n^2 / Îµ)ã€‚è€ƒè™‘äº†ç”¨æˆ·çš„æ··åˆæ•ˆç”¨å‡½æ•°ï¼ˆç¡¬æ•ˆç”¨å’Œå¼¹æ€§æ•ˆç”¨ï¼‰ã€‚
 	/// </summary>
-	/// <param name="uav_id"> µ±Ç°ÎŞÈË»úµÄID </param>
-	/// <param name="capacity"> µ±Ç°ÎŞÈË»úµÄÊ£ÓàÈİÁ¿ </param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ</param>
-	/// <param name="epsilon"> ¾«¶ÈÒªÇó </param>
-	/// <returns> ±³°üÎÊÌâ·ÖÅä½á¹û£¬KnapsackResult ÀàĞÍ </returns>
+	/// <param name="uav_id"> å½“å‰æ— äººæœºçš„ID </param>
+	/// <param name="capacity"> å½“å‰æ— äººæœºçš„å‰©ä½™å®¹é‡ </param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ</param>
+	/// <param name="epsilon"> ç²¾åº¦è¦æ±‚ </param>
+	/// <returns> èƒŒåŒ…é—®é¢˜åˆ†é…ç»“æœï¼ŒKnapsackResult ç±»å‹ </returns>
 	KnapsackResult FPTAS_singleUAV(Uav& uav, vector<User>& unproc_users, double epsilon);
 
 	/// <summary>
-	/// ¸Ã·½·¨ÓëFPTAS_singleUAVµÄÎ¨Ò»Çø±ğÊÇ£¬¶¯Ì¬¹æ»®±í¸ñµÄÖµ²»ÔÙÊÇÇ¡ºÃµÈÓÚ¼ÛÖµvµÄ×îĞ¡ÖØÁ¿£¬¶øÊÇ¼ÛÖµÖÁÉÙÎªvµÄ×îĞ¡ÖØÁ¿
+	/// è¯¥æ–¹æ³•ä¸FPTAS_singleUAVçš„å”¯ä¸€åŒºåˆ«æ˜¯ï¼ŒåŠ¨æ€è§„åˆ’è¡¨æ ¼çš„å€¼ä¸å†æ˜¯æ°å¥½ç­‰äºä»·å€¼vçš„æœ€å°é‡é‡ï¼Œè€Œæ˜¯ä»·å€¼è‡³å°‘ä¸ºvçš„æœ€å°é‡é‡
 	/// </summary>
-	/// <param name="uav">Îªuav½øĞĞ·ÖÅä¾ö²ß£¬ÆäÖĞ°üº¬ÁËÈİÁ¿ĞÅÏ¢.</param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓ²Ğ§ÓÃÓÃ»§¼¯ºÏ.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <returns>±³°üÎÊÌâµÄ·ÖÅä½á¹û£¬KnapsackResult ÀàĞÍ</returns>
+	/// <param name="uav">ä¸ºuavè¿›è¡Œåˆ†é…å†³ç­–ï¼Œå…¶ä¸­åŒ…å«äº†å®¹é‡ä¿¡æ¯.</param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç¡¬æ•ˆç”¨ç”¨æˆ·é›†åˆ.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <returns>èƒŒåŒ…é—®é¢˜çš„åˆ†é…ç»“æœï¼ŒKnapsackResult ç±»å‹</returns>
 	KnapsackResult FPTAS_singleUAV_new(Uav uav, vector<User> unproc_users, double epsilon = 0.02);
 
 	/**
-	 * @brief Ê¹ÓÃ LCM Óë¶şºòÑ¡ÉáÈëÇó½â ToN ¿ìËÙµ¥ UAV ±ß¼ÊĞ§ÓÃÎÊÌâ¡£
-	 * @param uav ´ıÆÀ¹À UAV£»total_bandwidth ±íÊ¾±¾´Î¿ÉÓÃµÄĞÂÔö´ø¿íÔ¤Ëã¡£
-	 * @param candidate_users ¸Ã UAV ÔÚ±¾´Îµ÷ÓÃÖĞ¿ÉÒÔ·şÎñµÄºòÑ¡ÓÃ»§¡£
-	 * @param current_utilities °´ÓÃ»§ ID Ë÷ÒıµÄµ±Ç°ÍøÂç¾ø¶ÔĞ§ÓÃ m_j¡£
-	 * @param base_bandwidths °´ÓÃ»§ ID Ë÷ÒıµÄÍ¬Ò» UAV ÒÑÓĞ»ù×¼´ø¿í b_{kj}^{old}¡£
-	 * @return allocatedBandwidth ÎªĞÂÔö´ø¿í£¬allocatedValue/totalValue ÎªÕæÊµ±ß¼ÊĞ§ÓÃ¡£
+	 * @brief ä½¿ç”¨ LCM ä¸äºŒå€™é€‰èˆå…¥æ±‚è§£ ToN å¿«é€Ÿå• UAV è¾¹é™…æ•ˆç”¨é—®é¢˜ã€‚
+	 * @param uav å¾…è¯„ä¼° UAVï¼›total_bandwidth è¡¨ç¤ºæœ¬æ¬¡å¯ç”¨çš„æ–°å¢å¸¦å®½é¢„ç®—ã€‚
+	 * @param candidate_users è¯¥ UAV åœ¨æœ¬æ¬¡è°ƒç”¨ä¸­å¯ä»¥æœåŠ¡çš„å€™é€‰ç”¨æˆ·ã€‚
+	 * @param current_utilities æŒ‰ç”¨æˆ· ID ç´¢å¼•çš„å½“å‰ç½‘ç»œç»å¯¹æ•ˆç”¨ m_jã€‚
+	 * @param base_bandwidths æŒ‰ç”¨æˆ· ID ç´¢å¼•çš„åŒä¸€ UAV å·²æœ‰åŸºå‡†å¸¦å®½ b_{kj}^{old}ã€‚
+	 * @return allocatedBandwidth ä¸ºæ–°å¢å¸¦å®½ï¼ŒallocatedValue/totalValue ä¸ºçœŸå®è¾¹é™…æ•ˆç”¨ã€‚
 	 */
 	KnapsackResult AlgFast_singleUAV_ToN(
 		const Uav& uav,
@@ -636,13 +647,13 @@ public:
 		const vector<double>& base_bandwidths);
 
 	/**
-	 * @brief Ê¹ÓÃËõ·ÅÀûÈó DP Óë SMAWK Çó½â ToN ¸Ä½øµ¥ UAV ±ß¼ÊĞ§ÓÃÎÊÌâ¡£
-	 * @param uav ´ıÆÀ¹À UAV£»total_bandwidth ±íÊ¾±¾´Î¿ÉÓÃµÄĞÂÔö´ø¿íÔ¤Ëã¡£
-	 * @param candidate_users ¸Ã UAV ÔÚ±¾´Îµ÷ÓÃÖĞ¿ÉÒÔ·şÎñµÄºòÑ¡ÓÃ»§¡£
-	 * @param current_utilities °´ÓÃ»§ ID Ë÷ÒıµÄµ±Ç°ÍøÂç¾ø¶ÔĞ§ÓÃ m_j¡£
-	 * @param base_bandwidths °´ÓÃ»§ ID Ë÷ÒıµÄÍ¬Ò» UAV ÒÑÓĞ»ù×¼´ø¿í b_{kj}^{old}¡£
-	 * @param epsilon ½üËÆ²ÎÊı£¬±ØĞëÂú×ã 0 < epsilon < 1/2£¬Ä¬ÈÏÖµÎª 0.1¡£
-	 * @return allocatedBandwidth ÎªĞÂÔö´ø¿í£¬allocatedValue/totalValue ÎªÕæÊµ±ß¼ÊĞ§ÓÃ¡£
+	 * @brief ä½¿ç”¨ç¼©æ”¾åˆ©æ¶¦ DP ä¸ SMAWK æ±‚è§£ ToN æ”¹è¿›å• UAV è¾¹é™…æ•ˆç”¨é—®é¢˜ã€‚
+	 * @param uav å¾…è¯„ä¼° UAVï¼›total_bandwidth è¡¨ç¤ºæœ¬æ¬¡å¯ç”¨çš„æ–°å¢å¸¦å®½é¢„ç®—ã€‚
+	 * @param candidate_users è¯¥ UAV åœ¨æœ¬æ¬¡è°ƒç”¨ä¸­å¯ä»¥æœåŠ¡çš„å€™é€‰ç”¨æˆ·ã€‚
+	 * @param current_utilities æŒ‰ç”¨æˆ· ID ç´¢å¼•çš„å½“å‰ç½‘ç»œç»å¯¹æ•ˆç”¨ m_jã€‚
+	 * @param base_bandwidths æŒ‰ç”¨æˆ· ID ç´¢å¼•çš„åŒä¸€ UAV å·²æœ‰åŸºå‡†å¸¦å®½ b_{kj}^{old}ã€‚
+	 * @param epsilon è¿‘ä¼¼å‚æ•°ï¼Œå¿…é¡»æ»¡è¶³ 0 < epsilon < 1/2ï¼Œé»˜è®¤å€¼ä¸º 0.1ã€‚
+	 * @return allocatedBandwidth ä¸ºæ–°å¢å¸¦å®½ï¼ŒallocatedValue/totalValue ä¸ºçœŸå®è¾¹é™…æ•ˆç”¨ã€‚
 	 */
 	KnapsackResult AlgBetter_singleUAV_ToN(
 		const Uav& uav,
@@ -653,65 +664,65 @@ public:
 
 
 	/// <summary>
-	/// ÔÚµ±Ç°×´Ì¬ÏÂ£¬¼ÆËãÎŞÈË»úuav_id×Ó·ÖÅäÎÊÌâµÄKKT²ÎÊı
+	/// åœ¨å½“å‰çŠ¶æ€ä¸‹ï¼Œè®¡ç®—æ— äººæœºuav_idå­åˆ†é…é—®é¢˜çš„KKTå‚æ•°
 	/// </summary>
-	/// <param name="uav_id"> µ±Ç°ÎŞÈË»úµÄID </param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ</param>
-	/// <returns> KKT²ÎÊı½á¹¹Ìå </returns>
+	/// <param name="uav_id"> å½“å‰æ— äººæœºçš„ID </param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ</param>
+	/// <returns> KKTå‚æ•°ç»“æ„ä½“ </returns>
 	vector<KKT_parameters> compute_KKT_parameters(int uav_id, const vector<User>& unproc_users);
 
 	void print_KKT_parameters(const vector<KKT_parameters>& kkt_params);
 
 	/// <summary>
-	/// ¶ÔÓÚelastic_utilityÀàĞÍµÄÓÃ»§£¬´ø¿í·ÖÅäÎÊÌâÊÇÒ»¸öÍ¹ÓÅ»¯ÎÊÌâ£¬Ö±½Ó¸ù¾İKKTÌõ¼şÇó½â ¸ø¶¨ÎŞÈË»úuav_id£¬ÓÃ¸ÃËã·¨Îª¸ÃÎŞÈË»ú·ÖÅä´ø¿í
-	/// Ëã·¨¼ÇÂ¼Óë±Ê¼Ç£º[[003 Ëã·¨Éè¼Æ2 »ìºÏĞ§ÓÃµÄµ¥ÎŞÈË»ú×ÊÔ´·ÖÅäÎÊÌâ#2 3 2 ¶ÔÓÚÁ¬Ğø²¿·Ö£ºKKTÌõ¼şÕÒ×îÓÅ½â]]
+	/// å¯¹äºelastic_utilityç±»å‹çš„ç”¨æˆ·ï¼Œå¸¦å®½åˆ†é…é—®é¢˜æ˜¯ä¸€ä¸ªå‡¸ä¼˜åŒ–é—®é¢˜ï¼Œç›´æ¥æ ¹æ®KKTæ¡ä»¶æ±‚è§£ ç»™å®šæ— äººæœºuav_idï¼Œç”¨è¯¥ç®—æ³•ä¸ºè¯¥æ— äººæœºåˆ†é…å¸¦å®½
+	/// ç®—æ³•è®°å½•ä¸ç¬”è®°ï¼š[[003 ç®—æ³•è®¾è®¡2 æ··åˆæ•ˆç”¨çš„å•æ— äººæœºèµ„æºåˆ†é…é—®é¢˜#2 3 2 å¯¹äºè¿ç»­éƒ¨åˆ†ï¼šKKTæ¡ä»¶æ‰¾æœ€ä¼˜è§£]]
 	/// </summary>
-	/// <param name="uav">Îªuav½øĞĞ·ÖÅä¾ö²ß£¬ÆäÖĞ°üº¬ÁËÈİÁ¿ĞÅÏ¢.</param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÈíĞ§ÓÃÓÃ»§¼¯ºÏ.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <returns>±³°üÎÊÌâµÄ·ÖÅä½á¹û£¬KnapsackResult ÀàĞÍ</returns>
+	/// <param name="uav">ä¸ºuavè¿›è¡Œåˆ†é…å†³ç­–ï¼Œå…¶ä¸­åŒ…å«äº†å®¹é‡ä¿¡æ¯.</param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„è½¯æ•ˆç”¨ç”¨æˆ·é›†åˆ.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <returns>èƒŒåŒ…é—®é¢˜çš„åˆ†é…ç»“æœï¼ŒKnapsackResult ç±»å‹</returns>
 	KnapsackResult KktBasedElasticUtility(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
 
 	/// <summary>
-	/// PeggingËã·¨£¬Ëã·¨²Î¿¼±Ê¼Ç£º[[003 Ëã·¨Éè¼Æ2 »ìºÏĞ§ÓÃµÄµ¥ÎŞÈË»ú×ÊÔ´·ÖÅäÎÊÌâ#2 3 3 ¶ÔÓÚÁ¬Ğø²¿·ÖµÄĞÂ·½·¨£ºPeggingËã·¨]]
+	/// Peggingç®—æ³•ï¼Œç®—æ³•å‚è€ƒç¬”è®°ï¼š[[003 ç®—æ³•è®¾è®¡2 æ··åˆæ•ˆç”¨çš„å•æ— äººæœºèµ„æºåˆ†é…é—®é¢˜#2 3 3 å¯¹äºè¿ç»­éƒ¨åˆ†çš„æ–°æ–¹æ³•ï¼šPeggingç®—æ³•]]
 	/// </summary>
-	/// <param name="uav">Îªuav½øĞĞ·ÖÅä¾ö²ß£¬ÆäÖĞ°üº¬ÁËÈİÁ¿ĞÅÏ¢.</param>
-	/// <param name="unproc_users">´ı´¦ÀíµÄÓÃ»§¼¯ºÏ.</param>
-	/// <param name="uti_max">ÓÃ»§µ±Ç°µÄ×î´óĞ§ÓÃ£¬ÓÃ»§µÄ±ß¼ÊĞ§ÓÃº¯Êı²ÎÊı</param>
-	/// <returns>±³°üÎÊÌâµÄ·ÖÅä½á¹û£¬KnapsackResult ÀàĞÍ</returns>
+	/// <param name="uav">ä¸ºuavè¿›è¡Œåˆ†é…å†³ç­–ï¼Œå…¶ä¸­åŒ…å«äº†å®¹é‡ä¿¡æ¯.</param>
+	/// <param name="unproc_users">å¾…å¤„ç†çš„ç”¨æˆ·é›†åˆ.</param>
+	/// <param name="uti_max">ç”¨æˆ·å½“å‰çš„æœ€å¤§æ•ˆç”¨ï¼Œç”¨æˆ·çš„è¾¹é™…æ•ˆç”¨å‡½æ•°å‚æ•°</param>
+	/// <returns>èƒŒåŒ…é—®é¢˜çš„åˆ†é…ç»“æœï¼ŒKnapsackResult ç±»å‹</returns>
 	KnapsackResult PeggingAlgorithm(Uav& uav, vector<User>& unproc_users, vector<double>& uti_max);
 
 
 
 	/// <summary>
-	/// Ìá³öµÄ¶àÎŞÈË»ú´ø¿í·ÖÅä½üËÆËã·¨
+	/// æå‡ºçš„å¤šæ— äººæœºå¸¦å®½åˆ†é…è¿‘ä¼¼ç®—æ³•
 	/// </summary>
-	/// <param name="uavs">ÏµÍ³ÖĞÎŞÈË»ú¼¯ºÏ</param>
-	/// <param name="users">ÏµÍ³ÖĞÓÃ»§µÄ¼¯ºÏ</param>
-	/// <param name="used_single_alg"> µ¥ÎŞÈË»úËã·¨Ö¸Ê¾±äÁ¿£¬1ÎªÊ¹ÓÃ1/2½üËÆËã·¨£¬2ÎªÊ¹ÓÃFPTASËã·¨</param>
-	/// <param name="epsilon">¾«¶ÈÒªÇó</param>
+	/// <param name="uavs">ç³»ç»Ÿä¸­æ— äººæœºé›†åˆ</param>
+	/// <param name="users">ç³»ç»Ÿä¸­ç”¨æˆ·çš„é›†åˆ</param>
+	/// <param name="used_single_alg"> å•æ— äººæœºç®—æ³•æŒ‡ç¤ºå˜é‡ï¼Œ1ä¸ºä½¿ç”¨1/2è¿‘ä¼¼ç®—æ³•ï¼Œ2ä¸ºä½¿ç”¨FPTASç®—æ³•</param>
+	/// <param name="epsilon">ç²¾åº¦è¦æ±‚</param>
 	/// <returns></returns>
 	pair<vector<KnapsackResult>, map<int, UserResult>>  approposed_multiUAV_allocation(vector<Uav> uavs, vector<User> users, int used_single_alg = 2, double parameter = 0.083);
 
 	/// <summary>
-	/// Ìá³öµÄ¶àÎŞÈË»ú´ø¿í·ÖÅä½üËÆËã·¨; ÓëÔ­Ëã·¨Ïà±È£¬²»ÊÇÃ¿´ÎÑ¡ÔñÃ¿¸öĞ§ÓÃ×î´óµÄÎŞÈË»ú£¬¶øÊÇÏÈÎªÃ¿¸öÎŞÈË»ú·ÖÅäÒ»±é¡£
-	/// ÓÃ»§Ñ¡ÔñĞ§ÓÃ×î´óµÄÎŞÈË»ú
+	/// æå‡ºçš„å¤šæ— äººæœºå¸¦å®½åˆ†é…è¿‘ä¼¼ç®—æ³•; ä¸åŸç®—æ³•ç›¸æ¯”ï¼Œä¸æ˜¯æ¯æ¬¡é€‰æ‹©æ¯ä¸ªæ•ˆç”¨æœ€å¤§çš„æ— äººæœºï¼Œè€Œæ˜¯å…ˆä¸ºæ¯ä¸ªæ— äººæœºåˆ†é…ä¸€éã€‚
+	/// ç”¨æˆ·é€‰æ‹©æ•ˆç”¨æœ€å¤§çš„æ— äººæœº
 	/// </summary>
-	/// <param name="uavs">ÏµÍ³ÖĞÎŞÈË»ú¼¯ºÏ</param>
-	/// <param name="users">ÏµÍ³ÖĞÓÃ»§µÄ¼¯ºÏ</param>
-	/// <param name="used_single_alg"> µ¥ÎŞÈË»úËã·¨Ö¸Ê¾±äÁ¿£¬1ÎªÊ¹ÓÃ1/2½üËÆËã·¨£¬2ÎªÊ¹ÓÃFPTASËã·¨</param>
-	/// <param name="epsilon">¾«¶ÈÒªÇó</param>
+	/// <param name="uavs">ç³»ç»Ÿä¸­æ— äººæœºé›†åˆ</param>
+	/// <param name="users">ç³»ç»Ÿä¸­ç”¨æˆ·çš„é›†åˆ</param>
+	/// <param name="used_single_alg"> å•æ— äººæœºç®—æ³•æŒ‡ç¤ºå˜é‡ï¼Œ1ä¸ºä½¿ç”¨1/2è¿‘ä¼¼ç®—æ³•ï¼Œ2ä¸ºä½¿ç”¨FPTASç®—æ³•</param>
+	/// <param name="epsilon">ç²¾åº¦è¦æ±‚</param>
 	/// <returns></returns>
 	pair<vector<KnapsackResult>, map<int, UserResult>>  approposed_multiUAV_allocation_new(vector<Uav> uavs, vector<User> users, int used_single_alg = 2, double parameter = 0.083);
 
 	/**
-	 * @brief Ö´ĞĞ ToN ¹Ì¶¨×´Ì¬Ì°ĞÄ¶à UAV ·ÖÅä¼°²ĞÓà´ø¿í½×¶Î¡£
-	 * @param uavs ²ÎÓëÑ¡ÔñµÄ UAV ¼¯ºÏ£¬Ã¿¼Ü UAV Ç¡ºÃ´¦ÀíÒ»´Î¡£
-	 * @param users µ±Ç°ÏµÍ³Ä£ĞÍÖĞµÄÍêÕûÓÃ»§¼¯ºÏ¡£
-	 * @param used_single_alg È¡ 1 Ê±µ÷ÓÃ AlgFast_singleUAV_ToN£¬È¡ 2 Ê±µ÷ÓÃ AlgBetter_singleUAV_ToN¡£
-	 * @param epsilon ´«¸ø AlgBetter_singleUAV_ToN µÄ½üËÆ²ÎÊı£¬±ØĞëÂú×ã 0 < epsilon < 1/2¡£
-	 * @return ×îÖÕ¾ø¶Ô½á¹û£ºallocatedBandwidth Îª×Ü´ø¿í£¬allocatedValue/totalValue Îª¾ø¶ÔĞ§ÓÃ£»
-	 *         Í¬Ê±·µ»ØÓë UAV ½á¹ûÒ»ÖÂµÄÖğÓÃ»§Í¶Ó°¡£
+	 * @brief æ‰§è¡Œ ToN å›ºå®šçŠ¶æ€è´ªå¿ƒå¤š UAV åˆ†é…åŠæ®‹ä½™å¸¦å®½é˜¶æ®µã€‚
+	 * @param uavs å‚ä¸é€‰æ‹©çš„ UAV é›†åˆï¼Œæ¯æ¶ UAV æ°å¥½å¤„ç†ä¸€æ¬¡ã€‚
+	 * @param users å½“å‰ç³»ç»Ÿæ¨¡å‹ä¸­çš„å®Œæ•´ç”¨æˆ·é›†åˆã€‚
+	 * @param used_single_alg å– 1 æ—¶è°ƒç”¨ AlgFast_singleUAV_ToNï¼Œå– 2 æ—¶è°ƒç”¨ AlgBetter_singleUAV_ToNã€‚
+	 * @param epsilon ä¼ ç»™ AlgBetter_singleUAV_ToN çš„è¿‘ä¼¼å‚æ•°ï¼Œå¿…é¡»æ»¡è¶³ 0 < epsilon < 1/2ã€‚
+	 * @return æœ€ç»ˆç»å¯¹ç»“æœï¼šallocatedBandwidth ä¸ºæ€»å¸¦å®½ï¼ŒallocatedValue/totalValue ä¸ºç»å¯¹æ•ˆç”¨ï¼›
+	 *         åŒæ—¶è¿”å›ä¸ UAV ç»“æœä¸€è‡´çš„é€ç”¨æˆ·æŠ•å½±ã€‚
 	 */
 	pair<vector<KnapsackResult>, map<int, UserResult>> Appro_multiUAV_ToN(
 		const vector<Uav>& uavs,
@@ -721,97 +732,67 @@ public:
 
 
 	/**
-	* @brief ´òÓ¡µ¥¸ö KnapsackResult ½á¹¹Ìå
-	* * @param result Òª´òÓ¡µÄ½á¹û¶ÔÏó
-	* @param maxItemsToPrint ¿ØÖÆ´òÓ¡ÏêÏ¸ÎïÆ·µÄ×î´óÊıÁ¿£¬Ä¬ÈÏ´òÓ¡Ç°10¸ö£¬-1±íÊ¾´òÓ¡ËùÓĞ
-	* @param indent Ëõ½ø¿Õ¸ñÊı£¬ÓÃÓÚÃÀ»¯²ã¼¶ÏÔÊ¾
+	* @brief æ‰“å°å•ä¸ª KnapsackResult ç»“æ„ä½“
+	* * @param result è¦æ‰“å°çš„ç»“æœå¯¹è±¡
+	* @param maxItemsToPrint æ§åˆ¶æ‰“å°è¯¦ç»†ç‰©å“çš„æœ€å¤§æ•°é‡ï¼Œé»˜è®¤æ‰“å°å‰10ä¸ªï¼Œ-1è¡¨ç¤ºæ‰“å°æ‰€æœ‰
+	* @param indent ç¼©è¿›ç©ºæ ¼æ•°ï¼Œç”¨äºç¾åŒ–å±‚çº§æ˜¾ç¤º
 	*/
 	void PrintKnapsackResult(const KnapsackResult& result, int uav_id, int maxItemsToPrint = 10, int indent = 0);
 
 	/**
-	* @brief ´òÓ¡ vector<KnapsackResult>
-	* * @param results ½á¹ûÁĞ±í
-	* @param maxItemsPerResult Ã¿¸ö½á¹ûÖĞÏêÏ¸´òÓ¡µÄÎïÆ·ÊıÏŞÖÆ
+	* @brief æ‰“å° vector<KnapsackResult>
+	* * @param results ç»“æœåˆ—è¡¨
+	* @param maxItemsPerResult æ¯ä¸ªç»“æœä¸­è¯¦ç»†æ‰“å°çš„ç‰©å“æ•°é™åˆ¶
 	*/
 	void PrintKnapsackResultList(const vector<KnapsackResult>& results, int maxItemsPerResult = 5);
 
 
 
-	/// <summary>
-	/// ¶Ô±ÈËã·¨Ò»£¬ËÉ³ÚÉáÈë·¨¡££ºËã·¨À´Ô´: On-Demand Multiplexing of eMBB/URLLC Traffic in a Multi-UAV Relay Network
-	/// </summary>
-	/// <param name="epsilon_tol"></param>
-	/// <returns></returns>
+	/// AlgRelaxRound: continuous relaxation, seeded rounding and fixed-association refinement.
+	/// Independently constructed; not Tian's TD3/preemption method.
+	/// epsilon_tol is retained for source compatibility (the shared feasibility contract takes precedence).
+	/// seed controls mt19937; max_trials bounds candidate attempts; optional diagnostics records solver stages.
+	/// Returns per-UAV allocations and per-user projections; typed AllocationFailure reports unrecoverable stages.
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
-		ConvexRelaxationAndRounding_multiUAV(double epsilon_tol = 1e-4);
+		ConvexRelaxationAndRounding_multiUAV(double epsilon_tol = 1e-4,
+			uint32_t seed = 20260905u, int max_trials = 2,
+			AllocationDiagnostics* diagnostics = nullptr);
 
-	/// <summary>
-	/// ¶Ô±ÈËã·¨¶ş£¬»ùÓÚÆ¥Åä²©ŞÄµÄÁªºÏÓÃ»§¹ØÁªÓë´ø¿í·ÖÅäËã·¨¡£Ëã·¨À´Ô´£ºDiverse and Differentiated QoS Provisioning for 6G Communications via Demand-Aware Prioritization and DEI-Based Resource Allocation
-	/// »ùÓÚÆ¥Åä²©ŞÄ + SQP(IPOPT) µÄÁªºÏÓÃ»§¹ØÁªÓë´ø¿í·ÖÅäËã·¨
-	/// 
-	/// Ëã·¨Á÷³Ì£º
-	///   Phase 0: Ì°ĞÄ³õÊ¼»¯£¨Ã¿¸öÓÃ»§¹ØÁªĞÅµÀ×îºÃµÄUAV£¬¾ù·Ö´ø¿í£©
-	///   Phase 1 (Step A): ¹Ì¶¨Æ¥Åäx, Ê¹ÓÃIPOPTÎªÃ¿¸öUAV¶ÀÁ¢Çó½â´ø¿í·ÖÅäb
-	///   Phase 2 (Step B): ¹Ì¶¨´ø¿íb, Í¨¹ı³É¶ÔÓÃ»§½»»»ÓÅ»¯Æ¥Åäx
-	///   Phase 4: ¿ÉĞĞ½â»Ö¸´£¨HardÓÃ»§ÉáÈë/·ÅÆú£©+ Ê£Óà´ø¿íÔÙ·ÖÅä¸øElasticÓÃ»§
-	/// 
-	/// Ğ§ÓÃº¯ÊıÉè¼Æ£º
-	///   - HardÓÃ»§: Sigmoid½üËÆ w_i / (1 + exp(-nu * (R_i - r_min)))
-	///   - ElasticÓÃ»§: ¹éÒ»»¯¶ÔÊı w_j * log2(1+b*cap) / log2(1+B_UAV*cap)
-	/// </summary>
-	/// <param name="config">Ëã·¨²ÎÊıÅäÖÃ£¨¶¸ÇÍÒò×Ó¡¢ÊÕÁ²ãĞÖµ¡¢×î´óµü´úµÈ£©</param>
-	/// <returns>
-	///   first: Ã¿¸öUAVµÄ·ÖÅä½á¹ûÁĞ±í (vector<KnapsackResult>)
-	///   second: Ã¿¸öÓÃ»§µÄ·ÖÅä½á¹û (vector<UserResult>)
-	/// </returns>
+	/// AlgSwapMatching: strongest-link initialization, per-UAV IPOPT optimization and beneficial swaps.
+	/// Inspired by Han--Wang, not a DEI or maximum-weight-matching reproduction.
+	/// The default config keeps one outer pass: swaps are not followed by another bandwidth optimization.
+	/// Hard sigmoid and normalized elastic-log surrogates differ from reported utility. Hard admission constraints
+	/// are relaxed on overloaded UAVs; unmet hard users are dropped in recovery. Residual reoptimization is disabled.
+	/// config controls the existing heuristic; diagnostics records optimizer status and feasible fallbacks.
+	/// Returns the original pair of per-UAV allocations and per-user projections.
 	std::pair<std::vector<KnapsackResult>, map<int, UserResult>>
-		MatchingSQP_Allocation(MatchingSQPConfig config = MatchingSQPConfig());
+		MatchingSQP_Allocation(MatchingSQPConfig config = MatchingSQPConfig(),
+			AllocationDiagnostics* diagnostics = nullptr);
 
 
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 		MatchingGameAllocation();
 
-	/// <summary>
-   /// SADAËã·¨: »ùÓÚÁ¬Ğø½üËÆÓë¶ÔÅ¼·Ö½âµÄÁªºÏÓÃ»§¹ØÁªÓë´ø¿í·ÖÅäËã·¨
-   /// 
-   /// Ëã·¨Á÷³Ì:
-   ///   Step 1: SigmoidÆ½»¬»¯ - Ïû³ıÕûÊı±äÁ¿x_ki, ÓÃÁ¬Ğø´ø¿íb_ki×ÔÈ»±àÂë¹ØÁª¾ö²ß
-   ///   Step 2: Jensen²»µÈÊ½½üËÆ(Íâ²ãÑ­»·) - ½«·ÇÍ¹ log(sum U) ×ª»¯ÎªÍ¹ÏÂ½ç
-   ///   Step 3: ¶ÔÅ¼·Ö½â(ÄÚ²ãÑ­»·) - Ã¿¸öUAV²¢ĞĞÇó½â´ø¿í·ÖÅä
-   ///     - UHÓÃ»§: SigmoidÄæº¯Êı½âÎö½â
-   ///     - UEÓÃ»§: ¶ş·Ö·¨Çó½âKKT·½³Ì
-   ///   Step 4: ºó´¦Àí - ½á¹û»Ö¸´, ¿ÉĞĞĞÔĞŞ¸´, Ê£Óà´ø¿íÖØ·ÖÅä
-   /// 
-   /// ²Î¿¼Ëã·¨: Li et al. (2024), Successive Approximation and Dual Decomposition
-   /// </summary>
-   /// <param name="config">Ëã·¨²ÎÊıÅäÖÃ</param>
-   /// <returns>
-   ///   first: Ã¿¸öUAVµÄ·ÖÅä½á¹ûÁĞ±í (vector<KnapsackResult>)
-   ///   second: Ã¿¸öÓÃ»§µÄ·ÖÅä½á¹û (map<int, UserResult>)
-   /// </returns>
+	/// AlgSA-DD: successive-approximation/dual-price bandwidth heuristic adapted from Li et al. (2024).
+	/// Retains theta updates, per-UAV dual/KKT solving, IPOPT refinement and original feasibility recovery.
+	/// Positive-utility strongest-link initialization normally leaves other links at theta=0; the existing
+	/// zero-utility initialization branch assigns uniform theta. This is not a general joint-association solver.
+	/// config retains all original heuristic defaults; diagnostics reports solver stages and retained fallbacks.
+	/// Returns per-UAV allocations and per-user projections, with unserved users at UAV=-1 and zero resources.
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
-		SADA_Allocation(SADAConfig config = SADAConfig());
+		SADA_Allocation(SADAConfig config = SADAConfig(),
+			AllocationDiagnostics* diagnostics = nullptr);
 
 
-	/// <summary>
-/// »ùÓÚĞÙÑÀÀûËã·¨£¨KMËã·¨£©µÄ×ÓĞÅµÀÆ¥Åä×ÊÔ´·ÖÅäËã·¨
-/// 
-/// Ëã·¨Á÷³Ì£º
-///   Step 1: ½«Ã¿¸öUAVµÄ´ø¿íÀëÉ¢»¯Îª B_sub=180KHz µÄ×ÓĞÅµÀ
-///   Step 2: ¹¹½¨¶ş²¿Í¼£º×ó²à=ËùÓĞ×ÓĞÅµÀ£¨200*K¸ö£©£¬ÓÒ²à=ËùÓĞÓÃ»§£¨n¸ö£©
-///   Step 3: ²¹ÆëĞéÄâ½ÚµãÊ¹·½Õó£¬ĞéÄâ±ßÈ¨ÖØ=0
-///   Step 4: ±ßÈ¨¼ÆËã
-///     - HardÓÃ»§: Èôµ¥×ÓĞÅµÀÂú×ãQoSÔò w*log2(1+B_sub*log2(1+SNR_avg))£¬·ñÔò0
-///     - ElasticÓÃ»§: w*log2(1+B_sub*cap)
-///   Step 5: KMËã·¨Çó½â×î´óÈ¨ÍêÃÀÆ¥Åä£¨O(N^3)£©
-///   Step 6: ´ÓÆ¥Åä»Ö¸´ x_ki ºÍ b_ki
-/// 
-/// ÌØµã£ºÃ¿¸öÓÃ»§×î¶à·ÖÅäÒ»¸ö×ÓĞÅµÀ£¨180KHz£©£¬Ò»¶ÔÒ»Æ¥Åä
-/// </summary>
-/// <returns>
-///   first: Ã¿¸öUAVµÄ·ÖÅä½á¹ûÁĞ±í (vector<KnapsackResult>)
-///   second: Ã¿¸öÓÃ»§µÄ·ÖÅä½á¹û (map<int, UserResult>)
-/// </returns>
+	/// AlgHardFirst: per-subchannel priority-aware DA, finite hard recovery, then elastic DA.
+	/// Common BSub is effective MHz; each slot occupies BSub*10/9 including guard overhead.
+	/// Returns effective bandwidth; normalized-demand/dynamic preferences are adaptations, not a stability claim.
+	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
+		HardFirstPriorityMatchingAllocation();
+	/// Same DA allocation with one aggregate proposal/replacement/recovery JSON diagnostics event.
+	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
+		HardFirstPriorityMatchingAllocation(AllocationDiagnostics* diagnostics);
+	/// Compatibility alias only: forwards to HardFirstPriorityMatchingAllocation, not Hungarian/KM.
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 		HungarianMatchingAllocation();
 };

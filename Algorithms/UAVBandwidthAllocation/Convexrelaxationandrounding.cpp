@@ -1,6 +1,7 @@
 ﻿#include "EntityDefinition.h"
 
 
+// AlgRelaxRound: independent relaxation/rounding baseline, with small-model derivative verification.
 // ==================== IPOPT NLP 问题定义 ====================
 
 using namespace Ipopt;
@@ -17,9 +18,9 @@ public:
     int n2; // 弹性用户数量
 
 
-    // SNR线性值 (从dB转换)
-    vector<vector<double>> SNR_linear_hard;   // m x n1
-    vector<vector<double>> SNR_linear_elastic; // m x n2
+    // capacity线性值 (从dB转换)
+    vector<vector<double>> hard_cap;   // m x n1
+    vector<vector<double>> elastic_cap; // m x n2
 
     // 保存求解结果
     vector<vector<double>> solution_x;  // m x n
@@ -33,9 +34,9 @@ public:
         n2 = sysModel.n2;
         n = n1 + n2;
 
-        // 初始化SNR线性值
-        SNR_linear_hard.resize(m, vector<double>(n1));
-        SNR_linear_elastic.resize(m, vector<double>(n2));
+        // 初始化capacity线性值
+        hard_cap.resize(m, vector<double>(n1));
+        elastic_cap.resize(m, vector<double>(n2));
 
         // 初始化解向量
         solution_x.resize(m, vector<double>(n, 0.0));
@@ -46,7 +47,7 @@ public:
         // 遍历 sysModel 中的 map 填充矩阵
         // 假设 uav_serviceable_users_map 的 key 是 uav_id (int)
         for (auto const& [uav_id, users_vec] : sysModel.uav_serviceable_users_map) {
-            if (uav_id >= m) continue; // 安全检查
+            if (uav_id < 0 || uav_id >= m) continue; // 安全检查
             for (const auto& user : users_vec) {
                 // 注意：这里假设 user.id 对应于算法中 0 到 n-1 的索引
                 // 如果你的 User 结构体没有 id，或者索引逻辑不同，请在此处修改
@@ -57,15 +58,15 @@ public:
             }
         }
 
-        // 从dB转换为线性值
+        // Use cap_list in the objective, constraints and all derivatives.
         for (int k = 0; k < m; k++) {
             for (int i = 0; i < n1; i++) {
-                SNR_linear_hard[k][i] = pow(10.0, sysModel.SNRth_list[k][i] / 10.0);
+                hard_cap[k][i] = sysModel.cap_list[k][i];
 
             }
             for (int j = 0; j < n2; j++) {
                 int user_idx = n1 + j;
-                SNR_linear_elastic[k][j] = pow(10.0, sysModel.SNRave_list[k][user_idx] / 10.0);
+                elastic_cap[k][j] = sysModel.cap_list[k][user_idx];
             }
         }
     }
@@ -151,7 +152,7 @@ public:
             constraint_idx++;
         }
 
-        // 约束4: x[k][i] * r_min - b[k][i] * log2(1 + SNR) <= 0 for hard users
+        // 约束4: x[k][i] * r_min - b[k][i] * log2(1 + capacity) <= 0 for hard users
         for (int k = 0; k < m; k++) {
             for (int i = 0; i < n1; i++) {
                 g_l[constraint_idx] = -1e20;
@@ -260,14 +261,14 @@ public:
                 int idx_b = m * n + k * n + user_idx;
                 double b_kj = x[idx_b];
                 double weight = sysModel.users[user_idx].weight;
-                double SNR = SNR_linear_elastic[k][j];
+                double capacity = elastic_cap[k][j];
 
-                double log2_SNR = log2(1.0 + SNR);
-                double rate = b_kj * log2_SNR;
+                double spectral_efficiency = capacity;
+                double rate = b_kj * spectral_efficiency;
 
-                // d/db[w * log2(rate + 1)] = w * log2_SNR / ((rate + 1) * ln(2))
+                // d/db[w * log2(rate + 1)] = w * spectral_efficiency / ((rate + 1) * ln(2))
                 if (rate + 1.0 > 1e-4) {
-                    grad_f[idx_b] = -1 * weight * log2_SNR / ((rate + 1.0) * log(2.0));
+                    grad_f[idx_b] = -1 * weight * spectral_efficiency / ((rate + 1.0) * log(2.0));
                 }
             }
         }
@@ -314,7 +315,7 @@ public:
             constraint_idx++;
         }
 
-        // 约束4: x[k][i] * r_min - b[k][i] * log2(1 + SNR) <= 0
+        // 约束4: x[k][i] * r_min - b[k][i] * log2(1 + capacity) <= 0
         for (int k = 0; k < m; k++)
         {
             for (int i = 0; i < n1; i++) {
@@ -323,9 +324,9 @@ public:
                 g[constraint_idx] = 0.0;
                 int idx_x = k * n + i;
                 int idx_b = m * n + k * n + i;
-                double SNR = SNR_linear_hard[k][i];
+                double capacity = hard_cap[k][i];
 
-                g[constraint_idx] = (x[idx_x] * r_min - x[idx_b] * log2(1.0 + SNR));
+                g[constraint_idx] = (x[idx_x] * r_min - x[idx_b] * capacity);
 
                 constraint_idx++;
             }
@@ -380,7 +381,7 @@ public:
                 constraint_idx++;
             }
 
-            // 约束4: x[k][i] * r_min - b[k][i] * log2(1 + SNR) <= 0
+            // 约束4: x[k][i] * r_min - b[k][i] * log2(1 + capacity) <= 0
             // 硬用户部分
             for (int k = 0; k < m; k++)
             {
@@ -389,7 +390,7 @@ public:
                     iRow[nz_idx] = constraint_idx;
                     jCol[nz_idx] = k * n + i;
                     nz_idx++;
-                    // -b[k][i] * log2(1 + SNR)项
+                    // -b[k][i] * log2(1 + capacity)项
                     iRow[nz_idx] = constraint_idx;
                     jCol[nz_idx] = m * n + k * n + i;
                     nz_idx++;
@@ -439,8 +440,8 @@ public:
                     double r_min = sysModel.users[i].rMin;
                     values[nz_idx] = r_min;  // x*r_min项系数
                     nz_idx++;
-                    double SNR = SNR_linear_hard[k][i];
-                    values[nz_idx] = -log2(1.0 + SNR);  // -b*log2(1 + SNR)项系数
+                    double capacity = hard_cap[k][i];
+                    values[nz_idx] = -capacity;  // -b*log2(1 + capacity)项系数
                     nz_idx++;
                     constraint_idx++;
                 }
@@ -494,10 +495,10 @@ public:
 
                     // 获取参数
                     double weight = sysModel.users[user_idx].weight;
-                    double SNR_linear = SNR_linear_elastic[k][j];
+                    double capacity = elastic_cap[k][j];
 
-                    // 常数 C = log2(1 + SNR)
-                    double C = log2(1.0 + SNR_linear);
+                    // 常数 C = log2(1 + capacity)
+                    double C = capacity;
 
                     // 计算二阶导数
                     // f(b) = w * log2(1 + b*C)
@@ -544,8 +545,8 @@ class FixedX_NLP : public TNLP {
 public:
     const SystemMd& sysModel;
     int m, n, n1, n2;
-    vector<vector<double>> SNR_linear_hard;
-    vector<vector<double>> SNR_linear_elastic;
+    vector<vector<double>> hard_cap;
+    vector<vector<double>> elastic_cap;
     vector<vector<int>> x_fixed;  // 固定的x值
 
     // 保存求解结果
@@ -559,18 +560,18 @@ public:
         n2 = sysModel.n2;
         n = n1 + n2;
 
-        SNR_linear_hard.resize(m, vector<double>(n1));
-        SNR_linear_elastic.resize(m, vector<double>(n2));
+        hard_cap.resize(m, vector<double>(n1));
+        elastic_cap.resize(m, vector<double>(n2));
         solution_b.resize(m, vector<double>(n, 0.0));
         solution_obj_value = 0.0;
 
         for (int k = 0; k < m; k++) {
             for (int i = 0; i < n1; i++) {
-                SNR_linear_hard[k][i] = pow(10.0, sysModel.SNRth_list[k][i] / 10.0);
+                hard_cap[k][i] = sysModel.cap_list[k][i];
             }
             for (int j = 0; j < n2; j++) {
                 int user_idx = n1 + j;
-                SNR_linear_elastic[k][j] = pow(10.0, sysModel.SNRave_list[k][user_idx] / 10.0);
+                elastic_cap[k][j] = sysModel.cap_list[k][user_idx];
             }
         }
     }
@@ -585,7 +586,7 @@ public:
         // 约束:
         // 1. b <= x*B_UAV: m*n个
         // 2. sum_i b[k][i] <= B_UAV: m个
-        // 3. b[k][i] * log2(1+SNR) >= x[k][i] * r_min: n1 * m个
+        // 3. b[k][i] * log2(1+capacity) >= x[k][i] * r_min: n1 * m个
         n_constraints = m * n + m + n1 * m;
 
         nnz_jac_g = m * n + m * n + n1 * m;
@@ -626,11 +627,11 @@ public:
 
                     double b_kj = x[idx_b];
                     double weight = sysModel.users[user_idx].weight;
-                    double SNR = SNR_linear_elastic[k][j];
-                    double log2_SNR = log2(1.0 + SNR); // 常数 C
+                    double capacity = elastic_cap[k][j];
+                    double spectral_efficiency = capacity; // 常数 C
 
                     // 计算二阶导数: - w * C^2 / ((1 + bC)^2 * ln(2))
-                    double C = log2_SNR;
+                    double C = spectral_efficiency;
                     double term = 1.0 + b_kj * C;
                     double ln2 = log(2.0);
 
@@ -672,7 +673,7 @@ public:
             g_u[constraint_idx] = 0.0;
             constraint_idx++;
         }
-        // 约束3: x*r_min - b*log2(1+SNR) <= 0 for hard users
+        // 约束3: x*r_min - b*log2(1+capacity) <= 0 for hard users
         for (int k = 0; k < m; k++) {
             for (int i = 0; i < n1; i++) {
                 g_l[constraint_idx] = -1e20;
@@ -745,13 +746,13 @@ public:
                 int idx_b = k * n + user_idx;
                 double b_kj = x[idx_b];
                 double weight = sysModel.users[user_idx].weight;
-                double SNR = SNR_linear_elastic[k][j];
+                double capacity = elastic_cap[k][j];
 
-                double log2_SNR = log2(1.0 + SNR);
-                double rate = b_kj * log2_SNR;
+                double spectral_efficiency = capacity;
+                double rate = b_kj * spectral_efficiency;
 
                 if (rate + 1.0 > 1e-10) {
-                    grad_f[idx_b] = -1 * (weight * log2_SNR / ((rate + 1.0) * log(2.0)));
+                    grad_f[idx_b] = -1 * (weight * spectral_efficiency / ((rate + 1.0) * log(2.0)));
                 }
             }
         }
@@ -784,15 +785,15 @@ public:
             constraint_idx++;
         }
 
-        // 约束3:  x_fixed*r_min - b*log2(1+SNR)<= 0
+        // 约束3:  x_fixed*r_min - b*log2(1+capacity)<= 0
         for (int k = 0; k < m; k++) {
             for (int i = 0; i < n1; i++) {
                 g[constraint_idx] = 0.0;
                 double r_min = sysModel.users[i].rMin;
                 int idx_b = k * n + i;
-                double SNR = SNR_linear_hard[k][i];
+                double capacity = hard_cap[k][i];
 
-                g[constraint_idx] += x_fixed[k][i] * r_min - x[idx_b] * log2(1.0 + SNR);
+                g[constraint_idx] += x_fixed[k][i] * r_min - x[idx_b] * capacity;
                 constraint_idx++;
 
             }
@@ -863,8 +864,8 @@ public:
             // 约束3 修正代码
             for (int k = 0; k < m; k++) {
                 for (int i = 0; i < n1; i++) {
-                    double SNR = SNR_linear_hard[k][i];
-                    values[nz_idx] = -log2(1.0 + SNR);
+                    double capacity = hard_cap[k][i];
+                    values[nz_idx] = -capacity;
                     nz_idx++;
                     constraint_idx++;
                 }
@@ -898,288 +899,180 @@ public:
 /// <summary>
 /// 基于凸松弛和舍入的多无人机带宽分配算法
 /// </summary>
+/// Solve a continuous relaxation, perform seeded rounding, and return the best feasible refined allocation.
 std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
-BAProblem::ConvexRelaxationAndRounding_multiUAV(double epsilon_tol) {
+BAProblem::ConvexRelaxationAndRounding_multiUAV(double epsilon_tol,
+    uint32_t seed, int max_trials, AllocationDiagnostics* diagnostics) {
+    if (diagnostics) *diagnostics = AllocationDiagnostics();
+    if (!std::isfinite(epsilon_tol) || epsilon_tol <= 0 || max_trials <= 0)
+        throw std::invalid_argument("Invalid relax-round tolerance or trial count");
+    const int m = sysModel.m;
+    const int n = sysModel.n1 + sysModel.n2;
+    vector<KnapsackResult> best_results(m);
+    for (int k = 0; k < m; ++k) best_results[k].uav_id = k;
+    if (m == 0 || n == 0)
+        return {best_results, construct_user_results(best_results)};
 
-    // cout << "========================================" << endl;
-    // cout << "开始运行 ConvexRelaxationAndRounding 算法" << endl;
-    // cout << "========================================" << endl;
+    SmartPtr<IpoptApplication> app = IpoptApplicationFactory();
+    if (IsNull(app))
+        throw AllocationFailure(AlgorithmRunStatus::SolverFailure, "RelaxRound: IPOPT creation failed");
+    ApplicationReturnStatus status = app->Initialize(algProjPath + "relax_rounding_ipopt.opt");
+    if (diagnostics) diagnostics->record("relax.initialize", static_cast<int>(status));
+    if (status != Solve_Succeeded)
+        throw AllocationFailure(AlgorithmRunStatus::SolverFailure, "RelaxRound: IPOPT initialization failed");
+    SmartPtr<RelaxedProblem_NLP> relaxed_nlp = new RelaxedProblem_NLP(sysModel);
+    status = app->OptimizeTNLP(relaxed_nlp);
+    if (diagnostics) diagnostics->record("relax.optimize", static_cast<int>(status));
+    if (status != Solve_Succeeded && status != Solved_To_Acceptable_Level)
+        throw AllocationFailure(AlgorithmRunStatus::SolverFailure, "RelaxRound: continuous relaxation failed");
 
-    int m = sysModel.m;
-    int n = sysModel.n1 + sysModel.n2;
-
-    // cout << "系统规模: " << m << " UAVs, " << n << " users ("
-    //     << sysModel.n1 << " hard, " << sysModel.n2 << " elastic)" << endl;
-
-    // 步骤1 & 2 已在NLP类中定义
-
-    // 步骤3: 求解松弛问题
-    //cout << "\n步骤3: 创建IPOPT求解器..." << endl;
-
-    SmartPtr<IpoptApplication> app;
-    try {
-        app = IpoptApplicationFactory();
-    }
-    catch (const std::exception& e) {
-        cout << "错误: 创建IPOPT应用时发生异常: " << e.what() << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult >());
-    }
-    catch (...) {
-        cout << "错误: 创建IPOPT应用时发生未知异常" << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-
-    // 检查app是否成功创建
-    if (IsNull(app)) {
-        cout << "错误: IpoptApplicationFactory() 返回空指针!" << endl;
-        cout << "可能的原因:" << endl;
-        cout << "  1. IPOPT库未正确安装" << endl;
-        cout << "  2. IPOPT DLL文件缺失或路径不正确" << endl;
-        cout << "  3. 链接器配置问题" << endl;
-        cout << "\n请检查:" << endl;
-        cout << "  - IPOPT库是否已安装" << endl;
-        cout << "  - PATH环境变量是否包含IPOPT的bin目录" << endl;
-        cout << "  - 项目配置是否正确链接了IPOPT库" << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-
-    //cout << "IPOPT应用创建成功" << endl;
-
-    // 先初始化IPOPT
-    //cout << "初始化IPOPT..." << endl;
-    ApplicationReturnStatus status;
-    try {
-        status = app->Initialize("relax_rounding_ipopt.opt");
-    }
-    catch (const std::exception& e) {
-        cout << "错误: IPOPT初始化时发生异常: " << e.what() << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-
-    if (status != Solve_Succeeded) {
-        cout << "IPOPT初始化失败! 状态码: " << status << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-
-    //cout << "IPOPT初始化成功" << endl;
-
-    // === 调试代码 ===
-    if (IsNull(app)) {
-        cout << "致命错误: app 指针突然变为空!" << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-    else {
-        //cout << "调试: app 指针地址有效: " << GetRawPtr(app) << endl;
-    }
-
-    // 尝试获取 Options 指针看看是否为空
-    SmartPtr<OptionsList> opts = app->Options();
-    if (IsNull(opts)) {
-        cout << "致命错误: app->Options() 返回了空指针! 这通常意味着 Debug/Release 库不匹配。" << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-    else {
-        //cout << "调试: Options 指针获取成功." << endl;
-    }
-    // ===============
-
-
-
-    // 创建松弛问题
-    // cout << "创建松弛问题..." << endl;
-    SmartPtr<TNLP> relaxed_nlp;
-    try {
-        relaxed_nlp = new RelaxedProblem_NLP(sysModel);
-    }
-    catch (const std::exception& e) {
-        cout << "错误: 创建NLP问题时发生异常: " << e.what() << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-
-    if (IsNull(relaxed_nlp)) {
-        cout << "错误: 创建NLP问题失败!" << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-
-    //cout << "松弛问题创建成功" << endl;
-
-    // 求解
-    //cout << "开始求解松弛问题..." << endl;
-    try {
-        status = app->OptimizeTNLP(relaxed_nlp);
-    }
-    catch (const std::exception& e) {
-        cout << "错误: 求解过程中发生异常: " << e.what() << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-
-    if (status != Solve_Succeeded && status != Solved_To_Acceptable_Level) {
-        cout << "松弛问题求解失败!" << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
-    }
-
-    // 获取松弛解
-    RelaxedProblem_NLP* nlp_ptr = dynamic_cast<RelaxedProblem_NLP*>(GetRawPtr(relaxed_nlp));
-    vector<vector<double>> x_relaxed = nlp_ptr->solution_x;
-    vector<vector<double>> b_relaxed = nlp_ptr->solution_b;
-
-    // 输出前20个用户相关变量
-    /*cout << "松弛解 (前20个用户):" << endl;
-    for (int k = 0; k < m; k++) {
-        cout << "UAV " << k << " 分配的 x 值: ";
-        for (int i = sysModel.n1; i < std::min(sysModel.n1 + 100, n); i++) {
-            cout << x_relaxed[k][i] << " ";
-        }
-        cout << endl;
-        cout << "UAV " << k << " 分配的 b 值: ";
-        for (int i = sysModel.n1; i < std::min(sysModel.n1 + 100, n); i++) {
-            cout << b_relaxed[k][i] << " ";
-        }
-        cout << endl;
-    }*/
-
-    // cout << "松弛问题求解完成，目标函数值: " << nlp_ptr->solution_obj_value << endl;
-
-    // 步骤4: 二分查找舍入阈值
-    //cout << "\n步骤4: 开始随机舍入与二次优化..." << endl;
-
-    int max_trials = 2; // 最大尝试次数
-    double best_valid_obj_value = -1e20; // 记录找到的最大效用值
-    bool found_any_feasible = false;
-
-    // 保存全局最佳方案
-    vector<vector<int>> global_best_x;
-    vector<vector<double>> global_best_b;
-
-    // 随机数生成器初始化
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dis(0.0, 1.0);
-
-    for (int trial = 0; trial < max_trials; trial++) {
-        // 4.1 概率舍入 (保证每个用户最多连一个UAV)
-        vector<vector<int>> current_x(m, vector<int>(n, 0));
-
-        for (int i = 0; i < n; i++) {
-            double rand_val = dis(gen);
-            double cum_prob = 0.0;
-            bool assigned = false;
-
-            for (int k = 0; k < m; k++) {
-                // 你需要在这里也能访问到类似的判断逻辑，或者直接信任 x_relaxed 为 0
-                if (x_relaxed[k][i] < 1e-6) continue;
-                cum_prob += x_relaxed[k][i];
-                if (rand_val <= cum_prob) {
-                    current_x[k][i] = 1; // 选中 UAV k
-                    assigned = true;
-                    break; // 跳出，确保单连接
-                }
-            }
-            // 如果 rand_val > sum(x_relaxed), 则该用户不连接任何 UAV (x全为0)
-        }
-
-        // 4.2 可行性预检 (Pre-check) - 约束(5)
-        bool is_trial_feasible = true;
-
-        for (int k = 0; k < m; k++) {
-            double current_uav_load = 0.0;
-            for (int i = 0; i < sysModel.n1; i++) { // 只遍历硬用户
-                if (current_x[k][i] == 1) {
-                    double snr = pow(10.0, sysModel.SNRth_list[k][i] / 10.0);
-                    double min_bw = sysModel.Bth_list[k][i];
-                    current_uav_load += min_bw;
-                }
-            }
-
-            // 如果硬用户的最小需求总和超过了 UAV 容量
-            if (current_uav_load > sysModel.uavs[k].total_bandwidth) {
-                is_trial_feasible = false;
-                break; // 该分配方案无效，无需继续检查
+    std::mt19937 generator(seed);
+    bool found = false;
+    bool solver_failed = false;
+    double best_utility = -INFINITY;
+    for (int trial = 0; trial < max_trials; ++trial) {
+        vector<vector<int>> association(m, vector<int>(n, 0));
+        for (int i = 0; i < n; ++i) {
+            const double draw = allocation_uniform01(generator);
+            double probability = 0.0;
+            for (int k = 0; k < m; ++k) {
+                if (!relaxed_nlp->allowable_matrix[k][i]) continue;
+                const double x = relaxed_nlp->solution_x[k][i];
+                if (!std::isfinite(x))
+                    throw AllocationFailure(AlgorithmRunStatus::SolverFailure, "Non-finite relaxed association");
+                if (x < 1e-6) continue; // Preserve the original rounding cutoff.
+                probability += x;
+                if (draw <= probability) { association[k][i] = 1; break; }
             }
         }
-
-        if (!is_trial_feasible) {
-            // cout << "Trial " << trial << ": 预检失败 (带宽不足以满足硬用户需求)，跳过。" << endl;
+        bool candidate_ok = true;
+        for (int k = 0; k < m; ++k) {
+            double load = 0.0;
+            for (int i = 0; i < sysModel.n1; ++i)
+                if (association[k][i]) load += sysModel.Bth_list[k][i];
+            const double budget = sysModel.uavs[k].total_bandwidth;
+            if (!std::isfinite(load) || load > budget + allocation_tolerance(load, budget))
+                candidate_ok = false;
+        }
+        if (!candidate_ok) {
+            if (diagnostics) diagnostics->events.push_back("round." + std::to_string(trial) + ": hard-load precheck rejected");
             continue;
         }
 
-        // 4.3 二次优化 (FixedX_NLP)
-        // 只有预检通过才进行昂贵的 NLP 求解
-        SmartPtr<TNLP> fixed_nlp = new FixedX_NLP(sysModel, current_x);
-        // 注意：这里需要重新创建一个新的 app 实例或者 re-optimize，为简单起见建议复用 app 但需小心状态
-        // 建议：在循环外创建 app，这里直接 OptimizeTNLP
-
-        // *关键*: 重置上次求解的状态 (如果需要) 或者忽略错误继续
-        status = app->OptimizeTNLP(fixed_nlp);
-
-        if (status == Solve_Succeeded || status == Solved_To_Acceptable_Level) {
-            FixedX_NLP* fixed_ptr = dynamic_cast<FixedX_NLP*>(GetRawPtr(fixed_nlp));
-            double current_obj = fixed_ptr->solution_obj_value; // 注意：这是负值 (min -utility)
-
-            // 注意：我们原本是 max utility，IPOPT 是 min -utility
-            // 所以 solution_obj_value 越小越好
-
-            // 为了方便比较，我们将 IPOPT 的负目标值转回正的效用值
-            double current_utility = -current_obj;
-
-            // 记录第一次可行解，或者更新更好的解
-            if (!found_any_feasible || current_utility > best_valid_obj_value) {
-                best_valid_obj_value = current_utility;
-                global_best_x = current_x;
-                global_best_b = fixed_ptr->solution_b;
-                found_any_feasible = true;
-
-                // cout << "Trial " << trial << ": 找到更优可行解! Utility = " << current_utility << endl;
+        SmartPtr<FixedX_NLP> fixed = new FixedX_NLP(sysModel, association);
+        status = app->OptimizeTNLP(fixed);
+        if (diagnostics) diagnostics->record("fixed." + std::to_string(trial), static_cast<int>(status));
+        if (status != Solve_Succeeded && status != Solved_To_Acceptable_Level) {
+            solver_failed = true;
+            continue;
+        }
+        vector<KnapsackResult> candidate(m);
+        double utility_sum = 0.0;
+        // Preserve the violated quantity in diagnostics instead of hiding infeasibility in an empty result.
+        auto reject = [&](const string& reason, int k, int i, double actual, double required) {
+            candidate_ok = false;
+            if (diagnostics) {
+                ostringstream message;
+                message << setprecision(17) << "fixed." << trial << ": " << reason
+                    << "; UAV=" << k << "; user=" << i << "; actual=" << actual << "; required=" << required;
+                diagnostics->events.push_back(message.str());
             }
+        };
+        for (int k = 0; k < m; ++k) {
+            candidate[k].uav_id = k;
+            for (int i = 0; i < n; ++i) {
+                const double raw_bw = fixed->solution_b[k][i];
+                if (!std::isfinite(raw_bw) || raw_bw < -ALLOCATION_ABS_TOL) {
+                    reject("invalid bandwidth", k, i, raw_bw, 0); continue;
+                }
+                // Remove numerical zero only; positive allocations are not repaired by validation.
+                const double bw = std::max(0.0, raw_bw);
+                if (!association[k][i]) {
+                    if (bw > ALLOCATION_ABS_TOL) reject("unassociated bandwidth", k, i, bw, 0);
+                    continue;
+                }
+                const double cap = sysModel.cap_list[k][i];
+                if (i < sysModel.n1 && !hard_qos_satisfied(bw, cap, sysModel.users[i].rMin))
+                    reject("hard rate insufficient", k, i, bw * cap, sysModel.users[i].rMin);
+                if (bw <= 0.0) continue;
+                const double value = sysModel.users[i].utility(bw, cap, sysModel.SNRave_list[k][i]);
+                if (!std::isfinite(value)) { candidate_ok = false; continue; }
+                add_KnapsackResult(candidate[k], sysModel.users[i], bw, value);
+                utility_sum += value;
+            }
+            const double budget = sysModel.uavs[k].total_bandwidth;
+            if (candidate[k].totalWeight > budget + allocation_tolerance(candidate[k].totalWeight, budget))
+                reject("budget exceeded", k, -1, candidate[k].totalWeight, budget);
+        }
+        if (!candidate_ok) {
+            if (diagnostics) diagnostics->events.push_back("fixed." + std::to_string(trial) + ": physical candidate validation rejected");
+            continue;
+        }
+        if (!found || utility_sum > best_utility) {
+            found = true;
+            best_utility = utility_sum;
+            best_results = std::move(candidate);
         }
     }
+    if (!found)
+        throw AllocationFailure(solver_failed ? AlgorithmRunStatus::SolverFailure :
+            AlgorithmRunStatus::NoFeasibleCandidate, "RelaxRound: no feasible candidate in " +
+            std::to_string(max_trials) + " recorded trials");
+    return {best_results, construct_user_results(best_results)};
+}
 
-    // 步骤5: 结果构造 (如果没找到任何解，返回空)
-    if (!found_any_feasible) {
-        cout << "错误: 在 " << max_trials << " 次尝试后未找到满足硬约束的可行解。" << endl;
-        return make_pair(vector<KnapsackResult>(), map<int, UserResult>());
+/// Check all objective, Jacobian and Hessian entries by central differences on a tiny NLP.
+/// This diagnostic performs no optimization and produces no experiment files.
+template<class Problem>
+static void verify_relax_nlp_derivatives(Problem& problem) {
+    Index nv, nc, nj, nh;
+    TNLP::IndexStyleEnum style;
+    if (!problem.get_nlp_info(nv, nc, nj, nh, style))
+        throw runtime_error("Cannot read NLP dimensions");
+    vector<Number> x(nv, 0.37), gradient(nv), jacobian(nj), hessian(nh), lambda(nc, 0.0);
+    vector<Index> jr(nj), jc(nj), hr(nh), hc(nh);
+    problem.eval_grad_f(nv, x.data(), true, gradient.data());
+    problem.eval_jac_g(nv, x.data(), true, nc, nj, jr.data(), jc.data(), nullptr);
+    problem.eval_jac_g(nv, x.data(), true, nc, nj, nullptr, nullptr, jacobian.data());
+    problem.eval_h(nv, x.data(), true, 1.0, nc, lambda.data(), true, nh, hr.data(), hc.data(), nullptr);
+    problem.eval_h(nv, x.data(), true, 1.0, nc, lambda.data(), true, nh, nullptr, nullptr, hessian.data());
+    vector<vector<double>> dense_jac(nc, vector<double>(nv, 0)), dense_hess(nv, vector<double>(nv, 0));
+    for (Index i = 0; i < nj; ++i) dense_jac.at(jr[i]).at(jc[i]) += jacobian[i];
+    for (Index i = 0; i < nh; ++i) {
+        dense_hess.at(hr[i]).at(hc[i]) += hessian[i];
+        if (hr[i] != hc[i]) dense_hess.at(hc[i]).at(hr[i]) += hessian[i];
     }
-
-    // 构造返回对象 (使用 global_best_x 和 global_best_b)
-    vector<KnapsackResult> uavResults(m);
-
-    for (int k = 0; k < m; k++) {
-        for (int i = 0; i < n; i++) {
-            if (global_best_x[k][i] == 1) {
-                uavResults[k].uav_id = sysModel.uavs[k].ID;
-                uavResults[k].allocatedList.push_back(i);
-                double bw = global_best_b[k][i];
-
-                uavResults[k].allocatedBandwidth[i] = bw;
-                double SNR_avg_dB = sysModel.SNRave_list[k][i];
-                double cap = sysModel.cap_list[k][i];
-                // 重新计算精确效用值用于统计
-                double utility = 0.0;
-
-                if (i < sysModel.n1) {
-                    double bw_th = sysModel.Bth_list[k][i];
-                    utility = sysModel.users[i].utility(bw_th, cap, SNR_avg_dB);
-                    // cout << "user " << i << ", bw = " << bw << ", bw_th = " << bw_th << endl;
-                    uavResults[k].allocatedValue[i] = utility;
-                    uavResults[k].hardValue += utility;
-                    uavResults[k].hardWeight += bw;
-                }
-                else {
-                    utility = sysModel.users[i].utility(bw, cap, SNR_avg_dB);
-                    uavResults[k].allocatedValue[i] = utility;
-                    uavResults[k].elasticValue += utility;
-                    uavResults[k].elasticWeight += bw;
-                }
-
-                uavResults[k].totalValue += utility;
-                uavResults[k].totalWeight += bw;
-
-            }
-        }
+    // Difference quotients intentionally use only the callback values, not repeated analytic formulas.
+    auto check = [](double a, double b, const string& stage) {
+        if (!std::isfinite(a) || !std::isfinite(b) ||
+            abs(a - b) > 1e-5 * std::max(1.0, std::max(abs(a), abs(b))))
+            throw runtime_error("RelaxRound derivative mismatch: " + stage);
+    };
+    constexpr double step = 1e-5;
+    for (Index column = 0; column < nv; ++column) {
+        auto plus = x, minus = x;
+        plus[column] += step; minus[column] -= step;
+        Number fp, fm;
+        vector<Number> gp(nc), gm(nc), dp(nv), dm(nv);
+        problem.eval_f(nv, plus.data(), true, fp);
+        problem.eval_f(nv, minus.data(), true, fm);
+        check(gradient[column], (fp - fm) / (2 * step), "objective");
+        problem.eval_g(nv, plus.data(), true, nc, gp.data());
+        problem.eval_g(nv, minus.data(), true, nc, gm.data());
+        problem.eval_grad_f(nv, plus.data(), true, dp.data());
+        problem.eval_grad_f(nv, minus.data(), true, dm.data());
+        for (Index row = 0; row < nc; ++row) check(dense_jac[row][column], (gp[row] - gm[row]) / (2 * step), "Jacobian");
+        for (Index row = 0; row < nv; ++row) check(dense_hess[row][column], (dp[row] - dm[row]) / (2 * step), "Hessian");
     }
+}
 
-    map<int, UserResult> userResults = construct_user_results(uavResults);
-
-    //cout << "算法结束，最优效用: " << best_valid_obj_value << endl;
-    return make_pair(uavResults, userResults);
+/// Verify both relaxation and fixed-association derivatives using the supplied synthetic model.
+void verify_relax_round_derivatives(const SystemMd& model) {
+    if (model.m <= 0 || model.users.empty()) throw invalid_argument("Derivative test needs a nonempty model");
+    RelaxedProblem_NLP relaxed(model);
+    verify_relax_nlp_derivatives(relaxed);
+    vector<vector<int>> association(model.m, vector<int>(model.users.size(), 0));
+    for (size_t i = 0; i < model.users.size(); ++i) association[i % model.m][i] = 1;
+    FixedX_NLP fixed(model, association);
+    verify_relax_nlp_derivatives(fixed);
 }

@@ -1,9 +1,22 @@
 # 008_Experiment research-snapshot policy
 #
-# This repository synchronizes source code, data-processing logic, compact
-# generation configurations, documents, and experiment results.  Raw inputs,
-# intermediate coordinate corpora, and user/UAV instance files stay on the
-# local machine or in a separately managed data snapshot.
+# This repository prioritizes source code, data-processing logic, compact
+# generation configurations, and supporting documents.  Raw inputs, CSV
+# datasets/results, and local run records stay on the local machine or in a
+# separately managed data snapshot.
+
+# ---------------------------------------------------------------------------
+# Local CSV data, experiment results, and run records
+# ---------------------------------------------------------------------------
+# Exclude coordinate pools, user/UAV instances, result tables, and summaries.
+# Also exclude compressed CSVs and backups such as *.csv.before_fix.bak.
+# Existing tracked files are unaffected; these rules do not remove local data.
+*.csv
+*.csv.*
+
+# Resume metadata belongs with the local result CSVs.  Keep source code,
+# def_config.json, generation_config_ToN.json, and README files trackable.
+/ExperimentsData/ExperimentsResults/**/run_info.json
 
 # ---------------------------------------------------------------------------
 # Population-processing data assets
@@ -70,3 +83,6 @@ __pycache__/
 *.local.json
 Thumbs.db
 Desktop.ini
+
+
+/ExperimentsData/ExperimentsResults/ToN_routeA_v1_eps0p1/batch_20260905_n10_01/

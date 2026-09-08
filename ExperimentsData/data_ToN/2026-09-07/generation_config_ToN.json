@@ -1,0 +1,446 @@
+{
+  "batch_date": "2026-09-07",
+  "generation_status": "complete",
+  "generator_files": [
+    "ExperimentsData/DatasetTest/generate_user_data_ToN.py",
+    "ExperimentsData/DatasetTest/instance_generator/generate_instances_ToN.py",
+    "ExperimentsData/DatasetTest/uav_deployment.py"
+  ],
+  "uav_deployment_rule": "max_new_coverage_connected_grid_including_zero_gain_v1",
+  "location_input_dir": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc",
+  "replicate_count": 30,
+  "randomness": {
+    "master_seed": 20260904,
+    "effective_seed_formula": "master_seed + replicate_id - 1",
+    "rng": "numpy.random.default_rng"
+  },
+  "environment": {
+    "python": "3.12.14",
+    "numpy": "2.3.5",
+    "pandas": "3.0.1"
+  },
+  "replicates": [
+    {
+      "replicate_id": 1,
+      "source_file": "500238.csv",
+      "adcode": "500238",
+      "effective_seed": 20260904
+    },
+    {
+      "replicate_id": 2,
+      "source_file": "210211.csv",
+      "adcode": "210211",
+      "effective_seed": 20260905
+    },
+    {
+      "replicate_id": 3,
+      "source_file": "230225.csv",
+      "adcode": "230225",
+      "effective_seed": 20260906
+    },
+    {
+      "replicate_id": 4,
+      "source_file": "430923.csv",
+      "adcode": "430923",
+      "effective_seed": 20260907
+    },
+    {
+      "replicate_id": 5,
+      "source_file": "422827.csv",
+      "adcode": "422827",
+      "effective_seed": 20260908
+    },
+    {
+      "replicate_id": 6,
+      "source_file": "530922.csv",
+      "adcode": "530922",
+      "effective_seed": 20260909
+    },
+    {
+      "replicate_id": 7,
+      "source_file": "140405.csv",
+      "adcode": "140405",
+      "effective_seed": 20260910
+    },
+    {
+      "replicate_id": 8,
+      "source_file": "640122.csv",
+      "adcode": "640122",
+      "effective_seed": 20260911
+    },
+    {
+      "replicate_id": 9,
+      "source_file": "350521.csv",
+      "adcode": "350521",
+      "effective_seed": 20260912
+    },
+    {
+      "replicate_id": 10,
+      "source_file": "510822.csv",
+      "adcode": "510822",
+      "effective_seed": 20260913
+    },
+    {
+      "replicate_id": 11,
+      "source_file": "542523.csv",
+      "adcode": "542523",
+      "effective_seed": 20260914
+    },
+    {
+      "replicate_id": 12,
+      "source_file": "371324.csv",
+      "adcode": "371324",
+      "effective_seed": 20260915
+    },
+    {
+      "replicate_id": 13,
+      "source_file": "532928.csv",
+      "adcode": "532928",
+      "effective_seed": 20260916
+    },
+    {
+      "replicate_id": 14,
+      "source_file": "420302.csv",
+      "adcode": "420302",
+      "effective_seed": 20260917
+    },
+    {
+      "replicate_id": 15,
+      "source_file": "420324.csv",
+      "adcode": "420324",
+      "effective_seed": 20260918
+    },
+    {
+      "replicate_id": 16,
+      "source_file": "370832.csv",
+      "adcode": "370832",
+      "effective_seed": 20260919
+    },
+    {
+      "replicate_id": 17,
+      "source_file": "140821.csv",
+      "adcode": "140821",
+      "effective_seed": 20260920
+    },
+    {
+      "replicate_id": 18,
+      "source_file": "411202.csv",
+      "adcode": "411202",
+      "effective_seed": 20260921
+    },
+    {
+      "replicate_id": 19,
+      "source_file": "540531.csv",
+      "adcode": "540531",
+      "effective_seed": 20260922
+    },
+    {
+      "replicate_id": 20,
+      "source_file": "540424.csv",
+      "adcode": "540424",
+      "effective_seed": 20260923
+    },
+    {
+      "replicate_id": 21,
+      "source_file": "420921.csv",
+      "adcode": "420921",
+      "effective_seed": 20260924
+    },
+    {
+      "replicate_id": 22,
+      "source_file": "440983.csv",
+      "adcode": "440983",
+      "effective_seed": 20260925
+    },
+    {
+      "replicate_id": 23,
+      "source_file": "230229.csv",
+      "adcode": "230229",
+      "effective_seed": 20260926
+    },
+    {
+      "replicate_id": 24,
+      "source_file": "433130.csv",
+      "adcode": "433130",
+      "effective_seed": 20260927
+    },
+    {
+      "replicate_id": 25,
+      "source_file": "540202.csv",
+      "adcode": "540202",
+      "effective_seed": 20260928
+    },
+    {
+      "replicate_id": 26,
+      "source_file": "610503.csv",
+      "adcode": "610503",
+      "effective_seed": 20260929
+    },
+    {
+      "replicate_id": 27,
+      "source_file": "630104.csv",
+      "adcode": "630104",
+      "effective_seed": 20260930
+    },
+    {
+      "replicate_id": 28,
+      "source_file": "451221.csv",
+      "adcode": "451221",
+      "effective_seed": 20260931
+    },
+    {
+      "replicate_id": 29,
+      "source_file": "522624.csv",
+      "adcode": "522624",
+      "effective_seed": 20260932
+    },
+    {
+      "replicate_id": 30,
+      "source_file": "431227.csv",
+      "adcode": "431227",
+      "effective_seed": 20260933
+    }
+  ],
+  "experiments": {
+    "EXP1": {
+      "user_numbers": [
+        1000,
+        2000,
+        3000,
+        4000,
+        5000
+      ],
+      "uav_number": 10
+    },
+    "EXP2": {
+      "user_number": 3000,
+      "uav_numbers": [
+        5,
+        10,
+        15,
+        20
+      ]
+    },
+    "EXP3": {
+      "user_number": 3000,
+      "uav_number": 10,
+      "hard_ratios": [
+        0.0,
+        0.2,
+        0.4,
+        0.6,
+        0.8,
+        1.0
+      ],
+      "uses_scientific_data_2025": false
+    },
+    "EXP4": {
+      "user_number": 3000,
+      "uav_number": 10,
+      "bandwidths": [
+        10,
+        20,
+        30,
+        40,
+        50
+      ],
+      "reuses_EXP1_files": true
+    }
+  },
+  "scientific_data_2025": {
+    "usage": "EXP1_EXP2_EXP4_only",
+    "table_6_session_weights": {
+      "network-storage": 37236,
+      "network-transmission": 57827,
+      "video": 11525,
+      "game": 14434,
+      "instant-message": 57234,
+      "web-browsing": 74142,
+      "mail-service": 73224
+    },
+    "table_3_applications": {
+      "network-storage": [
+        "Baidu Netdisk",
+        "Tianyi Cloud Disk",
+        "Alibaba Cloud",
+        "Hua Weiyun"
+      ],
+      "network-transmission": [
+        "Thunderbolt",
+        "BT Download",
+        "Emule"
+      ],
+      "video": [
+        "Station B",
+        "Tiktok",
+        "Tencent Video",
+        "IQiyi Video",
+        "Youku Video",
+        "Mango TV",
+        "Tencent Meeting"
+      ],
+      "game": [
+        "League of Legends",
+        "Honor of Kings"
+      ],
+      "instant-message": [
+        "QQ",
+        "WeChat"
+      ],
+      "web-browsing": [
+        "Alipay webpage",
+        "Today’s Headlines",
+        "Zhihu",
+        "Baidu Baike"
+      ],
+      "mail-service": [
+        "163 email",
+        "QQ email",
+        "189 email"
+      ]
+    },
+    "within_category_sampling": "uniform"
+  },
+  "study_modeling_rules": {
+    "default_table_3_user_type": "elastic",
+    "fixed_hard_qos": {
+      "Tencent Meeting": {
+        "r_min_mbps": 1.2,
+        "p_out": 0.001
+      },
+      "League of Legends": {
+        "r_min_mbps": 0.08,
+        "p_out": 0.001
+      },
+      "Honor of Kings": {
+        "r_min_mbps": 0.08,
+        "p_out": 0.001
+      }
+    },
+    "game_qos_note": "model_proxy_parameters",
+    "instant_message": {
+      "applications": [
+        "QQ",
+        "WeChat"
+      ],
+      "hard_probability": 0.2,
+      "hard_voice_probability": 0.5,
+      "voice_qos": {
+        "r_min_mbps": 0.032,
+        "p_out": 0.01
+      },
+      "video_qos": {
+        "r_min_mbps": 1.2,
+        "p_out": 0.001
+      }
+    },
+    "elastic_requirement_sentinel": [
+      0.0,
+      0.0
+    ],
+    "weight_ranges": {
+      "hard": [
+        1,
+        10
+      ],
+      "elastic": [
+        1,
+        5
+      ]
+    },
+    "EXP3_hard_profiles": [
+      {
+        "name": "Voice_Call",
+        "probability": 0.3,
+        "r_min": 0.032,
+        "p_out": 0.01
+      },
+      {
+        "name": "Video_Call",
+        "probability": 0.6,
+        "r_min": 1.2,
+        "p_out": 0.001
+      },
+      {
+        "name": "Remote_Control",
+        "probability": 0.1,
+        "r_min": 0.08,
+        "p_out": 1e-05
+      }
+    ],
+    "EXP3_elastic_profiles": [
+      {
+        "name": "Text_Msg",
+        "probability": 0.5,
+        "r_min_range": [
+          0.001,
+          0.002
+        ],
+        "r_max_range": [
+          0.008,
+          0.016
+        ]
+      },
+      {
+        "name": "Email",
+        "probability": 0.1,
+        "r_min_range": [
+          0.016,
+          0.032
+        ],
+        "r_max_range": [
+          0.256,
+          0.512
+        ]
+      },
+      {
+        "name": "Offline_Map",
+        "probability": 0.1,
+        "r_min_range": [
+          0.064,
+          0.128
+        ],
+        "r_max_range": [
+          1.0,
+          2.0
+        ]
+      },
+      {
+        "name": "Social_Media",
+        "probability": 0.2,
+        "r_min_range": [
+          0.032,
+          0.064
+        ],
+        "r_max_range": [
+          0.512,
+          1.0
+        ]
+      },
+      {
+        "name": "Sensor_Log",
+        "probability": 0.1,
+        "r_min_range": [
+          0.0005,
+          0.001
+        ],
+        "r_max_range": [
+          0.01,
+          0.02
+        ]
+      }
+    ]
+  },
+  "repair": {
+    "performed_at": "2026-09-08T08:37:13.014053+08:00",
+    "file": "variable_uav_num/20/uav_data/19_20uavs_loc_540531.csv",
+    "reason": "zero marginal coverage was incorrectly treated as no feasible connected candidate",
+    "previous_uav_count": 15,
+    "uav_count": 20,
+    "preserved_prefix_rows": 15,
+    "other_csv_files_unchanged": 779,
+    "covered_users_before": 2975,
+    "covered_users_after": 2975,
+    "backup": "variable_uav_num/20/uav_data/19_20uavs_loc_540531.csv.before_zero_gain_fix.bak"
+  }
+}

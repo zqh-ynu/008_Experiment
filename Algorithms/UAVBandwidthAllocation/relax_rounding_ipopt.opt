@@ -7,3 +7,7 @@ mu_strategy adaptive
 print_level 0
 max_iter 1000
 sb yes
+# Route A: solve the original bounds, with feasibility tighter than the public result contract.
+bound_relax_factor 0
+constr_viol_tol 1e-10
+acceptable_constr_viol_tol 1e-10

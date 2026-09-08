@@ -7,7 +7,9 @@ mu_strategy adaptive
 print_level 1
 max_iter 200
 sb yes
-constr_viol_tol 1e-8
+constr_viol_tol 1e-10
+acceptable_constr_viol_tol 1e-10
+bound_relax_factor 0
 acceptable_tol 1e-6
 acceptable_iter 5
 bound_push 1e-6

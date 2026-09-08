@@ -1,5 +1,5 @@
-#pragma once
-// ±¾ÎÄ¼ş¼¯ÖĞ¶¨Òå¹²Ïí³£Á¿¡¢µÚÈı·½ÒÀÀµ¡¢±¾»úÏîÄ¿Â·¾¶¼°ĞÅµÀÅäÖÃ¡£
+ï»¿#pragma once
+// æœ¬æ–‡ä»¶é›†ä¸­å®šä¹‰å…±äº«å¸¸é‡ã€ç¬¬ä¸‰æ–¹ä¾èµ–ã€æœ¬æœºé¡¹ç›®è·¯å¾„åŠä¿¡é“é…ç½®ã€‚
 using namespace std;
 #include<string>
 #include<vector>
@@ -11,7 +11,7 @@ using namespace std;
 #include <cmath>
 #include <limits.h>
 #include <cstdlib>
-#include <iomanip>// ÓÃÓÚ¸ñÊ½»¯Êä³ö
+#include <iomanip>// ç”¨äºæ ¼å¼åŒ–è¾“å‡º
 #include <ctime>
 #include <algorithm>
 #include <random>
@@ -21,16 +21,17 @@ using namespace std;
 
 #include <stdio.h>
 #include <functional>
-#include <nlohmann/json.hpp> // ÒıÈëjson¿â£¬·½±ã¶ÁĞ´json¸ñÊ½µÄÎÄ¼ş
-using json = nlohmann::json;	// jsonÀàĞÍÖØÃüÃûÎªjson
+#include <stdexcept>
+#include <nlohmann/json.hpp> // å¼•å…¥jsonåº“ï¼Œæ–¹ä¾¿è¯»å†™jsonæ ¼å¼çš„æ–‡ä»¶
+using json = nlohmann::json;	// jsonç±»å‹é‡å‘½åä¸ºjson
 namespace fs = std::filesystem;
 
-// ÅäÖÃboost»·¾³
-// ÔÚº¯Êı Channel::cal_SNR_th() ÖĞÊ¹ÓÃÁËboost¿âÖĞµÄtoms748_solveº¯Êı
-// ÅäÖÃ·½·¨£ºÓëcplexÀàËÆ£¬ÏÂÔØboost¿â£¬È»ºóÅäÖÃ»·¾³±äÁ¿
-// ×¢ÒâÔÚÊôĞÔÒ³ÖĞcplexºÍboost¾ùÔÚReleaseÏÂÅäÖÃ
+// é…ç½®boostç¯å¢ƒ
+// åœ¨å‡½æ•° Channel::cal_SNR_th() ä¸­ä½¿ç”¨äº†booståº“ä¸­çš„toms748_solveå‡½æ•°
+// é…ç½®æ–¹æ³•ï¼šä¸cplexç±»ä¼¼ï¼Œä¸‹è½½booståº“ï¼Œç„¶åé…ç½®ç¯å¢ƒå˜é‡
+// æ³¨æ„åœ¨å±æ€§é¡µä¸­cplexå’Œboostå‡åœ¨Releaseä¸‹é…ç½®
 #include <boost/math/tools/toms748_solve.hpp>
-// ¸ÃÎÄ¼şÖĞ°üº¬ÁËgammaº¯Êı×å
+// è¯¥æ–‡ä»¶ä¸­åŒ…å«äº†gammaå‡½æ•°æ—
 #include <boost/math/special_functions/gamma.hpp>
 #include <boost/cstdint.hpp>
 
@@ -41,185 +42,134 @@ namespace fs = std::filesystem;
 
 using namespace std;
 
-#define _USE_MATH_DEFINES // ¸ÃÓï¾äµÄ×÷ÓÃÊÇ£¬ÆôÓÃÊıÑ§¿âÖĞµÄ³£Á¿¶¨Òå£¬ÈçM_PIµÈ
+#define _USE_MATH_DEFINES // è¯¥è¯­å¥çš„ä½œç”¨æ˜¯ï¼Œå¯ç”¨æ•°å­¦åº“ä¸­çš„å¸¸é‡å®šä¹‰ï¼Œå¦‚M_PIç­‰
 #include <cmath>
-#define HARD_UTILITY 1 // Ó²Ğ§ÓÃÀàĞÍ
-#define ELASTIC_UTILITY 2 // ½»»¥Ê½µ¯ĞÔĞ§ÓÃÀàĞÍ/ TCPĞ§ÓÃ
-#define HALFSOFT_UTILITY 3 // ÓÒ°ë±ßÈíĞ§ÓÃ
-#define INFINITE 1e9 // ÎŞÇî´ó
-#define EPS 1e-9 // ¸¡µãÊı±È½ÏÊ±µÄÎó²î·¶Î§
-#define BANDWIDTH 20 // Ã¿¸öÎŞÈË»úµÄ×Ü´ø¿í 20MHz
+#define HARD_UTILITY 1 // ç¡¬æ•ˆç”¨ç±»å‹
+#define ELASTIC_UTILITY 2 // äº¤äº’å¼å¼¹æ€§æ•ˆç”¨ç±»å‹/ TCPæ•ˆç”¨
+#define HALFSOFT_UTILITY 3 // å³åŠè¾¹è½¯æ•ˆç”¨
+#define INFINITE 1e9 // æ— ç©·å¤§
+#define EPS 1e-9 // æµ®ç‚¹æ•°æ¯”è¾ƒæ—¶çš„è¯¯å·®èŒƒå›´
+#define BANDWIDTH 20 // æ¯ä¸ªæ— äººæœºçš„æ€»å¸¦å®½ 20MHz
 constexpr double INF = std::numeric_limits<double>::infinity();
 
 const double pi = 3.1415926535;
-// µØÇò°ë¾¶ (Ã×)
+// åœ°çƒåŠå¾„ (ç±³)
 const double EARTH_RADIUS = 6371000.0;
 
-const int unit_para = 1000; // µ¥Î»×ª»»²ÎÊı£¬µÈÓÚ1000Ê±£¬µ¥Î»Îªkbps£¬µÈÓÚ1Ê±£¬µ¥Î»ÎªMbps
+const int unit_para = 1000; // å•ä½è½¬æ¢å‚æ•°ï¼Œç­‰äº1000æ—¶ï¼Œå•ä½ä¸ºkbpsï¼Œç­‰äº1æ—¶ï¼Œå•ä½ä¸ºMbps
 
-// »·¾³ÎïÀíÁ¿
+// ç¯å¢ƒç‰©ç†é‡
 inline double freq_hz;
 inline double speed_light;
 inline double path_loss_exp;
 
-// ¼¸ºÎ
+// å‡ ä½•
 inline double uav_alt;
 inline double uav_trans_power;
 
-// ĞÅµÀÄ£ĞÍ
-inline double noise_dbm;        // ¹¦ÂÊÆ×ÃÜ¶È dbm/hz
+// ä¿¡é“æ¨¡å‹
+inline double noise_dbm;        // åŠŸç‡è°±å¯†åº¦ dbm/hz
 inline double los_loss_db;
 inline double nlos_loss_db;
 inline double param_a;
 inline double param_b;
-inline int max_coverage_distance; // ×î´óÍ¨ĞÅ¾àÀë£¬µ¥Î»Ã×
+inline int max_coverage_distance; // æœ€å¤§é€šä¿¡è·ç¦»ï¼Œå•ä½ç±³
 
-// Ó²¼ş
+// ç¡¬ä»¶
 inline double gain_bs_db;
 inline double gain_uav_db;
 
-// Ô¼Êø
+// çº¦æŸ
 inline double min_se_threshold; // spectral efficiency
 
 
 
 
-// µ±Ç°Ëã·¨ÏîÄ¿µÄ¾ø¶ÔÂ·¾¶µØÖ·: E:\Research\My_paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation
+// å½“å‰ç®—æ³•é¡¹ç›®çš„ç»å¯¹è·¯å¾„åœ°å€: E:\Research\My_paper\2_Papers\008\008_Experiment\Algorithms\UAVBandwidthAllocation
 const static string algProjPath = "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\Algorithms\\UAVBandwidthAllocation\\";
 
 
-// µ±Ç°ÂÛÎÄÏîÄ¿µÄÊµÑéÊı¾İÎÄ¼ş¼ĞÂ·¾¶£ºE:\Research\My_paper\2_Papers\008\008_Experiment\ExperimentsData\\
+// å½“å‰è®ºæ–‡é¡¹ç›®çš„å®éªŒæ•°æ®æ–‡ä»¶å¤¹è·¯å¾„ï¼šE:\Research\My_paper\2_Papers\008\008_Experiment\ExperimentsData\\
 
 const static string experimentDataPath = "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\";
 
 
-// ¶ÁÈ¡º¯ÊıÊ¾Àı
+/// Load a complete channel configuration; missing, invalid or unreadable input throws before allocation.
 inline void load_global_channel_config(string config_file) {
-
-    // 1. ´ò¿ªÎÄ¼ş
-    std::ifstream config_ifs(config_file);
-    if (!config_ifs.is_open()) {
-        cerr << "Error opening config file: " << config_file << endl;
-    }
-
-    // 2. ½âÎöJSONÄÚÈİ
+    std::ifstream input(config_file);
+    if (!input) throw std::runtime_error("Cannot open channel configuration: " + config_file);
     json data;
-    try {
-        config_ifs >> data;
-    }
-    catch (const json::parse_error& e) {
-        cerr << "JSON parse error in config file: " << e.what() << endl;
-    }
-
-
-    // --- ¶ÁÈ¡»·¾³²ÎÊı (Environmental Constants) ---
-    // Ê¹ÓÃ .at() ·½·¨±È [] ¸ü°²È«£¬Èç¹û key ²»´æÔÚ»áÅ×³öÒì³£
-    try {
-        auto& env = data.at("environmental_constants");
-
-        los_loss_db = env.at("los_loss_db").get<int>();
-        nlos_loss_db = env.at("nlos_loss_db").get<int>(
-        );
-        noise_dbm = env.at("noise_dbm").get<int>();
-        param_a = env.at("param_a").get<double>();
-        param_b = env.at("param_b").get<double>();
-        speed_light = env.at("speed_light").get<long long>(); // ¹âËÙÊıÖµ½Ï´ó£¬½¨ÒéÓÃ long long
-		max_coverage_distance = env.at("max_coverage_distance").get<int>();
-
-       /* std::cout << "=== »·¾³²ÎÊı ===" << std::endl;
-        std::cout << "LoS ËğºÄ: " << los_loss_db << " dB" << std::endl;
-        std::cout << "NLoS ËğºÄ: " << nlos_loss_db << " dB" << std::endl;
-        std::cout << "²ÎÊı A: " << param_a << std::endl;
-        std::cout << "²ÎÊı B: " << param_b << std::endl;
-        std::cout << "¹âËÙ: " << speed_light << " m/s" << std::endl;
-		std::cout << "×î´óÍ¨ĞÅ¾àÀë: " << max_coverage_distance << " m" << std::endl;*/
-
-    }
-    catch (json::out_of_range& e) {
-        std::cerr << "È±ÉÙ»·¾³²ÎÊı×Ö¶Î: " << e.what() << std::endl;
-    }
-
-    // --- ¶ÁÈ¡ÎŞÈË»ú²ÎÊı (UAV Constants) ---
-    try {
-        auto& uav = data.at("uav_constants");
-
-        uav_alt = uav.at("uav_alt").get<int>();
-        freq_hz = uav.at("freq_ghz").get<double>() * 1e9;
-        uav_trans_power = uav.at("trans_power").get<int>();
-        gain_uav_db = uav.at("gain_uav_db").get<int>();
-
-        /*std::cout << "\n=== ÎŞÈË»ú²ÎÊı ===" << std::endl;
-        std::cout << "¸ß¶È: " << uav_alt << " m" << std::endl;
-        std::cout << "ÆµÂÊ: " << freq_hz << " GHz" << std::endl;
-        std::cout << "´«Êä¹¦ÂÊ: " << uav_trans_power << " W" << std::endl;
-        std::cout << "ÔöÒæ: " << gain_uav_db << " dB" << std::endl;*/
-
-    }
-    catch (json::out_of_range& e) {
-        std::cerr << "È±ÉÙÎŞÈË»ú²ÎÊı×Ö¶Î: " << e.what() << std::endl;
-    }
+    input >> data;
+    const auto& env = data.at("environmental_constants");
+    const auto& uav = data.at("uav_constants");
+    const double los = env.at("los_loss_db").get<double>();
+    const double nlos = env.at("nlos_loss_db").get<double>();
+    const double noise = env.at("noise_dbm").get<double>();
+    const double a = env.at("param_a").get<double>();
+    const double b = env.at("param_b").get<double>();
+    const double light = env.at("speed_light").get<double>();
+    const int coverage = env.at("max_coverage_distance").get<int>();
+    const double altitude = uav.at("uav_alt").get<double>();
+    const double frequency = uav.at("freq_ghz").get<double>() * 1e9;
+    const double power = uav.at("trans_power").get<double>();
+    const double gain = uav.at("gain_uav_db").get<double>();
+    for (double value : {los, nlos, noise, a, b, light, altitude, frequency, power, gain})
+        if (!std::isfinite(value)) throw std::invalid_argument("Non-finite channel configuration");
+    if (a <= 0 || b <= 0 || light <= 0 || coverage <= 0 ||
+        altitude <= 0 || frequency <= 0 || power <= 0)
+        throw std::invalid_argument("Invalid physical channel configuration");
+    los_loss_db = los; nlos_loss_db = nlos; noise_dbm = noise;
+    param_a = a; param_b = b; speed_light = light; max_coverage_distance = coverage;
+    uav_alt = altitude; freq_hz = frequency; uav_trans_power = power; gain_uav_db = gain;
 }
 
-/**
- * @brief »ñÈ¡ÎÄ¼ş¼ĞÏÂ°´IDÅä¶ÔµÄÎÄ¼şÂ·¾¶ÁĞ±í
- * * @param dirPath       Êı¾İÎÄ¼ş¼ĞÂ·¾¶
- * @param patternA      µÚÒ»ÀàÎÄ¼şµÄ¹Ø¼ü´Ê (ÀıÈç "1000users_data")
- * @param patternB      µÚ¶şÀàÎÄ¼şµÄ¹Ø¼ü´Ê (ÀıÈç "10uavs_loc")
- * @param maxCount      ×î´óIDÊıÁ¿ (ÀıÈç 50£¬Ôò²éÕÒ 1~50 µÄÎÄ¼ş)
- * @param outFilesA     [Êä³ö] µÚÒ»ÀàÎÄ¼şÍêÕûÂ·¾¶ÁĞ±í (°´IDË³Ğò)
- * @param outFilesB     [Êä³ö] µÚ¶şÀàÎÄ¼şÍêÕûÂ·¾¶ÁĞ±í (°´IDË³Ğò)
- * @return true         ³É¹¦ÕÒµ½ÖÁÉÙÒ»¶ÔÎÄ¼ş
- * @return false        Ä¿Â¼²»´æÔÚ»òÎ´ÕÒµ½Æ¥ÅäÎÄ¼ş
- */
-inline bool getMatchedFilePairs(const string& userDirPath, // ĞŞ¸Ä£º²ğ·ÖÎªÓÃ»§Â·¾¶
-    const string& uavDirPath,                             // ĞŞ¸Ä£ººÍÎŞÈË»úÂ·¾¶
-    const string& patternA,
-    const string& patternB,
-    int maxCount,
-    vector<string>& outFilesA,
-    vector<string>& outFilesB)
-{
-    // ÒÀÈ»±£ÁôÄúÔ­À´µÄ×ÓÎÄ¼ş¼ĞÆ´½ÓÂß¼­
-    string user_full_path = userDirPath + "user_data/";
-    string uav_full_path = uavDirPath + "uav_data/";
+/// Extract a strictly positive numeric instance prefix from <id>_<description>.csv.
+inline int allocation_instance_id(const string& path) {
+    const string name = fs::path(path).filename().string();
+    const auto end = name.find('_');
+    if (end == string::npos || end == 0 ||
+        name.substr(0, end).find_first_not_of("0123456789") != string::npos)
+        throw std::invalid_argument("Invalid instance filename: " + name);
+    const unsigned long long id = std::stoull(name.substr(0, end));
+    if (id == 0 || id > INT_MAX) throw std::invalid_argument("Instance ID out of range: " + name);
+    return static_cast<int>(id);
+}
+
+/// Scan readable files, reject duplicate IDs, and return up to maxCount matched pairs in numeric ID order.
+/// Missing directories and malformed inputs throw; false means no matched pairs were found.
+inline bool getMatchedFilePairs(const string& userDirPath,
+    const string& uavDirPath, const string& patternA, const string& patternB,
+    int maxCount, vector<string>& outFilesA, vector<string>& outFilesB) {
     outFilesA.clear();
     outFilesB.clear();
-
-    if (!fs::exists(user_full_path) && !fs::exists(uav_full_path)) {
-        cerr << "[Error] Directory not found." << endl;
-        return false;
-    }
-
-    map<int, string> mapA, mapB;
-
-    // 1. É¨ÃèÓÃ»§Êı¾İ (Ê¹ÓÃ user_full_path)
-    for (const auto& entry : fs::directory_iterator(user_full_path)) {
-        if (!entry.is_regular_file()) continue;
-        string filename = entry.path().filename().string();
-        if (filename.find(patternA) == string::npos) continue; // È·±£°üº¬¹Ø¼ü´Ê
-        size_t underscorePos = filename.find('_');
-        if (underscorePos != string::npos) {
-            mapA[stoi(filename.substr(0, underscorePos))] = entry.path().string();
+    if (maxCount <= 0) throw std::invalid_argument("Pair limit must be positive");
+    const fs::path user_path = fs::path(userDirPath) / "user_data";
+    const fs::path uav_path = fs::path(uavDirPath) / "uav_data";
+    if (!fs::is_directory(user_path) || !fs::is_directory(uav_path))
+        throw std::runtime_error("Missing user_data or uav_data directory");
+    // Collect the whole directory before selecting a prefix so duplicate IDs cannot be hidden.
+    auto collect = [](const fs::path& directory, const string& pattern) {
+        map<int, string> files;
+        for (const auto& entry : fs::directory_iterator(directory)) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".csv") continue;
+            if (entry.path().filename().string().find(pattern) == string::npos) continue;
+            const string path = entry.path().string();
+            const int id = allocation_instance_id(path);
+            if (!files.emplace(id, path).second)
+                throw std::runtime_error("Duplicate instance ID " + std::to_string(id) + " in " + directory.string());
+            std::ifstream check(path, std::ios::binary);
+            if (!check) throw std::runtime_error("Unreadable instance file: " + path);
         }
-    }
-
-    // 2. É¨ÃèÎŞÈË»úÊı¾İ (Ê¹ÓÃ uav_full_path)
-    for (const auto& entry : fs::directory_iterator(uav_full_path)) {
-        if (!entry.is_regular_file()) continue;
-        string filename = entry.path().filename().string();
-        if (filename.find(patternB) == string::npos) continue; // È·±£°üº¬¹Ø¼ü´Ê
-        size_t underscorePos = filename.find('_');
-        if (underscorePos != string::npos) {
-            mapB[stoi(filename.substr(0, underscorePos))] = entry.path().string();
-        }
-    }
-
-    // 3. Åä¶ÔÂß¼­±£³Ö²»±ä
-    for (int i = 1; i <= maxCount; i++) {
-        if (mapA.count(i) && mapB.count(i)) {
-            outFilesA.push_back(mapA[i]);
-            outFilesB.push_back(mapB[i]);
-        }
+        return files;
+    };
+    const auto users = collect(user_path, patternA);
+    const auto uavs = collect(uav_path, patternB);
+    for (const auto& entry : users) {
+        const auto found = uavs.find(entry.first);
+        if (found == uavs.end()) continue;
+        outFilesA.push_back(entry.second);
+        outFilesB.push_back(found->second);
+        if (outFilesA.size() == static_cast<size_t>(maxCount)) break;
     }
     return !outFilesA.empty();
 }

@@ -1,744 +1,415 @@
-#pragma once
-// ±¾ÎÄ¼þ¸ºÔðÊµÑéµ÷¶È¡¢¶Ïµã½á¹û³Ö¾Ã»¯ÒÔ¼°°´Ëã·¨°æ±¾¸ôÀëµ¼³ö½á¹û¡£
-#include "EntityDefinition.h"
-#include "config.h"
-#include <filesystem>
-#include <fstream>
-#include <sstream>
-#include <vector>
-#include <map>
-#include <string>
-#include <iostream>
-#include <chrono>
-#include <stdexcept>
+ï»¿#pragma once
+// Visual Studio experiment driver: select legacy/complete ToN inputs, append per-method results and resume.
+// Only one run_info.json plus raw/summary CSVs are written; historical batches are always read-only.
+#include "experiment_support.h"
 
-namespace fs = std::filesystem;
-
-// ±¾ÎÄ¼þÖ÷Òª¼ÇÂ¼ÊµÑéÏà¹ØÄÚÈÝ
-struct EXPResult {
-	double duration = 0;         // ÔËÐÐÊ±¼ä(ms)
-
-	int total_num = 0;           // ·þÎñ×ÜÈËÊý
-	int hard_num = 0;            // ·þÎñhardÈËÊý
-	int elastic_num = 0;         // ·þÎñelasticÈËÊý
-
-	double total_utility = 0;    // ÀÛ¼ÆÐ§ÓÃ
-	double hard_utility = 0;     // hardÓÃ»§¹±Ï×µÄÐ§ÓÃ
-	double elastic_utility = 0;  // elasticÓÃ»§¹±Ï×µÄÐ§ÓÃ (ÐÞÕýÆ´Ð´: utitily -> utility)
-
-	double hard_bandwidth = 0;   // hardÓÃ»§ÏûºÄµÄ×Ü´ø¿í
-	double elastic_bandwidth = 0;// elasticÓÃ»§ÏûºÄµÄ×Ü´ø¿í
-
-	double hard_throughput = 0;  // hardÓÃ»§×ÜÍÌÍÂÁ¿
-	double elastic_throughput = 0;  // elasticÓÃ»§×ÜÍÌÍÂÁ¿
-	double total_throughput = 0; // ×ÜÍÌÍÂÁ¿
+/// Inputs for one condition; users/uavs contain exactly the selected numeric-ID prefix.
+struct ExperimentCondition {
+    string key;
+    vector<string> users, uavs;
+    double bandwidth_mhz = 40.0;
 };
 
-// ======================== CSV ÁÐÍ·¶¨Òå ========================
-const string CSV_HEADER = "duration,total_num,hard_num,elastic_num,"
-"total_utility,hard_utility,elastic_utility,"
-"hard_bandwidth,elastic_bandwidth,"
-"hard_throughput,elastic_throughput,total_throughput";
-
-// ======================== È«¾ÖÅäÖÃ ========================
-vector<string> method_name_list = {
-	"ApproBetter", "ApproFast", "AlgDRL",
-	"AlgMatching", "AlgHardFirst", "AlgSADA"
-};
-
-// ËùÓÐ ToN ÔËÐÐ¶¼Ð´Èë¶ÀÁ¢°æ±¾Ä¿Â¼£¬±ÜÃâ¸²¸Ç¡¢×·¼Ó»ò»ìÓÃÀúÊ· MASS ½á¹û¡£
-const string TON_RESULT_VERSION_DIR = "ToN_marginal_eps0p1/";
-
-// ºËÐÄÊý¾Ý½á¹¹£ºKey ÊÇÊµÑéÌõ¼þ£¬Value ÊÇ¸÷¸öËã·¨¶ÔÓ¦µÄÆ½¾ù½á¹û
-map<string, vector<EXPResult>> experiment_data;
-
-// ======================== EXPResult ÐòÁÐ»¯/·´ÐòÁÐ»¯ ========================
-
-/** @brief ½«Ò»¸ö EXPResult Ð´ÎªÒ»ÐÐ CSV£¨²»º¬»»ÐÐ£© */
-string expResultToCSVLine(const EXPResult& r) {
-	ostringstream oss;
-	oss << r.duration << ","
-		<< r.total_num << "," << r.hard_num << "," << r.elastic_num << ","
-		<< r.total_utility << "," << r.hard_utility << "," << r.elastic_utility << ","
-		<< r.hard_bandwidth << "," << r.elastic_bandwidth << ","
-		<< r.hard_throughput << "," << r.elastic_throughput << "," << r.total_throughput;
-	return oss.str();
+/// Return the requested condition order, or all defaults; reject unknown/duplicate keys before path construction.
+inline vector<string> experiment_condition_keys(const ExperimentRunOptions& options,
+    const vector<string>& defaults) {
+    const auto& keys = options.conditions.empty() ? defaults : options.conditions;
+    set<string> seen;
+    for (const auto& key : keys)
+        if (std::find(defaults.begin(), defaults.end(), key) == defaults.end() || !seen.insert(key).second)
+            throw invalid_argument("Unknown or duplicate experiment condition: " + key);
+    return keys;
 }
 
-/** @brief ´ÓÒ»ÐÐ CSV ½âÎö³öÒ»¸ö EXPResult */
-bool parseCSVLineToEXPResult(const string& line, EXPResult& r) {
-	istringstream iss(line);
-	string token;
-	try {
-		getline(iss, token, ','); r.duration = stod(token);
-		getline(iss, token, ','); r.total_num = stoi(token);
-		getline(iss, token, ','); r.hard_num = stoi(token);
-		getline(iss, token, ','); r.elastic_num = stoi(token);
-		getline(iss, token, ','); r.total_utility = stod(token);
-		getline(iss, token, ','); r.hard_utility = stod(token);
-		getline(iss, token, ','); r.elastic_utility = stod(token);
-		getline(iss, token, ','); r.hard_bandwidth = stod(token);
-		getline(iss, token, ','); r.elastic_bandwidth = stod(token);
-		getline(iss, token, ','); r.hard_throughput = stod(token);
-		getline(iss, token, ','); r.elastic_throughput = stod(token);
-		getline(iss, token, ','); r.total_throughput = stod(token);
-		return true;
-	}
-	catch (...) {
-		return false;
-	}
+/// Select readable user/UAV pairs for exactly IDs 1--N from the supplied directories and filename patterns.
+/// Return one bandwidth condition; missing IDs throw instead of substituting a higher-numbered instance.
+inline ExperimentCondition select_experiment_condition(const string& key, const string& user_directory,
+    const string& uav_directory, const string& user_pattern, const string& uav_pattern,
+    double bandwidth_mhz, const ExperimentRunOptions& options) {
+    ExperimentCondition condition{key, {}, {}, bandwidth_mhz};
+    getMatchedFilePairs(user_directory, uav_directory, user_pattern, uav_pattern, INT_MAX,
+        condition.users, condition.uavs);
+    if (condition.users.size() != condition.uavs.size() ||
+        condition.users.size() < static_cast<size_t>(options.instance_count))
+        throw runtime_error("Not enough paired instances for condition " + key);
+    condition.users.resize(options.instance_count);
+    condition.uavs.resize(options.instance_count);
+    for (int i = 0; i < options.instance_count; ++i) {
+        const int id = allocation_instance_id(condition.users[i]);
+        if (id != i + 1 || id != allocation_instance_id(condition.uavs[i]))
+            throw runtime_error("Condition " + key + " requires paired IDs 1--" +
+                to_string(options.instance_count) + "; missing or mismatched ID " + to_string(i + 1));
+    }
+    return condition;
 }
 
-// ======================== ÖÐ¼ä½á¹û³Ö¾Ã»¯ ========================
-
-/**
- * @brief È·±£ÖÐ¼ä½á¹ûÄ¿Â¼ºÍCSVÎÄ¼þ´æÔÚ£¨º¬±íÍ·£©
- * @param dir Ä¿Â¼Â·¾¶£¬Èç EXP_result_path/1000/
- */
-void ensureIntermediateDir(const string& dir) {
-	fs::create_directories(dir);
-	for (const auto& method : method_name_list) {
-		string filepath = dir + method + ".csv";
-		if (!fs::exists(filepath)) {
-			ofstream f(filepath);
-			f << CSV_HEADER << "\n";
-			f.close();
-		}
-	}
+/// Read a requested JSON object; errors retain the filename and never create/repair a metadata file.
+inline json read_experiment_json(const fs::path& path) {
+    ifstream input(path, ios::binary);
+    if (!input) throw runtime_error("Cannot read JSON: " + path.string());
+    json value;
+    try { input >> value; }
+    catch (const std::exception& error) { throw runtime_error(path.string() + ": " + error.what()); }
+    if (input.bad()) throw runtime_error("JSON read error: " + path.string());
+    if (!value.is_object()) throw runtime_error("Expected JSON object: " + path.string());
+    return value;
 }
 
-/**
- * @brief ¶ÁÈ¡Ä³¸öÖÐ¼äCSVÒÑÓÐµÄÊý¾ÝÐÐÊý£¨²»º¬±íÍ·£©£¬ÓÃÓÚ¶ÏµãÐøÅÜ
- * @return ÒÑÍê³ÉµÄÊµÀýÊý
- */
-int countCompletedRows(const string& filepath) {
-	if (!fs::exists(filepath)) return 0;
-	ifstream file(filepath);
-	string line;
-	int count = 0;
-	bool header_skipped = false;
-	while (getline(file, line)) {
-		if (!header_skipped) { header_skipped = true; continue; }
-		if (!line.empty()) count++;
-	}
-	return count;
+/// Resolve options.input_root without fallback; return its absolute path after checking input readiness.
+/// The legacy data directory needs no generation marker. Other roots require a completed ToN batch
+/// with a declared ID 1--replicate_count prefix large enough for the requested instance_count.
+inline fs::path resolve_experiment_input_root(const ExperimentRunOptions& options) {
+    const fs::path root = fs::absolute(options.input_root).lexically_normal();
+    if (!fs::is_directory(root))
+        throw runtime_error("Input directory does not exist; generate inputs first: " + root.string());
+    const fs::path legacy = fs::path(experimentDataPath) / "data";
+    if (fs::is_directory(legacy) && fs::equivalent(root, legacy)) return root;
+
+    const fs::path marker = root / "generation_config_ToN.json";
+    const json info = read_experiment_json(marker);
+    if (info.value("generation_status", string{}) != "complete")
+        throw runtime_error("ToN input generation is not complete: " + marker.string());
+    if (!info.at("replicate_count").is_number_integer())
+        throw runtime_error("Invalid ToN replicate_count: " + marker.string());
+    const int64_t available = info.at("replicate_count").get<int64_t>();
+    const auto& replicates = info.at("replicates");
+    if (available < options.instance_count || available > INT_MAX || !replicates.is_array() ||
+        replicates.size() != static_cast<size_t>(available))
+        throw runtime_error("ToN batch has insufficient or inconsistent declared inputs: " + marker.string());
+    for (int64_t i = 0; i < available; ++i)
+        if (!replicates.at(static_cast<size_t>(i)).at("replicate_id").is_number_integer() ||
+            replicates.at(static_cast<size_t>(i)).at("replicate_id").get<int64_t>() != i + 1)
+            throw runtime_error("ToN batch must declare contiguous replicate IDs from 1: " + marker.string());
+    return root;
 }
 
-/**
- * @brief ºË¶ÔÁùÖÖ·½·¨µÄ CSV ÐÐÊý£¬²¢·µ»ØÒ»ÖÂµÄÒÑÍê³ÉÊµÀýÊý¡£
- * @throws std::runtime_error µ±Áù¸ö·½·¨ÎÄ¼þµÄÊý¾ÝÐÐÊý²»Ò»ÖÂÊ±Á¢¼´Í£Ö¹ÐøÅÜ¡£
- */
-int getCompletedCount(const string& dir) {
-	// ÏÈÍêÕûÊÕ¼¯¸÷·½·¨ÐÐÊý£¬Òì³£Ê±¿ÉÒÔ°ÑÃ¿¸öÎÄ¼þµÄÊµ¼Ê×´Ì¬Ò»²¢±¨¸æ¸øÓÃ»§¡£
-	vector<pair<string, int>> row_counts;
-	row_counts.reserve(method_name_list.size());
-	for (const string& method : method_name_list) {
-		string filepath = dir + method + ".csv";
-		row_counts.push_back({ method, countCompletedRows(filepath) });
-	}
-
-	int expected_count = row_counts.empty() ? 0 : row_counts.front().second;
-	bool consistent = true;
-	for (const auto& entry : row_counts) {
-		if (entry.second != expected_count) {
-			consistent = false;
-			break;
-		}
-	}
-	if (!consistent) {
-		cerr << "ERROR: checkpoint CSV row counts are inconsistent in " << dir << "\n";
-		for (const auto& entry : row_counts)
-			cerr << "  " << entry.first << ".csv: " << entry.second << " data rows\n";
-		throw runtime_error(
-			"Checkpoint stopped: method CSV row counts differ; no files were modified");
-	}
-	return expected_count;
+/// Record numerical settings and selected paths once per experiment; no input contents or file hashes are copied.
+inline json make_experiment_run_info(const string& experiment, const vector<ExperimentCondition>& conditions,
+    const string& config, const ExperimentRunOptions& options) {
+    load_global_channel_config(config);
+    json info = {
+        {"schema", SIMPLE_RUN_SCHEMA}, {"algorithm_version", SIMPLE_ALGORITHM_VERSION},
+        {"experiment", experiment}, {"methods", method_name_list},
+        {"hard_first_da_policy", hard_first_da_policy()},
+        {"instance_count", options.instance_count}, {"master_seed", options.master_seed},
+        {"rounding_trials", options.rounding_trials}, {"ton_epsilon", options.ton_epsilon},
+        {"config_path", experiment_absolute_path(config)}, {"channel_config", read_experiment_json(config)},
+        {"unit_para", unit_para}, {"abs_tolerance", ALLOCATION_ABS_TOL}, {"rel_tolerance", ALLOCATION_REL_TOL},
+        {"build_profile", experiment_build_profile()},
+        {"reuse_source", experiment == "EXP1_user_num" && !options.reuse_exp1_root.empty()
+            ? experiment_absolute_path(options.reuse_exp1_root) : ""},
+        {"reuse_methods", json::array()},
+        {"conditions", json::array()},
+        {"summary", {{"status", "not_generated"}, {"instance_count", 0}}}
+    };
+#if defined(TON_VERIFY_SMAWK)
+    info["smawk_verification"] = true;
+#else
+    info["smawk_verification"] = false;
+#endif
+    if (!info.at("reuse_source").get<string>().empty())
+        info["reuse_methods"] = {"ApproFast", "AlgRelaxRound", "AlgSwapMatching", "AlgSA-DD"};
+    for (const auto& condition : conditions) {
+        json entry = {{"key", condition.key}, {"bandwidth_mhz", condition.bandwidth_mhz},
+            {"inputs", json::array()}};
+        for (int i = 0; i < options.instance_count; ++i)
+            entry["inputs"].push_back({{"id", allocation_instance_id(condition.users[i])},
+                {"user_path", experiment_absolute_path(condition.users[i])},
+                {"uav_path", experiment_absolute_path(condition.uavs[i])}});
+        info["conditions"].push_back(std::move(entry));
+    }
+    return info;
 }
 
-/**
- * @brief ÏòÖÐ¼äCSV×·¼ÓÒ»ÐÐ½á¹û£¨Ò»¸öÊµÀýµÄÊý¾Ý£©
- * @param dir       Ä¿Â¼Â·¾¶
- * @param method_idx ·½·¨Ë÷Òý
- * @param result    ±¾´ÎÊµÀýµÄ½á¹û
- */
-void appendResult(const string& dir, int method_idx, const EXPResult& result) {
-	string filepath = dir + method_name_list[method_idx] + ".csv";
-	ofstream file(filepath, ios::app);
-	if (!file.is_open()) {
-		cerr << "Error: Could not open file for appending: " << filepath << endl;
-		return;
-	}
-	file << expResultToCSVLine(result) << "\n";
-	file.close();
+/// Inspect an existing run without writes; only a larger selected-input prefix is allowed in the same directory.
+/// Return expected settings with the previous summary's sample count/status retained for stale-summary reporting.
+inline json inspect_experiment_destination(const fs::path& root, const json& expected) {
+    const fs::path metadata = root / "run_info.json";
+    if (!fs::exists(metadata)) {
+        if (fs::exists(root) && !fs::is_empty(root))
+            throw runtime_error("Nonempty output has no run_info.json; choose a new output_name");
+        return expected;
+    }
+    const json old = read_experiment_json(metadata);
+    const int previous_count = old.at("instance_count").get<int>();
+    if (previous_count <= 0 || expected.at("instance_count").get<int>() < previous_count)
+        throw runtime_error("Cannot reduce instance_count in an existing run; choose a new output_name");
+    json previous_settings = old, next_settings = expected;
+    for (const string field : {"instance_count", "conditions", "summary"}) {
+        previous_settings.erase(field);
+        next_settings.erase(field);
+    }
+    if (previous_settings != next_settings)
+        throw runtime_error("Run parameters/version changed; choose a new output_name");
+    const auto& old_conditions = old.at("conditions");
+    const auto& new_conditions = expected.at("conditions");
+    if (old_conditions.size() != new_conditions.size())
+        throw runtime_error("Condition selection changed; choose a new output_name");
+    for (size_t c = 0; c < new_conditions.size(); ++c) {
+        const auto& prior = old_conditions.at(c);
+        const auto& next = new_conditions.at(c);
+        if (prior.at("key") != next.at("key") || prior.at("bandwidth_mhz") != next.at("bandwidth_mhz") ||
+            prior.at("inputs").size() != static_cast<size_t>(previous_count))
+            throw runtime_error("Previous condition/input selection is inconsistent");
+        for (int i = 0; i < previous_count; ++i)
+            if (prior.at("inputs").at(i) != next.at("inputs").at(i))
+                throw runtime_error("Previously selected input changed; choose a new output_name");
+    }
+    const int summary_count = old.at("summary").at("instance_count").get<int>();
+    const string status = old.at("summary").at("status").get<string>();
+    if (summary_count < 0 || summary_count > previous_count ||
+        (status != "not_generated" && status != "complete" && status != "stale" && status != "writing"))
+        throw runtime_error("Invalid summary metadata; existing files preserved");
+    json result = expected;
+    result["summary"] = old.at("summary");
+    return result;
 }
 
-/**
- * @brief ´ÓÖÐ¼äCSV¶ÁÈ¡ËùÓÐÊµÀý½á¹û
- * @param dir Ä¿Â¼Â·¾¶
- * @param method_idx ·½·¨Ë÷Òý
- * @return ËùÓÐÊµÀýµÄEXPResultÁÐ±í
- */
-vector<EXPResult> loadIntermediateResults(const string& dir, int method_idx) {
-	vector<EXPResult> results;
-	string filepath = dir + method_name_list[method_idx] + ".csv";
-	if (!fs::exists(filepath)) return results;
-
-	ifstream file(filepath);
-	string line;
-	bool header_skipped = false;
-	while (getline(file, line)) {
-		if (!header_skipped) { header_skipped = true; continue; }
-		if (line.empty()) continue;
-		EXPResult r;
-		if (parseCSVLineToEXPResult(line, r)) {
-			results.push_back(r);
-		}
-	}
-	return results;
+/// Persist the single mutable run-info file, reporting flush/close errors; raw results are never overwritten.
+inline void write_experiment_run_info(const fs::path& root, const json& info) {
+    ofstream output(root / "run_info.json", ios::binary);
+    output << info.dump(2) << '\n';
+    output.flush();
+    output.close();
+    if (!output) throw runtime_error("Cannot write run_info.json: " + root.string());
 }
 
-// ======================== ¼ÆËãµ¥ÊµÀý½á¹û ========================
-
-/**
- * @brief ´Óµ¥´ÎËã·¨ÔËÐÐ½á¹û¼ÆËãEXPResult£¨²»ÀÛ¼Óµ½È«¾Ö£¬·µ»Ø¶ÀÁ¢½á¹û£©
- */
-EXPResult compute_single_EXPResult(SystemMd& sysModel, vector<KnapsackResult>& uav_results, double duration_ms) {
-	EXPResult result;
-	result.duration = duration_ms;
-
-	for (auto& kr : uav_results) {
-		int uav_id = kr.uav_id;
-
-		result.total_num += kr.allocatedList.size();
-		result.total_utility += kr.totalValue;
-		result.hard_utility += kr.hardValue;
-		result.elastic_utility += kr.elasticValue;
-		result.hard_bandwidth += kr.hardWeight;
-		result.elastic_bandwidth += kr.elasticWeight;
-
-		for (auto user_id : kr.allocatedList) {
-			// Ê¹ÓÃ .at() ²¢²¶»ñ std::out_of_range£¬ÕâÑù vector/map µÄÔ½½ç»áÅ×³ö²¢±»²¶»ñ£¬±ãÓÚ¼ÇÂ¼µ÷ÊÔÐÅÏ¢
-			try {
-				// ¿ÉÄÜÔ½½çµÄ·ÃÎÊ£ºsysModel.users[user_id]
-				User& user = sysModel.users.at(user_id);
-
-				// ¿ÉÄÜÔ½½çµÄ·ÃÎÊ£ºkr.allocatedBandwidth[user_id]
-				// ¼ÙÉè allocatedBandwidth Ö§³Ö at (vector/map/unordered_map ¶¼ÓÐ at)
-				double bandwidth = kr.allocatedBandwidth.at(user_id);
-
-				// ¿ÉÄÜÔ½½çµÄ·ÃÎÊ£ºsysModel.cap_list[uav_id][user_id]
-				double cap = sysModel.cap_list.at(uav_id).at(user_id);
-
-				if (user.uType == HARD_UTILITY) {
-					result.hard_num++;
-					result.hard_throughput += user.rMin;
-					result.total_throughput += user.rMin;
-				}
-				else {
-					result.elastic_num++;
-					double throughput = bandwidth * cap;
-					result.elastic_throughput += throughput;
-					result.total_throughput += throughput;
-				}
-			}
-			catch (const std::out_of_range& e) {
-				// ÏêÏ¸¼ÇÂ¼ÉÏÏÂÎÄ£¬°ïÖú¶¨Î»ÊÇÄÄ¸öÈÝÆ÷/Ë÷ÒýÔ½½ç
-				cerr << "ERROR: out_of_range in compute_single_EXPResult: uav_id=" << uav_id
-					<< ", user_id=" << user_id << "\n";
-				cerr << "  exception: " << e.what() << "\n";
-
-				// ´òÓ¡Ïà¹ØÈÝÆ÷³ß´çÓëÒ»Ð©Ñù±¾Öµ£¬±ãÓÚ¿ìËÙÕï¶Ï
-				cerr << "  sysModel.users.size() = " << sysModel.users.size() << "\n";
-				cerr << "  sysModel.cap_list.size() = " << sysModel.cap_list.size() << "\n";
-				if (uav_id >= 0 && uav_id < static_cast<int>(sysModel.cap_list.size())) {
-					cerr << "  sysModel.cap_list[" << uav_id << "].size() = "
-						<< sysModel.cap_list.at(uav_id).size() << "\n";
-				}
-				cerr << "  kr.allocatedList.size() = " << kr.allocatedList.size() << "\n";
-				cerr << "  kr.allocatedBandwidth.size() = " << kr.allocatedBandwidth.size() << "\n";
-
-				// ´òÓ¡ allocatedList Ç°Èô¸ÉÏî£¬°ïÖúÅÐ¶Ï user_id ÊÇ·ñÎªÒâÍâµÄ´óÊý»ò·ÇË÷ÒýÖµ
-				cerr << "  allocatedList (first up to 10 entries): ";
-				for (size_t i = 0; i < kr.allocatedList.size() && i < 10; ++i) {
-					cerr << kr.allocatedList[i] << " ";
-				}
-				cerr << "\n";
-
-				// ÎªÁË¼ÌÐø´¦ÀíÆäËüÕýÈ·µÄ·ÖÅä£¬Ìø¹ýµ±Ç°³ö´íµÄ user
-				continue;
-			}
-			catch (const std::exception& e) {
-				// ²¶»ñÆäËü¿ÉÄÜµÄÒì³£²¢¼ÇÂ¼
-				cerr << "ERROR: exception in compute_single_EXPResult: uav_id=" << uav_id
-					<< ", user_id=" << user_id << ", what=" << e.what() << "\n";
-				continue;
-			}
-		}
-	}
-	return result;
+/// Read only the audited v1 EXP1 source and prepare missing rows for the four unchanged methods.
+/// Existing equal rows are skipped; incompatible settings, seeds, selected paths or conflicting rows stop before writes.
+inline vector<ConditionRecords> prepare_exp1_reuse(const json& info,
+    const vector<ConditionRecords>& existing, size_t& reusable_rows) {
+    reusable_rows = 0;
+    vector<ConditionRecords> pending(info.at("conditions").size(), ConditionRecords(method_name_list.size()));
+    const string source = info.at("reuse_source").get<string>();
+    if (source.empty()) return pending;
+    const string approved = experiment_absolute_path(fs::path(experimentDataPath) /
+        "ExperimentsResults/ToN_routeA_v1_eps0p1/batch_20260905_n10_01");
+    if (source != approved || info.at("experiment") != "EXP1_user_num")
+        throw runtime_error("Only the explicitly audited v1 EXP1 reuse source is supported");
+    if (info.at("build_profile") != "Release|x64")
+        throw runtime_error("Legacy timing reuse requires the original Release|x64 configuration");
+    const json legacy = read_experiment_json(fs::path(source) / "run_manifest.json");
+    const auto& plan = legacy.at("plan");
+    if (plan.at("result_version") != "ToN_routeA_v1_eps0p1/")
+        throw runtime_error("Wrong legacy result version");
+    const json* old_experiment = nullptr;
+    for (const auto& exp : plan.at("experiments"))
+        if (exp.at("name") == "EXP1_user_num") old_experiment = &exp;
+    if (!old_experiment) throw runtime_error("Legacy source has no EXP1");
+    const std::array<size_t, 4> reusable_methods = {1, 2, 3, 5}; // Never import ApproBetter or AlgHungarian.
+    for (size_t c = 0; c < pending.size(); ++c) {
+        const auto& target = info.at("conditions").at(c);
+        const string key = target.at("key").get<string>();
+        const json* old_condition = nullptr;
+        for (const auto& candidate : old_experiment->at("conditions"))
+            if (candidate.at("condition") == key) old_condition = &candidate;
+        if (!old_condition) throw runtime_error("Legacy source lacks condition " + key);
+        for (const string field : {"master_seed", "rounding_trials", "ton_epsilon", "channel_config",
+            "unit_para", "abs_tolerance", "rel_tolerance"})
+            if (old_condition->at(field) != info.at(field))
+                throw runtime_error("Legacy reuse parameter mismatch: " + field);
+        if (old_condition->at("bandwidth_mhz") != target.at("bandwidth_mhz"))
+            throw runtime_error("Legacy bandwidth differs for condition " + key);
+        map<int, json> target_inputs, old_inputs;
+        for (const auto& input : target.at("inputs"))
+            target_inputs.emplace(input.at("id").get<int>(), input);
+        for (const auto& input : old_condition->at("inputs"))
+            if (!old_inputs.emplace(input.at("id").get<int>(), input).second)
+                throw runtime_error("Duplicate legacy input ID");
+        for (size_t m : reusable_methods) {
+            if (old_condition->at("methods").at(m) != method_name_list[m])
+                throw runtime_error("Legacy method identity mismatch");
+            const auto records = read_result_csv(fs::path(source) / "EXP1_user_num" / key /
+                (method_name_list[m] + ".csv"), true);
+            for (const auto& entry : records) {
+                const int id = entry.first;
+                const auto selected = target_inputs.find(id);
+                if (selected == target_inputs.end()) continue; // A smaller requested prefix imports only its own IDs.
+                const auto original = old_inputs.find(id);
+                if (original == old_inputs.end()) throw runtime_error("Legacy row has no declared input");
+                for (const string field : {"user_path", "uav_path"})
+                    if (experiment_absolute_path(original->second.at(field).get<string>()) !=
+                        selected->second.at(field).get<string>())
+                        throw runtime_error("Legacy selected input differs: " + key + "/" + to_string(id));
+                const uint32_t seed = derive_algorithm_seed(info.at("master_seed").get<uint32_t>(),
+                    "EXP1_user_num", key, id, method_name_list[m]);
+                if (entry.second.seed != seed || original->second.at("seeds").at(m).get<uint32_t>() != seed)
+                    throw runtime_error("Legacy seed mismatch: " + key + "/" + method_name_list[m]);
+                ++reusable_rows;
+                const auto prior = existing.at(c).at(m).find(id);
+                if (prior != existing.at(c).at(m).end()) {
+                    if (run_result_to_csv(prior->second) != run_result_to_csv(entry.second))
+                        throw runtime_error("Reuse conflict: " + key + "/" + method_name_list[m] + "/" + to_string(id));
+                } else {
+                    pending[c][m].emplace(id, entry.second);
+                }
+            }
+        }
+    }
+    return pending;
 }
 
-// ======================== »ã×ÜÂß¼­ ========================
-
-/**
- * @brief ´ÓÖÐ¼äCSV»ã×Ü¼ÆËãÆ½¾ù½á¹û£¬Ìî³äµ½ experiment_data
- * @param condition_key ÊµÑéÌõ¼þkey
- * @param intermediate_dir ÖÐ¼ä½á¹ûÄ¿Â¼
- */
-void summarizeFromIntermediate(const string& condition_key, const string& intermediate_dir) {
-	experiment_data[condition_key] = vector<EXPResult>(method_name_list.size());
-
-	for (size_t m = 0; m < method_name_list.size(); ++m) {
-		vector<EXPResult> instances = loadIntermediateResults(intermediate_dir, m);
-		if (instances.empty()) continue;
-
-		EXPResult& avg = experiment_data[condition_key][m];
-		int count = instances.size();
-
-		for (const auto& inst : instances) {
-			avg.duration += inst.duration;
-			avg.total_num += inst.total_num;
-			avg.hard_num += inst.hard_num;
-			avg.elastic_num += inst.elastic_num;
-			avg.total_utility += inst.total_utility;
-			avg.hard_utility += inst.hard_utility;
-			avg.elastic_utility += inst.elastic_utility;
-			avg.hard_bandwidth += inst.hard_bandwidth;
-			avg.elastic_bandwidth += inst.elastic_bandwidth;
-			avg.hard_throughput += inst.hard_throughput;
-			avg.elastic_throughput += inst.elastic_throughput;
-			avg.total_throughput += inst.total_throughput;
-		}
-
-		avg.duration /= count;
-		avg.total_num /= count;
-		avg.hard_num /= count;
-		avg.elastic_num /= count;
-		avg.total_utility /= count;
-		avg.hard_utility /= count;
-		avg.elastic_utility /= count;
-		avg.hard_bandwidth /= count;
-		avg.elastic_bandwidth /= count;
-		avg.hard_throughput /= count;
-		avg.elastic_throughput /= count;
-		avg.total_throughput /= count;
-	}
+/// Run one condition in instance/method order, skipping independent checkpoints and saving every completed method.
+/// On model/solver/output errors, throw a contextual message immediately; no failure row or automatic retry is produced.
+inline void run_Instance_with_checkpoint(const fs::path& directory, const string& experiment,
+    const ExperimentCondition& condition, const string& config, const ExperimentRunOptions& options,
+    ConditionRecords& records) {
+    fs::create_directories(directory);
+    for (int i = 0; i < options.instance_count; ++i) {
+        const int id = allocation_instance_id(condition.users[i]);
+        const string context = experiment + " / " + condition.key + " / ID " + to_string(id);
+        bool completed = true;
+        for (const auto& method : records) completed = completed && method.count(id) != 0;
+        if (completed) {
+            cout << "[SKIP] " << context << " (all methods saved)" << std::endl;
+            continue;
+        }
+        try {
+            SystemMd model(condition.users[i], condition.uavs[i], config);
+            for (auto& uav : model.uavs) uav.total_bandwidth = condition.bandwidth_mhz * unit_para;
+            model.init_SystemModel(); // Rebuild channels/noise after the requested bandwidth override.
+            validate_allocation_model(model); // Once per instance, outside all algorithm timers.
+            for (size_t m = 0; m < method_name_list.size(); ++m) {
+                const string call = context + " / " + method_name_list[m];
+                if (records[m].count(id)) {
+                    cout << "[SKIP] " << call << std::endl;
+                    continue;
+                }
+                cout << "[RUN " << (i + 1) << "/" << options.instance_count << "] " << call << std::endl;
+                const uint32_t seed = derive_algorithm_seed(options.master_seed, experiment,
+                    condition.key, id, method_name_list[m]);
+                auto result = run_algorithm(model, m, options, seed);
+                result.instance_id = id;
+                if (!algorithm_status_valid(result.status)) {
+                    const string reason = result.diagnostics.events.empty() ? "No diagnostic" : result.diagnostics.events.back();
+                    throw runtime_error(method_name_list[m] + " / " + algorithm_status_name(result.status) + ": " + reason);
+                }
+                try { appendResult(directory.string(), m, result); }
+                catch (const std::exception& error) { throw runtime_error(method_name_list[m] + ": " + error.what()); }
+                cout << "[SAVED] " << call << " / " << result.duration_ms << " ms / "
+                    << algorithm_status_name(result.status) << std::endl;
+                result.allocation = AllocationPair{}; // Keep small metrics/checkpoints, not all allocation maps.
+                records[m].emplace(id, std::move(result));
+            }
+        } catch (const std::exception& error) {
+            throw runtime_error(context + ": " + error.what());
+        }
+    }
 }
 
-// ======================== ×îÖÕ»ã×ÜCSVµ¼³ö ========================
-
-/**
- * @brief µ¼³öÌØ¶¨Ö¸±êµ½ CSV£¨ÓëÔ­ÓÐ½Ó¿Ú¼æÈÝ£©
- */
-void exportToCSV(const string& filename, vector<string>& first_key_lists,
-	double EXPResult::* metric_ptr_double = nullptr,
-	int EXPResult::* metric_ptr_int = nullptr) {
-	ofstream file(filename);
-	if (!file.is_open()) {
-		cerr << "Error: Could not open file " << filename << endl;
-		return;
-	}
-
-	// Ð´Èë±íÍ·
-	file << "User_Scale";
-	for (const auto& method : method_name_list) {
-		file << "," << method;
-	}
-	file << "\n";
-
-	for (const auto& first_key : first_key_lists) {
-		if (experiment_data.find(first_key) == experiment_data.end()) continue;
-
-		file << first_key;
-		const vector<EXPResult>& results = experiment_data[first_key];
-
-		for (size_t i = 0; i < method_name_list.size(); ++i) {
-			file << ",";
-			if (i < results.size()) {
-				if (metric_ptr_double) file << results[i].*metric_ptr_double;
-				else if (metric_ptr_int) file << results[i].*metric_ptr_int;
-			}
-			else {
-				file << "0";
-			}
-		}
-		file << "\n";
-	}
-
-	file.close();
-	cout << "Successfully exported: " << filename << endl;
+/// Inspect all destinations/imports first, then reuse and compute missing rows before publishing complete summaries.
+/// Only this explicit experiment call creates output; EXP2--EXP4 ignore the optional EXP1 reuse source.
+inline void execute_experiment(const string& experiment, const vector<ExperimentCondition>& conditions,
+    const ExperimentRunOptions& options) {
+    if (conditions.empty()) throw invalid_argument("No experiment conditions selected");
+    const fs::path base = fs::path(experimentDataPath) / "ExperimentsResults" / experiment;
+    const string config = (base / "def_config.json").string();
+    const fs::path root = base / TON_RESULT_VERSION_DIR / options.output_name;
+    json info = inspect_experiment_destination(root, make_experiment_run_info(experiment, conditions, config, options));
+    vector<ConditionRecords> checkpoints;
+    for (const auto& condition : info.at("conditions")) {
+        const string key = condition.at("key").get<string>();
+        checkpoints.push_back(read_condition_records(root / key, experiment, key, condition.at("inputs"), options));
+    }
+    size_t reusable = 0, to_import = 0, saved = 0;
+    const auto imports = prepare_exp1_reuse(info, checkpoints, reusable);
+    for (size_t c = 0; c < conditions.size(); ++c)
+        for (size_t m = 0; m < method_name_list.size(); ++m) {
+            saved += checkpoints[c][m].size();
+            to_import += imports[c][m].size();
+        }
+    const size_t total = conditions.size() * static_cast<size_t>(options.instance_count) * method_name_list.size();
+    const size_t remaining = total - saved - to_import;
+    cout << "\n" << experiment << " -> " << root.string() << "\n"
+        << "Saved: " << saved << "; reusable source rows: " << reusable
+        << "; importing now: " << to_import << "; algorithm calls remaining: " << remaining << std::endl;
+    if (remaining && info.at("summary").at("instance_count").get<int>() > 0)
+        info["summary"]["status"] = "stale";
+    if (info.at("summary").at("instance_count").get<int>() > 0 &&
+        (info.at("summary").at("instance_count") != options.instance_count ||
+            info.at("summary").at("status") != "complete"))
+        cout << "NOTE: existing summary represents N=" << info.at("summary").at("instance_count")
+             << ", target N=" << options.instance_count << "; it is not the current complete summary." << std::endl;
+    // No destination is touched until all selected checkpoints and reuse conflicts have been inspected.
+    fs::create_directories(root);
+    write_experiment_run_info(root, info);
+    for (size_t c = 0; c < conditions.size(); ++c) {
+        const fs::path directory = root / conditions[c].key;
+        fs::create_directories(directory);
+        for (size_t m = 0; m < method_name_list.size(); ++m)
+            for (const auto& entry : imports[c][m]) {
+                appendResult(directory.string(), m, entry.second);
+                checkpoints[c][m].emplace(entry.first, entry.second);
+            }
+    }
+    if (to_import) cout << "Imported " << to_import << " legacy rows; original timing/metrics retained." << std::endl;
+    vector<string> keys;
+    vector<vector<EXPResult>> means;
+    for (size_t c = 0; c < conditions.size(); ++c) {
+        run_Instance_with_checkpoint(root / conditions[c].key, experiment, conditions[c], config, options, checkpoints[c]);
+        keys.push_back(conditions[c].key);
+        vector<EXPResult> condition_means;
+        for (const auto& records : checkpoints[c])
+            condition_means.push_back(average_valid_attempts(records, options.instance_count));
+        means.push_back(std::move(condition_means));
+    }
+    info["summary"]["status"] = "writing";
+    write_experiment_run_info(root, info);
+    exportAllSummaryCSV((root / "summary").string(), keys, means);
+    info["summary"] = {{"status", "complete"}, {"instance_count", options.instance_count}};
+    write_experiment_run_info(root, info);
+    cout << experiment << " complete: " << total << " saved results; 12 summary CSVs, N="
+         << options.instance_count << "." << std::endl;
 }
 
-// ======================== ºËÐÄÖ´ÐÐÂß¼­£¨Ö§³Ö¶ÏµãÐøÅÜ + ÖðÊµÀý³Ö¾Ã»¯£© ========================
-
-/**
- * @brief ¶ÔÒ»¸öÊµÑéÌõ¼þÔËÐÐËùÓÐÊµÀý£¬Ö§³Ö¶ÏµãÐøÅÜ
- * @param intermediate_dir ÖÐ¼ä½á¹ûÄ¿Â¼£¨Èç EXP_result_path/1000/£©
- * @param userFiles        ÓÃ»§Êý¾ÝÎÄ¼þÁÐ±í
- * @param uavFiles         ÎÞÈË»úÊý¾ÝÎÄ¼þÁÐ±í
- * @param config_file      ÅäÖÃÎÄ¼þÂ·¾¶
- * @param total_count      ×ÜÊµÀýÊý
- */
-void run_Instance_with_checkpoint(const string& intermediate_dir,
-	vector<string>& userFiles,
-	vector<string>& uavFiles,
-	const string& config_file,
-	int total_count, double total_bandwidth = 40) {
-	// ±ØÐëÏÈ¼ì²éÁù¸öÎÄ¼þ¡¢ÔÙ´´½¨È±Ê§ÎÄ¼þ£ºÈô checkpoint ²»ÍêÕû£¬ÏÈÔ­Ñù±¨¸æ´ÅÅÌÖ¤¾Ý£¬
-	// ²»Í¨¹ý×Ô¶¯²¹ÎÄ¼þ¡¢É¾ÐÐ»ò½Ø¶ÏÀ´ÑÚ¸Ç²»Ò»ÖÂ×´Ì¬¡£
-	int completed = getCompletedCount(intermediate_dir);
-	ensureIntermediateDir(intermediate_dir);
-	if (completed >= total_count) {
-		cout << "  All " << total_count << " instances already completed, skipping." << endl;
-		return;
-	}
-	if (completed > 0) {
-		cout << "  Resuming from instance " << (completed + 1)
-			<< " (" << completed << " already completed)" << endl;
-	}
-
-	total_bandwidth *= unit_para; // ´ø¿íÄ¬ÈÏµ¥Î»ÊÇMHz£¬unit_para = 1Ê±ÎªMHz£¬Îª1000Ê±ÎªKHz
-
-	// ´Ó¶Ïµã´¦¿ªÊ¼Ö´ÐÐ
-	for (int k = completed; k < total_count; ++k) {
-		cout << " Processing instance " << (k + 1) << "/" << total_count << "..." << endl;
-
-		SystemMd sysModel(userFiles[k], uavFiles[k], config_file);
-		for (auto& uav : sysModel.uavs)
-		{
-			uav.total_bandwidth = total_bandwidth;
-		}
-		// ---------- ·½·¨0: ApproBetter -> ToN Algorithm 2£¬ÏÔÊ½Ê¹ÓÃ epsilon=0.1 ----------
-		{
-			cout << "\t[" << method_name_list[0] << "]..." << endl;
-			BAProblem problem(sysModel);
-			auto t0 = chrono::high_resolution_clock::now();
-			auto results = problem.Appro_multiUAV_ToN(
-				sysModel.uavs, sysModel.users, 2, 0.1);
-			auto t1 = chrono::high_resolution_clock::now();
-			double ms = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
-			auto uavResults = results.first;
-			EXPResult r = compute_single_EXPResult(problem.sysModel, uavResults, ms);
-			appendResult(intermediate_dir, 0, r);
-		}
-
-		// ---------- ·½·¨1: ApproFast -> ToN Algorithm 1£»epsilon ½öÓÃÓÚÍ³Ò»½Ó¿ÚÐ£Ñé ----------
-		{
-			cout << "\t[" << method_name_list[1] << "]..." << endl;
-			BAProblem problem(sysModel);
-			auto t0 = chrono::high_resolution_clock::now();
-			auto results = problem.Appro_multiUAV_ToN(
-				sysModel.uavs, sysModel.users, 1, 0.1);
-			auto t1 = chrono::high_resolution_clock::now();
-			double ms = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
-			auto uavResults = results.first;
-			EXPResult r = compute_single_EXPResult(problem.sysModel, uavResults, ms);
-			appendResult(intermediate_dir, 1, r);
-		}
-
-		// ---------- ·½·¨2: relaxRoundAlg ----------
-		{
-			cout << "\t[" << method_name_list[2] << "]..." << endl;
-			BAProblem problem(sysModel);
-			auto t0 = chrono::high_resolution_clock::now();
-			auto results = problem.ConvexRelaxationAndRounding_multiUAV();
-			auto t1 = chrono::high_resolution_clock::now();
-			double ms = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
-			auto uavResults = results.first;
-			EXPResult r = compute_single_EXPResult(problem.sysModel, uavResults, ms);
-			appendResult(intermediate_dir, 2, r);
-		}
-
-		// ---------- ·½·¨3: matchSQPAlg ----------
-		{
-			cout << "\t[" << method_name_list[3] << "]..." << endl;
-			BAProblem problem(sysModel);
-			auto t0 = chrono::high_resolution_clock::now();
-			auto results = problem.MatchingSQP_Allocation();
-			auto t1 = chrono::high_resolution_clock::now();
-			double ms = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
-			auto uavResults = results.first;
-			EXPResult r = compute_single_EXPResult(problem.sysModel, uavResults, ms);
-			appendResult(intermediate_dir, 3, r);
-		}
-
-		// ---------- ·½·¨4: HungarianMatchingAllocation ----------
-		{
-			cout << "\t[" << method_name_list[4] << "]..." << endl;
-			BAProblem problem(sysModel);
-			auto t0 = chrono::high_resolution_clock::now();
-			auto results = problem.HungarianMatchingAllocation();
-			auto t1 = chrono::high_resolution_clock::now();
-			double ms = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
-			auto uavResults = results.first;
-			EXPResult r = compute_single_EXPResult(problem.sysModel, uavResults, ms);
-			appendResult(intermediate_dir, 4, r);
-		}
-
-		// ---------- ·½·¨5: iterApproAlg ----------
-		{
-			cout << "\t[" << method_name_list[5] << "]..." << endl;
-			BAProblem problem(sysModel);
-			auto t0 = chrono::high_resolution_clock::now();
-			auto results = problem.SADA_Allocation();
-			auto t1 = chrono::high_resolution_clock::now();
-			double ms = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
-			auto uavResults = results.first;
-			EXPResult r = compute_single_EXPResult(problem.sysModel, uavResults, ms);
-			appendResult(intermediate_dir, 5, r);
-		}
-
-		cout << "  Instance " << (k + 1) << " done and saved." << endl;
-	}
+/// EXP1: use options.input_root to vary user count at 10 UAVs/40 MHz; save/resume selected conditions, no return value.
+inline void exp1_different_user_number(const ExperimentRunOptions& options) {
+    validate_run_options(options);
+    const fs::path input_root = resolve_experiment_input_root(options);
+    vector<ExperimentCondition> conditions;
+    for (const auto& count : experiment_condition_keys(options, {"1000", "2000", "3000", "4000", "5000"})) {
+        const string input = (input_root / "variable_user_num" / (count + "u_num")).string();
+        conditions.push_back(select_experiment_condition(count, input, input,
+            count + "users_data", "10uavs_loc", 40, options));
+    }
+    execute_experiment("EXP1_user_num", conditions, options);
 }
 
-// ======================== µ¼³öËùÓÐ»ã×ÜCSV ========================
-
-void exportAllSummaryCSV(const string& summary_dir, vector<string>& condition_keys) {
-	fs::create_directories(summary_dir);
-
-	exportToCSV(summary_dir + "Run_time_ms.csv", condition_keys, &EXPResult::duration);
-
-	exportToCSV(summary_dir + "Total_Num.csv", condition_keys, nullptr, &EXPResult::total_num);
-	exportToCSV(summary_dir + "Hard_Num.csv", condition_keys, nullptr, &EXPResult::hard_num);
-	exportToCSV(summary_dir + "Elastic_Num.csv", condition_keys, nullptr, &EXPResult::elastic_num);
-
-	exportToCSV(summary_dir + "Total_Utility.csv", condition_keys, &EXPResult::total_utility);
-	exportToCSV(summary_dir + "Hard_Utility.csv", condition_keys, &EXPResult::hard_utility);
-	exportToCSV(summary_dir + "Elastic_Utility.csv", condition_keys, &EXPResult::elastic_utility);
-
-	exportToCSV(summary_dir + "Hard_Bandwidth.csv", condition_keys, &EXPResult::hard_bandwidth);
-	exportToCSV(summary_dir + "Elastic_Bandwidth.csv", condition_keys, &EXPResult::elastic_bandwidth);
-
-	exportToCSV(summary_dir + "Hard_Throughput.csv", condition_keys, &EXPResult::hard_throughput);
-	exportToCSV(summary_dir + "Elastic_Throughput.csv", condition_keys, &EXPResult::elastic_throughput);
-	exportToCSV(summary_dir + "Total_Throughput.csv", condition_keys, &EXPResult::total_throughput);
+/// EXP2: use options.input_root to vary UAV count at 3000 users/40 MHz; save/resume results and ignore EXP1 reuse.
+inline void exp2_different_uav_number(const ExperimentRunOptions& options) {
+    validate_run_options(options);
+    const fs::path input_root = resolve_experiment_input_root(options);
+    vector<ExperimentCondition> conditions;
+    for (const auto& count : experiment_condition_keys(options, {"5", "10", "15", "20"}))
+        conditions.push_back(select_experiment_condition(count,
+            (input_root / "variable_user_num" / "3000u_num").string(),
+            (input_root / "variable_uav_num" / count).string(),
+            "3000users_data", count + "uavs_loc", 40, options));
+    execute_experiment("EXP2_uav_num", conditions, options);
 }
 
-// ======================== ÊµÑéÒ»£¨ÖØ¹¹°æ£© ========================
-
-void exp1_different_user_number() {
-	cout << "========================================" << endl;
-	cout << "EXP1: The impact of different user numbers on algorithm performance." << endl;
-	cout << "========================================" << endl;
-
-	// 1. Â·¾¶ÅäÖÃ
-	string config_file = experimentDataPath + "ExperimentsResults/EXP1_user_num/def_config.json";
-	string dataSetPath = experimentDataPath + "data/variable_user_num/";
-	string EXP_result_path = experimentDataPath +
-		"ExperimentsResults/EXP1_user_num/" + TON_RESULT_VERSION_DIR;
-
-	vector<string> user_num_dirs = { "1000", "2000", "3000", "4000", "5000" };
-	string uav_num = "10";
-
-	// 2. ÖðÌõ¼þÖ´ÐÐ£¨Ö§³Ö¶ÏµãÐøÅÜ£©
-	for (auto& u_num_str : user_num_dirs) {
-		cout << "\n--- Condition: user_num = " << u_num_str << " ---" << endl;
-
-		string dataFilePath = dataSetPath + u_num_str + "u_num/";
-		string intermediate_dir = EXP_result_path + u_num_str + "/";
-
-		vector<string> userFiles;
-		vector<string> uavFiles;
-
-		bool success = getMatchedFilePairs(
-			dataFilePath,
-			dataFilePath,
-			u_num_str + "users_data",
-			uav_num + "uavs_loc",
-			50,
-			userFiles,
-			uavFiles
-		);
-		if (!success) {
-			cout << "Failed to load data files for condition " << u_num_str << endl;
-			continue;
-		}
-		cout << "Loaded " << userFiles.size() << " pairs of data files." << endl;
-
-		//int count = userFiles.size();
-		int count = 10;
-		run_Instance_with_checkpoint(intermediate_dir, userFiles, uavFiles, config_file, count);
-	}
-
-	// 3. »ã×Ü£º´ÓÖÐ¼äCSV¶ÁÈ¡ -> ¼ÆËãÆ½¾ù -> Ìî³ä experiment_data
-	cout << "\n--- Summarizing results ---" << endl;
-	for (auto& u_num_str : user_num_dirs) {
-		string intermediate_dir = EXP_result_path + u_num_str + "/";
-		summarizeFromIntermediate(u_num_str, intermediate_dir);
-	}
-
-	// 4. µ¼³ö×îÖÕ»ã×ÜCSV
-	string summary_dir = EXP_result_path + "summary/";
-	exportAllSummaryCSV(summary_dir, user_num_dirs);
-
-	cout << "\nEXP1 completed." << endl;
+/// EXP3: use options.input_root and keys 0/2/4/6/8/10 at 3000 users/10 UAVs/40 MHz; save/resume results.
+inline void exp3_different_hard_user_ratio(const ExperimentRunOptions& options) {
+    validate_run_options(options);
+    const fs::path input_root = resolve_experiment_input_root(options);
+    vector<ExperimentCondition> conditions;
+    for (const auto& ratio : experiment_condition_keys(options, {"0", "2", "4", "6", "8", "10"})) {
+        const string input = (input_root / "variable_hard_user_ratio" / ratio).string();
+        conditions.push_back(select_experiment_condition(ratio, input, input,
+            "3000users_data", "10uavs_loc", 40, options));
+    }
+    execute_experiment("EXP3_hard_user_ratio", conditions, options);
 }
 
-void exp2_different_uav_number() {
-	cout << "========================================" << endl;
-	cout << "EXP2: The impact of different UAV numbers." << endl;
-	cout << "========================================" << endl;
-
-	string config_file = experimentDataPath + "ExperimentsResults/EXP2_uav_num/def_config.json";
-	// ÓÃ»§Êý¾ÝÂ·¾¶£º¹Ì¶¨ÔÚ 3000u_num ÎÄ¼þ¼Ð
-	string fixedUserPath = experimentDataPath + "data/variable_user_num/3000u_num/";
-	// ÎÞÈË»úÊý¾Ý¸ùÂ·¾¶
-	string uavBaseSetPath = experimentDataPath + "data/variable_uav_num/";
-	string EXP_result_path = experimentDataPath +
-		"ExperimentsResults/EXP2_uav_num/" + TON_RESULT_VERSION_DIR;
-
-	vector<string> uav_num_dirs = { "5", "10", "15", "20" };
-	string user_pattern = "3000users_data";
-
-	for (auto& uav_num_str : uav_num_dirs) {
-		cout << "\n--- Condition: uav_num = " << uav_num_str << " ---" << endl;
-
-		string uavDataPath = uavBaseSetPath + uav_num_str + "/";
-		string intermediate_dir = EXP_result_path + uav_num_str + "/";
-
-		vector<string> userFiles, uavFiles;
-
-		// µ÷ÓÃÐÞ¸ÄºóµÄÔ­º¯Êý£º´«Èë²»Í¬µÄÓÃ»§Ä¿Â¼ºÍÎÞÈË»úÄ¿Â¼
-		bool success = getMatchedFilePairs(
-			fixedUserPath,
-			uavDataPath,
-			user_pattern,
-			uav_num_str + "uavs_loc",
-			50,
-			userFiles,
-			uavFiles
-		);
-
-		if (!success) {
-			cout << "Failed to load data for UAV count: " << uav_num_str << endl;
-			continue;
-		}
-		//int count = userFiles.size();
-		int count = 10;
-		// ÔËÐÐÊµÑé
-		run_Instance_with_checkpoint(intermediate_dir, userFiles, uavFiles, config_file, count);
-	}
-
-	// »ã×ÜÓëµ¼³ö£¨Âß¼­Óë EXP1 Ò»ÖÂ£©
-	for (auto& uav_num_str : uav_num_dirs) {
-		summarizeFromIntermediate(uav_num_str, EXP_result_path + uav_num_str + "/");
-	}
-	exportAllSummaryCSV(EXP_result_path + "summary/", uav_num_dirs);
-}
-
-
-void exp3_different_hard_user_ratio() {
-	cout << "========================================" << endl;
-	cout << "EXP2: The impact of different ratio of hard users." << endl;
-	cout << "========================================" << endl;
-
-	string config_file = experimentDataPath + "ExperimentsResults/EXP3_hard_user_ratio/def_config.json";
-
-
-	// Êý¾Ý¸ùÂ·¾¶
-	string dataSetPath = experimentDataPath + "data/variable_hard_user_ratio/";
-	string EXP_result_path = experimentDataPath +
-		"ExperimentsResults/EXP3_hard_user_ratio/" + TON_RESULT_VERSION_DIR;
-
-	vector<string> hard_ratio_dirs = { "0", "2", "4", "6", "8", "10"};
-	string uav_num = "10";
-	string user_pattern = "3000users_data";
-	string uav_pattern = "10uavs_loc";
-
-
-	for (auto& hard_ratio : hard_ratio_dirs) {
-		cout << "\n--- Condition: hard_ratio = " << hard_ratio << " ---" << endl;
-
-		string DataPath = dataSetPath + hard_ratio + "/";
-		string intermediate_dir = EXP_result_path + hard_ratio + "/";
-
-		vector<string> userFiles, uavFiles;
-
-		// µ÷ÓÃÐÞ¸ÄºóµÄÔ­º¯Êý£º´«Èë²»Í¬µÄÓÃ»§Ä¿Â¼ºÍÎÞÈË»úÄ¿Â¼
-		bool success = getMatchedFilePairs(
-			DataPath,
-			DataPath,
-			user_pattern,
-			uav_pattern,
-			30,
-			userFiles,
-			uavFiles
-		);
-
-		if (!success) {
-			cout << "Failed to load data for hard ratio: " << hard_ratio << endl;
-			continue;
-		}
-		//int count = userFiles.size();
-		int count = 10;
-		// ÔËÐÐÊµÑé
-		run_Instance_with_checkpoint(intermediate_dir, userFiles, uavFiles, config_file, count);
-	}
-
-	// »ã×ÜÓëµ¼³ö£¨Âß¼­Óë EXP1 Ò»ÖÂ£©
-	for (auto& hard_ratio : hard_ratio_dirs) {
-		summarizeFromIntermediate(hard_ratio, EXP_result_path + hard_ratio + "/");
-	}
-	exportAllSummaryCSV(EXP_result_path + "summary/", hard_ratio_dirs);
-}
-
-
-void exp4_different_total_bandwidth() {
-	cout << "========================================" << endl;
-	cout << "EXP2: The impact of different total bandwidth of each uav." << endl;
-	cout << "========================================" << endl;
-
-	string config_file = experimentDataPath + "ExperimentsResults/EXP4_bandwidth/def_config.json";
-
-
-	// Êý¾Ý¸ùÂ·¾¶
-	string dataSetPath = experimentDataPath + "data/variable_user_num/";
-	string EXP_result_path = experimentDataPath +
-		"ExperimentsResults/EXP4_bandwidth/" + TON_RESULT_VERSION_DIR;
-
-	vector<int> bandwidth_dirs_int = { 10, 20, 30, 40, 50 };
-	vector<string> bandwidth_dirs_str = { "10", "20", "30", "40", "50" };
-
-
-	string user_pattern = "3000users_data";
-	string uav_pattern = "10uavs_loc";
-
-
-	string DataPath = dataSetPath + "3000u_num/";
-
-	vector<string> userFiles, uavFiles;
-
-	// µ÷ÓÃÐÞ¸ÄºóµÄÔ­º¯Êý£º´«Èë²»Í¬µÄÓÃ»§Ä¿Â¼ºÍÎÞÈË»úÄ¿Â¼
-	bool success = getMatchedFilePairs(
-		DataPath,
-		DataPath,
-		user_pattern,
-		uav_pattern,
-		30,
-		userFiles,
-		uavFiles
-	);
-
-	if (!success) {
-		cout << "Failed to load data " << endl;
-	}
-	//int count = userFiles.size();
-	int count = 10;
-
-	for (auto& bandwidth : bandwidth_dirs_int) {
-		cout << "\n--- Condition: hard_ratio = " << to_string(bandwidth) << " ---" << endl;
-
-		string intermediate_dir = EXP_result_path + to_string(bandwidth) + "/";
-		// ÔËÐÐÊµÑé
-		run_Instance_with_checkpoint(intermediate_dir, userFiles, uavFiles, config_file, count, bandwidth);
-	}
-
-	// »ã×ÜÓëµ¼³ö£¨Âß¼­Óë EXP1 Ò»ÖÂ£©
-	for (auto& bandwidth : bandwidth_dirs_int) {
-		summarizeFromIntermediate(to_string(bandwidth), EXP_result_path + to_string(bandwidth) + "/");
-	}
-
-
-	exportAllSummaryCSV(EXP_result_path + "summary/", bandwidth_dirs_str);
+/// EXP4: reuse options.input_root's 3000-user/10-UAV inputs and save/resume bandwidth conditions in MHz.
+/// The runner rebuilds physical channels after overriding bandwidth and before timing algorithms.
+inline void exp4_different_total_bandwidth(const ExperimentRunOptions& options) {
+    validate_run_options(options);
+    const fs::path input_root = resolve_experiment_input_root(options);
+    vector<ExperimentCondition> conditions;
+    const string input = (input_root / "variable_user_num" / "3000u_num").string();
+    for (const auto& bandwidth : experiment_condition_keys(options, {"10", "20", "30", "40", "50"}))
+        conditions.push_back(select_experiment_condition(bandwidth, input, input,
+            "3000users_data", "10uavs_loc", stod(bandwidth), options));
+    execute_experiment("EXP4_bandwidth", conditions, options);
 }

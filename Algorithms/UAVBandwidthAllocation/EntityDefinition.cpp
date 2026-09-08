@@ -56,7 +56,7 @@ double ton_absolute_utility(const User& user, double channel, double bandwidth)
 		return ton_elastic_utility(user, channel, bandwidth);
 	if (user.uType == HARD_UTILITY)
 	{
-		if (channel > 0.0 && bandwidth * channel >= user.rMin - EPS)
+		if (hard_qos_satisfied(bandwidth, channel, user.rMin))
 			return user.weight * std::log2(1.0 + user.rMin);
 		return 0.0;
 	}
@@ -404,12 +404,60 @@ KnapsackResult ton_make_absolute_result(
 	return result;
 }
 
+/** @brief 一层 SMAWK 递归的独占缓冲区；clear 只清空标签，不释放已预留的容量。 */
+struct TonSmawkLevel {
+	vector<int> reduced_columns;
+	vector<int> odd_rows;
+};
+
+/**
+ * @brief 单次 AlgBetter 求解内复用的 SMAWK 工作区，不共享全局或跨调用状态。
+ * 行列标签固定为 0..P；不同递归深度各有独立缓冲区，防止覆盖仍被父层使用的标签。
+ */
+struct TonSmawkWorkspace {
+	vector<int> rows;
+	vector<int> columns;
+	vector<int> minima;
+	vector<int> positions;
+	vector<TonSmawkLevel> levels;
+
+	/** @brief 首个有效 elastic 层按 P+1 初始化；后续同规模调用仅重置最小列及位置表。 */
+	void prepare(size_t state_count)
+	{
+		if (rows.size() != state_count)
+		{
+			rows.resize(state_count);
+			columns.resize(state_count);
+			std::iota(rows.begin(), rows.end(), 0);
+			std::iota(columns.begin(), columns.end(), 0);
+			minima.resize(state_count);
+			positions.resize(state_count);
+			size_t depth_count = 0;
+			for (size_t count = state_count; count > 0; count /= 2)
+				++depth_count;
+			// 递归前完整建立层级；递归内部不得扩容 levels，以保持父层引用有效。
+			levels.resize(depth_count);
+			size_t count = state_count;
+			for (TonSmawkLevel& level : levels)
+			{
+				level.reduced_columns.reserve(count);
+				level.odd_rows.reserve(count / 2);
+				count /= 2;
+			}
+		}
+		std::fill(minima.begin(), minima.end(), -1);
+		std::fill(positions.begin(), positions.end(), -1);
+	}
+};
+
 /**
  * @brief 对完整全单调矩阵递归执行 SMAWK，在线性查询次数内求各行最小列。
  * @param rows 当前递归层保留的行标签。
  * @param columns 当前递归层保留的列标签。
  * @param minima 按原始行标签保存其最小值所在列。
  * @param positions 复用的“列标签到约简后位置”临时数组。
+ * @param workspace 已建立全部层级的本次求解工作区。
+ * @param depth 当前递归深度，用于选择独占的标签缓冲区。
  * @param lookup 矩阵元素查询回调；矩阵不需要显式存储。
  */
 template <typename Lookup>
@@ -418,14 +466,16 @@ void ton_smawk_recursive(
 	const vector<int>& columns,
 	vector<int>& minima,
 	vector<int>& positions,
+	TonSmawkWorkspace& workspace,
+	size_t depth,
 	const Lookup& lookup)
 {
 	if (rows.empty())
 		return;
 
 	// 列约简：利用全单调性弹出不可能成为任何行最优解的列。
-	vector<int> reduced_columns;
-	reduced_columns.reserve(std::min(rows.size(), columns.size()));
+	vector<int>& reduced_columns = workspace.levels[depth].reduced_columns;
+	reduced_columns.clear();
 	for (int column : columns)
 	{
 		while (!reduced_columns.empty())
@@ -442,11 +492,11 @@ void ton_smawk_recursive(
 	}
 
 	// 递归求奇数位置行；这些结果将给相邻偶数位置行提供单调搜索边界。
-	vector<int> odd_rows;
-	odd_rows.reserve(rows.size() / 2);
+	vector<int>& odd_rows = workspace.levels[depth].odd_rows;
+	odd_rows.clear();
 	for (size_t index = 1; index < rows.size(); index += 2)
 		odd_rows.push_back(rows[index]);
-	ton_smawk_recursive(odd_rows, reduced_columns, minima, positions, lookup);
+	ton_smawk_recursive(odd_rows, reduced_columns, minima, positions, workspace, depth + 1, lookup);
 
 	// 在相邻奇数行最优列之间扫描偶数位置行，完成插值阶段。
 	for (size_t index = 0; index < reduced_columns.size(); ++index)
@@ -475,18 +525,18 @@ void ton_smawk_recursive(
 	}
 }
 
-/** @brief 构造行列标签并求方形全单调矩阵的全部行最小列。 */
+/**
+ * @brief 复用 workspace 求 0..maximum_index 的全部行最小列。
+ * @return 工作区内结果的只读引用；调用者必须在下一次求解/工作区销毁前完成消费。
+ */
 template <typename Lookup>
-vector<int> ton_smawk_row_minima(int maximum_index, const Lookup& lookup)
+const vector<int>& ton_smawk_row_minima(
+	int maximum_index, TonSmawkWorkspace& workspace, const Lookup& lookup)
 {
-	vector<int> rows(maximum_index + 1);
-	vector<int> columns(maximum_index + 1);
-	std::iota(rows.begin(), rows.end(), 0);
-	std::iota(columns.begin(), columns.end(), 0);
-	vector<int> minima(maximum_index + 1, -1);
-	vector<int> positions(maximum_index + 1, -1);
-	ton_smawk_recursive(rows, columns, minima, positions, lookup);
-	return minima;
+	workspace.prepare(static_cast<size_t>(maximum_index) + 1);
+	ton_smawk_recursive(workspace.rows, workspace.columns, workspace.minima,
+		workspace.positions, workspace, 0, lookup);
+	return workspace.minima;
 }
 
 /**
@@ -588,10 +638,10 @@ void Point::print_point()
 {
 }
 
+/// Return hard utility only when actual reliable rate meets the common QoS rule.
 double User::hard_utility(double bandwidth_, double capacity_, double SNR_avg_dB) const
 {
-	double data_rate = bandwidth_ * capacity_;
-	if (data_rate >= rMin - EPS)
+	if (hard_qos_satisfied(bandwidth_, capacity_, rMin))
 	{
 		double uti = weight * log2(1 + rMin);
 		//double uti = hard_utility_SNR_avg(bandwidth_, SNR_avg_dB);
@@ -781,11 +831,16 @@ double Channel::cal_PL() const
 	return PL_;
 }
 
+/// Compute SNR using noise density and this UAV's bandwidth, without global mutation.
 double Channel::cal_average_SNR() const
 {
+	if (!std::isfinite(P_tr.total_bandwidth) || P_tr.total_bandwidth < 0.0)
+		throw std::invalid_argument("UAV bandwidth must be finite and nonnegative");
+	if (P_tr.total_bandwidth == 0.0) return -INFINITY;
 	// 将各个变量转换为线性值计算
 	double P_tr_linear = P_tr.pTrans * 1000; // mW
-	double P_N_linear = pow(10, noise_dbm / 10.0); // mW
+	const double bandwidth_hz = P_tr.total_bandwidth * (1e6 / unit_para);
+	double P_N_linear = pow(10, noise_dbm / 10.0) * bandwidth_hz; // mW
 	double g_UAV_linear = pow(10, gain_uav_db / 10.0);
 	double PL_linear = pow(10, PL / 10.0);
 	double SNR_linear = (P_tr_linear * g_UAV_linear) / (P_N_linear * PL_linear);
@@ -881,8 +936,13 @@ double Channel::cal_Nakagami_M() const
 	return M_;
 }
 
+/// Invert the hard outage probability to a reliable SNR threshold (dB); unavailable/elastic links return -infinity.
 double Channel::cal_SNR_th() const
 {
+	if (P_re.uType != HARD_UTILITY || P_tr.total_bandwidth == 0.0)
+		return -INFINITY;
+	if (!std::isfinite(P_re.pOut) || P_re.pOut <= 0.0 || P_re.pOut >= 1.0)
+		throw std::invalid_argument("Hard outage probability must be in (0,1)");
 	// 已知中断概率公式，通过数值方法求解反函数
 	// pOut = 1/Γ(M) * γ(M, (M * SNR_th) / SNR_avg)
 	// 先判断发送者将其所有带宽分配给该用户时，是否能满足用户的中断概率要求
@@ -927,11 +987,11 @@ double Channel::cal_SNR_th() const
 	catch (const std::exception& e) {
 		// 捕获异常并输出错误信息
 		cout << "uav_id = " << P_tr.ID << ", user_id_J1 = " << P_re.ID << endl;
-		std::cerr << "错误： " << e.what() << std::endl;
+		throw std::runtime_error(std::string("Reliable SNR calculation failed: ") + e.what());
 	}
-	return 0.0;
 }
 
+/// Return reliable hard spectral efficiency or average-SNR elastic spectral efficiency.
 double Channel::cal_capacity() const
 {
 	if (P_re.uType == HARD_UTILITY)
@@ -940,7 +1000,7 @@ double Channel::cal_capacity() const
 		if (SNRt_dB == -INFINITY)
 			return 0.0;
 		double SNR_th_linear = pow(10, SNRt_dB / 10.0);
-		double capacity_ = (1 - P_re.pOut) * log2(1 + SNR_th_linear);
+		double capacity_ = log2(1 + SNR_th_linear);
 		return capacity_;
 	}
 	else if (P_re.uType == ELASTIC_UTILITY)
@@ -1017,6 +1077,8 @@ struct RawUavData {
 	double lon, lat;
 	double bandwidth; // MHz
 };
+/// Read paired legacy input CSVs and configuration, normalize IDs/coordinates, then initialize channel lookups.
+/// Unreadable inputs throw to the batch driver; no result is reported as a successful zero allocation on read failure.
 SystemMd::SystemMd(string user_file, string uav_file, string config_file)
 {
 	// 1. 加载全局配置
@@ -1026,8 +1088,7 @@ SystemMd::SystemMd(string user_file, string uav_file, string config_file)
 	vector<RawUserData> raw_users;
 	ifstream user_fs(user_file);
 	if (!user_fs.is_open()) {
-		cerr << "Error: Cannot open user file " << user_file << endl;
-		exit(1);
+		throw runtime_error("Cannot open user file: " + user_file);
 	}
 
 	string line;
@@ -1056,8 +1117,7 @@ SystemMd::SystemMd(string user_file, string uav_file, string config_file)
 	vector<RawUavData> raw_uavs;
 	ifstream uav_fs(uav_file);
 	if (!uav_fs.is_open()) {
-		cerr << "Error: Cannot open uav file " << uav_file << endl;
-		exit(1);
+		throw runtime_error("Cannot open UAV file: " + uav_file);
 	}
 
 	// 跳过表头
@@ -1190,8 +1250,26 @@ SystemMd::SystemMd(string user_file, string uav_file, string config_file)
 	// cout << "UAVs: " << uavs.size() << endl;
 }
 
+/// Rebuild all derived channel state; identical inputs produce identical repeated initializations.
 void SystemMd::init_SystemModel()
 {
+	m = static_cast<int>(uavs.size());
+	n1 = 0;
+	n2 = 0;
+	max_user_utility = 0.0;
+	uav_serviceable_users_map.clear();
+	for (size_t j = 0; j < users.size(); ++j) {
+		const User& user = users[j];
+		if (user.ID != static_cast<int>(j))
+			throw std::invalid_argument("User IDs must equal their vector indices");
+		if (user.uType == HARD_UTILITY && n2 == 0) ++n1;
+		else if (user.uType == ELASTIC_UTILITY) ++n2;
+		else throw std::invalid_argument("Expected hard users followed by elastic users");
+	}
+	for (size_t k = 0; k < uavs.size(); ++k)
+		if (uavs[k].ID != static_cast<int>(k) ||
+			!std::isfinite(uavs[k].total_bandwidth) || uavs[k].total_bandwidth < 0.0)
+			throw std::invalid_argument("Invalid UAV ID or bandwidth");
 
 	dis_list = vector<vector<double>>(m, vector<double>(n1 + n2, 0.0));
 	SNRave_list = vector<vector<double>>(m, vector<double>(n1 + n2, 0.0));
@@ -1200,18 +1278,7 @@ void SystemMd::init_SystemModel()
 	cap_list = vector<vector<double>>(m, vector<double>(n1 + n2, 0.0));
 	Bth_list = vector<vector<double>>(m, vector<double>(n1, 0.0));
 
-	int bandwidth_per_uav = 0;
-	if (unit_para == 1)
-	{
-		bandwidth_per_uav = uavs[0].total_bandwidth * 1e6; // Hz
-	}
-	else
-	{
-		bandwidth_per_uav = uavs[0].total_bandwidth * 1e3; // Hz
-	}
-
-
-	noise_dbm = noise_dbm + 10 * log10(bandwidth_per_uav); // 调整噪声功率到指定带宽下
+	// noise_dbm stays in dBm/Hz; Channel integrates noise separately for each UAV.
 
 	for (int i = 0; i < m; i++)
 	{
@@ -4953,26 +5020,39 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
 	}
 
 	// previous/current 是 A(i-1,p) 与 A(i,p) 的两行滚动数组：值为取得精确利润 p
-	// 所需的最小新增带宽。choices[i][p] 记录第 i 个用户贡献的利润，用于最终回溯。
+	// 所需的最小新增带宽。仅为正利润用户连续存储决策行，原始 n 及用户顺序不变。
 	const double dp_sentinel = budget + std::max(1.0, std::abs(budget) + 1.0);
-	vector<double> previous(state_limit + 1, dp_sentinel);
-	vector<double> current(state_limit + 1, dp_sentinel);
-	vector<vector<int>> choices(
-		user_count, vector<int>(state_limit + 1, 0));
+	const size_t state_count = static_cast<size_t>(state_limit) + 1;
+	vector<double> previous(state_count, dp_sentinel);
+	vector<double> current(state_count, dp_sentinel);
+	const size_t no_choice_row = std::numeric_limits<size_t>::max();
+	vector<size_t> choice_rows(user_count, no_choice_row);
+	size_t active_row_count = 0;
+	for (int index = 0; index < user_count; ++index)
+	{
+		if (maximum_scaled_profit[index] > 0)
+			choice_rows[index] = active_row_count++;
+	}
+	vector<int> choices;
+	// 先验证 size_t 乘法及 vector 上限，再分配；每个有效行仍保留全部 0..P 状态。
+	if (active_row_count > std::numeric_limits<size_t>::max() / state_count ||
+		active_row_count > choices.max_size() / state_count)
+		throw std::length_error("ToN compact decision table exceeds vector capacity");
+	choices.assign(active_row_count * state_count, 0);
+	TonSmawkWorkspace smawk_workspace; // 只在首个有效 elastic 层实际分配 SMAWK 缓冲区。
 	previous[0] = 0.0;
 	const double dp_tolerance = 1e-10 * std::max(1.0, budget);
 
 	for (int user_index = 0; user_index < user_count; ++user_index)
 	{
+		const int user_profit = maximum_scaled_profit[user_index];
+		// 零利润层只有 q=0：previous 原地保持不变，回溯按原始索引读取零贡献。
+		if (user_profit <= 0)
+			continue;
 		// current=previous 显式保留 q=0（不激活当前用户）选项。
 		current = previous;
 		const TonUserProfile& profile = profiles[user_index];
-		const int user_profit = maximum_scaled_profit[user_index];
-		if (user_profit <= 0)
-		{
-			previous.swap(current);
-			continue;
-		}
+		const size_t choice_offset = choice_rows[user_index] * state_count;
 
 		if (profile.user_type == HARD_UTILITY)
 		{
@@ -4988,7 +5068,7 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
 					candidate_cost < current[profit] - dp_tolerance)
 				{
 					current[profit] = candidate_cost;
-					choices[user_index][profit] = user_profit;
+					choices[choice_offset + static_cast<size_t>(profit)] = user_profit;
 				}
 			}
 		}
@@ -5027,11 +5107,12 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
 				};
 
 			// SMAWK 返回每个总利润状态 p 对应的最优前缀利润 r。
-			vector<int> row_minima = ton_smawk_row_minima(
-				state_limit, completed_entry);
+			const vector<int>& row_minima = ton_smawk_row_minima(
+				state_limit, smawk_workspace, completed_entry);
 
-			// 小规模确定性调用逐行与 O(P^2) 穷举核对，专门防止有限补全或索引映射出错。
-			// 仅在状态上界 P 不超过 128 时执行，避免过度消耗时间。当epsilon=0.1时，7个用户就会触发 128 状态上界。
+#if defined(TON_VERIFY_SMAWK)
+			// 仅显式定义 TON_VERIFY_SMAWK 时做小状态 O(P^2) 对照；正常实验包括 _DEBUG 构建均默认关闭。
+			// 本块只检查 SMAWK 的有限补全和索引映射，不参与下面的 DP 状态更新。
 			if (state_limit <= 128)
 			{
 				for (int row = 0; row <= state_limit; ++row)
@@ -5047,6 +5128,7 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
 							"ToN SMAWK row minimum disagrees with quadratic enumeration");
 				}
 			}
+#endif
 
 			// 只把落回真实 staircase 区域的 SMAWK 最优列写入 DP；补全区域会被过滤。
 			for (int total_profit = 0; total_profit <= state_limit; ++total_profit)
@@ -5063,11 +5145,11 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
 					candidate_cost < current[total_profit] - dp_tolerance)
 				{
 					current[total_profit] = candidate_cost;
-					choices[user_index][total_profit] = contributed_profit;
+					choices[choice_offset + static_cast<size_t>(total_profit)] = contributed_profit;
 				}
 			}
 		}
-		// 滚动到下一用户层；完整 choices 表仍保留每层的回溯信息。
+		// 滚动到下一用户层；紧凑 choices 表仍保留每个有效层的完整回溯信息。
 		previous.swap(current);
 	}
 
@@ -5084,12 +5166,13 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
 	if (best_profit <= 0)
 		return empty_result;
 
-	// choices[i][remaining_profit] 给出第 i 个用户的 q_i，反向扣除直至回到利润 0。
+	// 按原始用户顺序逆向回溯；没有决策行的零利润用户贡献为 0，不改变 remaining_profit。
 	vector<int> selected_profit(user_count, 0);
 	int remaining_profit = best_profit;
 	for (int user_index = user_count - 1; user_index >= 0; --user_index)
 	{
-		int contribution = choices[user_index][remaining_profit];
+		int contribution = choice_rows[user_index] == no_choice_row ? 0 :
+			choices[choice_rows[user_index] * state_count + static_cast<size_t>(remaining_profit)];
 		if (contribution < 0 || contribution > remaining_profit)
 			throw std::logic_error("ToN DP backtracking encountered an invalid choice");
 		selected_profit[user_index] = contribution;
@@ -5352,7 +5435,8 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
 
 		Uav residual_uav = original_uav;
 		residual_uav.total_bandwidth = residual_bandwidth;
-		KnapsackResult marginal_result = solve_single_uav(
+		// 残余带宽阶段统一使用 AlgFast，基于已有带宽和当前效用优化新增带宽。
+		KnapsackResult marginal_result = AlgFast_singleUAV_ToN(
 			residual_uav, residual_candidates, residual_state, residual_bases);
 		if (marginal_result.totalValue <= EPS)
 			continue;

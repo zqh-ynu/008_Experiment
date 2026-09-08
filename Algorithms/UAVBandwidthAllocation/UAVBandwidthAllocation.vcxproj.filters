@@ -53,8 +53,26 @@
     <ClInclude Include="experiments.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="allocation_contract.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="experiment_support.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="test_route_a.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="route_a_batch.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="config\route_a_run_options.json" />
+    <None Include="scripts\validate_route_a.ps1" />
+    <None Include="scripts\run_route_a_batch.ps1" />
+    <None Include="scripts\route_a_batch.py" />
+    <None Include="scripts\plot_route_a.py" />
+    <None Include="scripts\test_route_a_plot.py" />
   </ItemGroup>
 </Project>

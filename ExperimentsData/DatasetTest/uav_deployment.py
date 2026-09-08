@@ -1,3 +1,9 @@
+"""在固定网格上按新增覆盖贪心部署指定数量的连通 UAV，并读写用户/UAV CSV。
+
+保持候选遍历及正增益平局顺序；无正增益时也允许未使用的合法连通点，
+避免将暂时没有新增覆盖误判为无法继续部署。
+"""
+
 import os
 import pandas as pd
 import numpy as np
@@ -13,6 +19,8 @@ class UAVDeployment:
         参数:
             input_dir: 输入文件目录
             output_dir: 输出文件目录
+        返回:
+            无。初始化部署参数与输入输出目录。
         """
         self.input_dir = input_dir
         self.output_dir = output_dir
@@ -173,12 +181,13 @@ class UAVDeployment:
 
     def deploy_uavs(self, user_positions):
         """
-        使用贪心算法部署无人机
+        按最大新增覆盖贪心部署指定数量的 UAV；零增益连通候选也可以入选。
 
         参数:
             user_positions: 用户位置列表 [(x, y), ...]
         返回:
-            deployed_uavs: 部署的无人机位置列表
+            deployed_uavs: 按部署顺序排列的不同网格点；每个新点与已有网络连通。
+                仅在确实没有未使用的连通候选点时提前结束并报告警告。
         """
         candidate_points = self.generate_candidate_points()
         deployed_uavs = []
@@ -189,7 +198,8 @@ class UAVDeployment:
 
         for uav_count in range(self.num_uavs):
             best_pos = None
-            best_coverage = 0
+            # -1 使合法的零增益点也能入选；正增益优先及原有严格 > 平局顺序不变。
+            best_coverage = -1
 
             for candidate_pos in candidate_points:
                 # 检查是否已被使用
@@ -228,6 +238,8 @@ class UAVDeployment:
 
         参数:
             input_file: 输入文件路径
+        返回:
+            无。将当前参数指定的部署结果写入 output_dir 中的对应 UAV CSV。
         """
         print(f"\n处理文件: {input_file}")
 
@@ -303,6 +315,10 @@ class UAVDeployment:
     def process_all_files(self):
         """
         处理目录中的所有CSV文件
+        参数:
+            无。使用初始化时的 input_dir 与 output_dir。
+        返回:
+            无。逐文件输出部署结果；异常只打印，由批次入口检查最终完整性。
         """
         # 获取所有CSV文件
         pattern = os.path.join(self.input_dir, "*users_data*.csv")
@@ -326,6 +342,7 @@ class UAVDeployment:
 
 
 def main():
+    """运行保留的历史用户规模批处理入口；无参数/返回值，不是 ToN 批次入口。"""
     user_nums = [1000, 2000, 3000, 4000, 5000]
     # user_nums = [1000]
     DATA_DIR = r"E:\Research\My paper\2_Papers\008\008_Experiment\ExperimentsData\data\variable_user_num"

@@ -183,7 +183,9 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_MBCS;NDEBUG;_CONSOLE;IL_STD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- Keep Release optimization, but match the installed IPOPT mdd C++ ABI and debug CRT. -->
+      <PreprocessorDefinitions>_MBCS;NDEBUG;_DEBUG;_ITERATOR_DEBUG_LEVEL=2;_CONSOLE;IL_STD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>D:\Program Files\IBM\ILOG\CPLEX_Studio2211\concert\include;D:\Program Files\IBM\ILOG\CPLEX_Studio2211\cplex\include;E:\Mydvtools\boost_1_89_0\boost;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -212,9 +214,19 @@
     <ClInclude Include="experiments.h" />
     <ClInclude Include="predefine.h" />
     <ClInclude Include="test.h" />
+    <ClInclude Include="allocation_contract.h" />
+    <ClInclude Include="experiment_support.h" />
+    <ClInclude Include="test_route_a.h" />
+    <ClInclude Include="route_a_batch.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="config\route_a_run_options.json" />
+    <None Include="scripts\validate_route_a.ps1" />
+    <None Include="scripts\run_route_a_batch.ps1" />
+    <None Include="scripts\route_a_batch.py" />
+    <None Include="scripts\plot_route_a.py" />
+    <None Include="scripts\test_route_a_plot.py" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

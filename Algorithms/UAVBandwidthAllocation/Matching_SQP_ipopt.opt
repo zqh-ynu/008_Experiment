@@ -7,3 +7,7 @@ mu_strategy adaptive
 print_level 1
 max_iter 200
 sb yes
+# Route A: do not silently relax nonnegative bandwidth bounds.
+bound_relax_factor 0
+constr_viol_tol 1e-10
+acceptable_constr_viol_tol 1e-10

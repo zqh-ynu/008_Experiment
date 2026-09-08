@@ -1,7 +1,8 @@
 """生成 ToN 扩展实验使用的成批用户与 UAV 实例。
 
 本入口使用相对于脚本文件的位置解析输入与输出目录，默认生成 30 个县区
-重复实例，并把一次正式生成放入 ``data_ToN/YYYY-MM-DD``。导入本模块不会
+重复实例，手动入口固定使用 ``data_ToN/2026-09-07``，供 C++ 先算 ID 1--10。
+所有条件的文件编号、表头和实际规模检查通过后才写生成完成配置。导入本模块不会
 创建目录；只有直接运行本文件或显式调用 ``generate_all_instances`` 才会写入
 完整批次。由于 UAV 网格部署耗时较长，普通语法或小样本检查不应调用该入口。
 """
@@ -39,6 +40,7 @@ from generate_user_data_ToN import (  # noqa: E402
     INSTANT_MESSAGE_VOICE_QOS,
     TABLE_3_APPLICATIONS,
     TABLE_6_SESSION_WEIGHTS,
+    USER_COLUMNS,
     generate_exp3_user_sets,
     generate_ton_users,
     load_location_pool,
@@ -206,7 +208,7 @@ def _build_generation_config(
     master_seed: int,
     replicate_records: list[dict[str, object]],
 ) -> dict[str, object]:
-    """构造一个简短的批次配置记录，不创建逐文件 manifest 或哈希。
+    """在输出完整性检查通过后构造生成完成记录，不创建逐文件 manifest 或哈希。
 
     参数:
         batch_date: 当前批次的日期目录名。
@@ -224,10 +226,13 @@ def _build_generation_config(
     }
     return {
         "batch_date": batch_date,
+        "generation_status": "complete",
         "generator_files": [
             "ExperimentsData/DatasetTest/generate_user_data_ToN.py",
             "ExperimentsData/DatasetTest/instance_generator/generate_instances_ToN.py",
+            "ExperimentsData/DatasetTest/uav_deployment.py",
         ],
+        "uav_deployment_rule": "max_new_coverage_connected_grid_including_zero_gain_v1",
         "location_input_dir": str(input_dir.resolve()),
         "replicate_count": len(replicate_records),
         "randomness": {
@@ -291,11 +296,89 @@ def _build_generation_config(
     }
 
 
+def _validate_generated_directory(
+    directory: Path,
+    expected_files: set[str],
+    expected_columns: list[str],
+    expected_rows: int,
+) -> None:
+    """核对一个条件目录的完整文件集合、CSV 表头和实际行数。
+
+    参数:
+        directory: 本次新生成的用户或 UAV 目录。
+        expected_files: 由重复实例 ID 和县区代码构造的准确文件名集合。
+        expected_columns: 按读取接口顺序排列的列名。
+        expected_rows: 每个文件必须具有的用户数或 UAV 数。
+
+    返回:
+        无。缺失/多余文件、不可读 CSV 或规模不符时抛错，不修复或覆盖文件。
+    """
+
+    actual_files = {path.name for path in directory.glob("*.csv") if path.is_file()}
+    if actual_files != expected_files:
+        missing = sorted(expected_files - actual_files)
+        unexpected = sorted(actual_files - expected_files)
+        raise RuntimeError(
+            f"生成不完整: {directory}; 缺失文件={missing}; 多余文件={unexpected}"
+        )
+    for filename in sorted(expected_files):
+        path = directory / filename
+        try:
+            dataframe = pd.read_csv(path, encoding="utf-8")
+        except Exception as error:
+            raise RuntimeError(f"生成的 CSV 无法读取: {path}: {error}") from error
+        if list(dataframe.columns) != expected_columns or len(dataframe) != expected_rows:
+            raise RuntimeError(
+                f"生成的 CSV 表头或实际规模不符: {path}; "
+                f"期望列={expected_columns}, 行数={expected_rows}; "
+                f"实际列={list(dataframe.columns)}, 行数={len(dataframe)}"
+            )
+
+
+def _validate_generated_batch(
+    batch_dir: Path,
+    replicate_records: list[dict[str, object]],
+) -> None:
+    """一次检查 EXP1--EXP4 所需输入，防止部署器仅打印错误后仍宣告批次成功。
+
+    参数:
+        batch_dir: 当前已写入用户/UAV CSV、尚未写完成配置的批次目录。
+        replicate_records: 按 ID 1--N 排列的县区记录，用于检查准确的配对文件名。
+
+    返回:
+        无。全部条件通过才返回；任何错误向上传播且不创建完成配置。
+    """
+
+    ids = [record["replicate_id"] for record in replicate_records]
+    if not ids or ids != list(range(1, len(ids) + 1)):
+        raise RuntimeError("生成记录必须包含连续的重复实例 ID 1--N")
+    uav_columns = ["uav_id", "longitude", "latitude", "bandwidth"]
+    directories = []
+    for user_number in USER_NUMBERS:
+        root = batch_dir / "variable_user_num" / f"{user_number}u_num"
+        directories.append((root / "user_data", f"{user_number}users_data", user_number, USER_COLUMNS))
+        directories.append((root / "uav_data", "10uavs_loc", 10, uav_columns))
+    for uav_number in UAV_NUMBERS:
+        root = batch_dir / "variable_uav_num" / str(uav_number)
+        directories.append((root / "uav_data", f"{uav_number}uavs_loc", uav_number, uav_columns))
+    for ratio in HARD_RATIOS:
+        root = batch_dir / "variable_hard_user_ratio" / str(int(round(ratio * 10)))
+        directories.append((root / "user_data", "3000users_data", 3000, USER_COLUMNS))
+        directories.append((root / "uav_data", "10uavs_loc", 10, uav_columns))
+    # EXP2/EXP4 共用的用户，以及 EXP4 共用的 UAV，已在 EXP1 的 3000-user 条件中检查。
+    for directory, pattern, expected_rows, columns in directories:
+        expected_files = {
+            f"{record['replicate_id']}_{pattern}_{record['adcode']}.csv"
+            for record in replicate_records
+        }
+        _validate_generated_directory(directory, expected_files, list(columns), expected_rows)
+
+
 def _write_generation_config(
     batch_dir: Path,
     config: dict[str, object],
 ) -> None:
-    """以 UTF-8 JSON 写入一次正式批次的简短生成记录。
+    """在完整性检查通过后以 UTF-8 JSON 写入简短完成记录，关闭文件后返回。
 
     参数:
         batch_dir: 当前日期批次根目录。
@@ -328,7 +411,8 @@ def generate_all_instances(
 
     注意:
         该函数会执行耗时的 UAV 网格部署。若同名日期目录已经存在，它会在
-        写任何批次文件前失败，且不会覆盖或清理已有数据。
+        写任何批次文件前失败，且不会覆盖或清理已有数据。全部输出检查通过后
+        才写入 generation_status=complete 的配置；失败保留现场，不支持追加生成。
     """
 
     normalized_date = _normalize_batch_date(batch_date)
@@ -408,6 +492,7 @@ def generate_all_instances(
             uav_number,
         )
 
+    _validate_generated_batch(batch_dir, replicate_records)
     config = _build_generation_config(
         normalized_date, DEFAULT_LOCATION_DIR, master_seed, replicate_records
     )
@@ -416,16 +501,24 @@ def generate_all_instances(
 
 
 def main() -> None:
-    """以默认日期、种子和 30 个重复实例执行一次完整正式生成。
+    """手动生成固定 2026-09-07 批次的 30 个输入，供 C++ 分两阶段计算。
 
     参数:
         无。
 
     返回:
-        无。成功时打印新日期批次的绝对路径。
+        无。完整性检查与配置写入成功后打印批次路径；失败不打印完成提示。
     """
 
-    output_dir = generate_all_instances()
+    # 与 C++ main.cpp 的 input_root 保持同一批次；以后扩算 ID 11--30 时不要重新生成。
+    batch_date = "2026-09-07"
+    master_seed = 20260904
+    replicate_count = 30
+    output_dir = generate_all_instances(
+        batch_date=batch_date,
+        master_seed=master_seed,
+        replicate_count=replicate_count,
+    )
     print(f"ToN 实验实例生成完成: {output_dir}")
 
 

@@ -663,6 +663,24 @@ public:
 		double epsilon = 0.1);
 
 
+	// Faster 新接口开始：保留旧接口和正式调度，供后续显式切换使用。
+	/**
+	 * @brief 通过对偶认证、非凹用户 DP 与凹用户精确注水实现改进的 ToN 单 UAV 近似算法。
+	 * @param uav 本次可用的新增带宽预算。
+	 * @param candidate_users 本次可服务的候选用户子集，输入顺序不被修改。
+	 * @param current_utilities 按全局用户 ID 索引的当前网络绝对效用。
+	 * @param base_bandwidths 同一 UAV 已有的基准带宽，按全局用户 ID 索引。
+	 * @param epsilon 误差参数，要求 0<epsilon<1/2，默认 0.1。
+	 * @return 新增带宽及真实边际效用；保持 (1-epsilon) 保证但不承诺与旧版输出一致。
+	 */
+	KnapsackResult AlgBetter_singleUAV_ToN_faster(
+		const Uav& uav,
+		const vector<User>& candidate_users,
+		const vector<double>& current_utilities,
+		const vector<double>& base_bandwidths,
+		double epsilon = 0.1);
+	// Faster 新接口结束。
+
 	/// <summary>
 	/// 在当前状态下，计算无人机uav_id子分配问题的KKT参数
 	/// </summary>
@@ -719,8 +737,9 @@ public:
 	 * @brief 执行 ToN 固定状态贪心多 UAV 分配及残余带宽阶段。
 	 * @param uavs 参与选择的 UAV 集合，每架 UAV 恰好处理一次。
 	 * @param users 当前系统模型中的完整用户集合。
-	 * @param used_single_alg 取 1 时调用 AlgFast_singleUAV_ToN，取 2 时调用 AlgBetter_singleUAV_ToN。
-	 * @param epsilon 传给 AlgBetter_singleUAV_ToN 的近似参数，必须满足 0 < epsilon < 1/2。
+	 * @param used_single_alg 取 1 时调用 AlgFast_singleUAV_ToN，取 2 时调用 AlgBetter_singleUAV_ToN，
+	 *        取 3 时调用 AlgBetter_singleUAV_ToN_faster。
+	 * @param epsilon 传给两种 AlgBetter 单 UAV 算法的近似参数，必须满足 0 < epsilon < 1/2。
 	 * @return 最终绝对结果：allocatedBandwidth 为总带宽，allocatedValue/totalValue 为绝对效用；
 	 *         同时返回与 UAV 结果一致的逐用户投影。
 	 */

@@ -761,17 +761,10 @@ TonFasterDualPoint ton_faster_dual(
  * @return 是否已证明该可行解达到本次 epsilon 要求；搜索失败不等于算法失败。
  */
 bool ton_faster_certified(const vector<TonUserProfile>& profiles, double budget,
-	const KnapsackResult& fast, double feasible_value, double epsilon,
-	TonSingleUavDiagnostics* diagnostics = nullptr)
+	const KnapsackResult& fast, double feasible_value, double epsilon)
 {
 	// 下修可行值、上修对偶值；不使用近似松弛可行值冒充上界。
-	// 只记录原流程实际求过的上界，不增加价格搜索或更改停止条件。
 	auto sufficient = [&](double upper) {
-		if (diagnostics) {
-			++diagnostics->dual_evaluations;
-			if (std::isfinite(upper) && (!std::isfinite(diagnostics->best_upper) ||
-				upper < diagnostics->best_upper)) diagnostics->best_upper = upper;
-		}
 		return std::isfinite(upper) &&
 			feasible_value - allocation_tolerance(feasible_value, upper) >=
 			(1.0 - epsilon) * upper;
@@ -5115,13 +5108,8 @@ KnapsackResult BAProblem::AlgFast_singleUAV_ToN(
 	const Uav& uav,
 	const vector<User>& candidate_users,
 	const vector<double>& current_utilities,
-	const vector<double>& base_bandwidths,
-	TonFastDiagnostics* diagnostics)
+	const vector<double>& base_bandwidths)
 {
-	if (diagnostics) {
-		*diagnostics = TonFastDiagnostics();
-		diagnostics->candidate_count = candidate_users.size();
-	}
 	ton_validate_single_inputs(
 		sysModel, uav, candidate_users, current_utilities, base_bandwidths);
 	KnapsackResult empty_result;
@@ -5142,17 +5130,6 @@ KnapsackResult BAProblem::AlgFast_singleUAV_ToN(
 	}
 	if (profiles.empty())
 		return empty_result;
-
-	if (diagnostics) {
-		diagnostics->retained_count = profiles.size();
-		for (const auto& profile : profiles) {
-			const bool concave = profile.user_type == ELASTIC_UTILITY &&
-				profile.current_utility <= ton_elastic_utility(sysModel.users[profile.user_id],
-					profile.channel, profile.base_bandwidth);
-			if (concave) ++diagnostics->concave_count;
-			else ++diagnostics->nonconcave_count;
-		}
-	}
 
 	// 仅建立输出及平台填充所需的 ID 下标顺序，不改变求解时 profiles 的遍历顺序。
 	vector<size_t> output_order(profiles.size());
@@ -5202,7 +5179,6 @@ KnapsackResult BAProblem::AlgFast_singleUAV_ToN(
 				result.elasticValue += value;
 			}
 		}
-		if (diagnostics) diagnostics->value = result.totalValue;
 		return result;
 		};
 	double sum_of_upper_bounds = 0.0;
@@ -5210,7 +5186,6 @@ KnapsackResult BAProblem::AlgFast_singleUAV_ToN(
 		sum_of_upper_bounds += profile.max_extra;
 	if (sum_of_upper_bounds <= budget + EPS)
 	{
-		if (diagnostics) diagnostics->return_reason = "all_upper_bounds";
 		// 每个用户的最大新增带宽之和不超预算时，无需搜索水位，全部取上界即最优。
 		for (size_t index = 0; index < profiles.size(); ++index)
 			allocations[index] = profiles[index].max_extra;
@@ -5404,22 +5379,14 @@ KnapsackResult BAProblem::AlgFast_singleUAV_ToN(
 			allocations[index] < profiles[index].tau - tolerance)
 			unsafe_users.push_back(index);
 	}
-	if (diagnostics) diagnostics->unsafe_count = unsafe_users.size();
-	if (unsafe_users.empty()) {
-		if (diagnostics) diagnostics->return_reason = "lcm_safe";
+	if (unsafe_users.empty())
 		return make_result(nullptr);
-	}
 	if (unsafe_users.size() != 1)
 		throw std::logic_error("ToN canonical LCM solution has multiple unsafe users");
 
 	// canonical 解保证至多一个 unsafe 用户。比较：
 	// 1) 删除该用户并保留其余分配；2) 仅将该用户服务到 tau_i。返回真实边际值较大者。
 	const size_t unsafe_index = unsafe_users.front();
-	if (diagnostics) {
-		diagnostics->unsafe_user_id = profiles[unsafe_index].user_id;
-		diagnostics->unsafe_bandwidth = allocations[unsafe_index];
-		diagnostics->unsafe_tau = profiles[unsafe_index].tau;
-	}
 	/**
 	 * @brief 按原 ID 累加顺序计算一个候选的总效用，并缓存每个用户的真实效用。
 	 * @param only_unsafe 为真时仅给 unsafe 用户分配 tau；否则仅删除该用户的分配。
@@ -5449,12 +5416,10 @@ KnapsackResult BAProblem::AlgFast_singleUAV_ToN(
 	// 比较条件及同分选择不变，只物化获选候选；复用效用缓存避免再次计算对数。
 	if (only_value > without_value + EPS)
 	{
-		if (diagnostics) diagnostics->return_reason = "round_only_unsafe";
 		std::fill(allocations.begin(), allocations.end(), 0.0);
 		allocations[unsafe_index] = profiles[unsafe_index].tau;
 		return make_result(&only_values);
 	}
-	if (diagnostics) diagnostics->return_reason = "round_without_unsafe";
 	allocations[unsafe_index] = 0.0;
 	return make_result(&without_values);
 }
@@ -5729,14 +5694,8 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
 KnapsackResult BAProblem::AlgBetter_singleUAV_ToN_faster(
 	const Uav& uav, const vector<User>& candidate_users,
 	const vector<double>& current_utilities, const vector<double>& base_bandwidths,
-	double epsilon, const TonFasterOptions& options, TonSingleUavDiagnostics* diagnostics)
+	double epsilon)
 {
-	if (diagnostics) {
-		*diagnostics = TonSingleUavDiagnostics();
-		diagnostics->candidate_count = candidate_users.size();
-		diagnostics->epsilon = epsilon;
-		diagnostics->certificate_early_return = options.certificate_early_return;
-	}
 	if (!std::isfinite(epsilon) || epsilon <= 0.0 || epsilon >= 0.5)
 		throw std::invalid_argument("Faster 的 epsilon 必须满足 0<epsilon<1/2");
 	vector<User> ordered_candidates = candidate_users;
@@ -5749,23 +5708,14 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN_faster(
 	KnapsackResult empty;
 	empty.uav_id = uav.ID;
 	const double budget = std::max(0.0, uav.total_bandwidth);
-	if (candidate_users.empty() || budget <= EPS) {
-		if (diagnostics) { diagnostics->final_value = 0; diagnostics->return_reason = "empty"; }
-		return empty;
-	}
+	if (candidate_users.empty() || budget <= EPS) return empty;
 	auto profiles = ton_faster_profiles(
 		sysModel, uav, candidate_users, current_utilities, base_bandwidths);
-	if (profiles.empty()) {
-		if (diagnostics) { diagnostics->final_value = 0; diagnostics->return_reason = "no_positive_profile"; }
-		return empty;
-	}
+	if (profiles.empty()) return empty;
 
 	BAProblem local_problem(local_model);
 	auto fast_original = local_problem.AlgFast_singleUAV_ToN(
-		local_model.uavs[0], local_model.users, local_utilities, local_bases,
-		diagnostics ? &diagnostics->fast : nullptr);
-	if (diagnostics && diagnostics->fast.unsafe_user_id >= 0)
-		diagnostics->fast.unsafe_user_id = ordered_candidates.at(diagnostics->fast.unsafe_user_id).ID;
+		local_model.uavs[0], local_model.users, local_utilities, local_bases);
 	vector<double> fast_allocations(profiles.size(), 0.0);
 	vector<size_t> concave, nonconcave;
 	for (size_t i = 0; i < profiles.size(); ++i)
@@ -5787,21 +5737,9 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN_faster(
 	}
 	auto fast = ton_faster_result(sysModel, uav.ID, profiles, fast_allocations, budget);
 	const double lower_value = fast.totalValue;
-	if (diagnostics) {
-		diagnostics->retained_count = profiles.size();
-		diagnostics->concave_count = concave.size();
-		diagnostics->nonconcave_count = nonconcave.size();
-		diagnostics->fast_value = lower_value;
-	}
-	if (!nonconcave.empty() && lower_value > EPS) {
-		if (diagnostics) diagnostics->certificate_attempted = true;
-		const bool certified = ton_faster_certified(profiles, budget, fast, lower_value, epsilon, diagnostics);
-		if (diagnostics) diagnostics->certificate_satisfied = certified;
-		if (certified && options.certificate_early_return) {
-			if (diagnostics) { diagnostics->final_value = lower_value; diagnostics->return_reason = "certificate_fast"; }
-			return fast;
-		}
-	}
+	if (!nonconcave.empty() && lower_value > EPS &&
+		ton_faster_certified(profiles, budget, fast, lower_value, epsilon))
+		return fast;
 
 	TonFasterConcavePool pool(profiles, concave);
 	vector<double> allocations(profiles.size(), 0.0);
@@ -5809,11 +5747,6 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN_faster(
 	{
 		pool.allocate(budget, allocations);
 		auto result = ton_faster_result(sysModel, uav.ID, profiles, allocations, budget);
-		if (diagnostics) {
-			diagnostics->candidate_value = result.totalValue;
-			diagnostics->final_value = result.totalValue > fast.totalValue ? result.totalValue : fast.totalValue;
-			diagnostics->return_reason = result.totalValue > fast.totalValue ? "concave_candidate" : "concave_fast_incumbent";
-		}
 		return result.totalValue > fast.totalValue ? result : fast;
 	}
 	if (lower_value <= EPS)
@@ -5831,12 +5764,6 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN_faster(
 	if (raw_limit > static_cast<long double>(std::numeric_limits<int>::max() - 2))
 		throw std::length_error("Faster 利润状态超过 int 可表示范围");
 	const int limit = static_cast<int>(raw_limit);
-	if (diagnostics) {
-		diagnostics->dp_entered = true;
-		diagnostics->active_bound = active_bound;
-		diagnostics->delta = delta;
-		diagnostics->profit_limit = limit;
-	}
 	vector<int> profits(nonconcave.size(), 0);
 	for (size_t i = 0; i < nonconcave.size(); ++i)
 	{
@@ -5966,11 +5893,6 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN_faster(
 	auto result = ton_faster_result(sysModel, uav.ID, profiles, allocations, budget);
 	if (result.totalValue + allocation_tolerance(result.totalValue, best_score) < best_score)
 		throw std::logic_error("Faster 真实收益低于 DP 与精确注水的合并收益");
-	if (diagnostics) {
-		diagnostics->candidate_value = result.totalValue;
-		diagnostics->final_value = result.totalValue > fast.totalValue ? result.totalValue : fast.totalValue;
-		diagnostics->return_reason = result.totalValue > fast.totalValue ? "dp_candidate" : "dp_fast_incumbent";
-	}
 	return result.totalValue > fast.totalValue ? result : fast;
 }
 
@@ -5993,9 +5915,8 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
 	const vector<Uav>& uavs,
 	const vector<User>& users,
 	int used_single_alg,
-	double epsilon, const TonFasterOptions& options, TonNetworkDiagnostics* diagnostics)
+	double epsilon)
 {
-	if (diagnostics) *diagnostics = TonNetworkDiagnostics();
 	if (used_single_alg != 1 && used_single_alg != 2 && used_single_alg != 3)
 		throw std::invalid_argument("ToN single-UAV selector must be 1, 2 or 3");
 	if (!std::isfinite(epsilon) || epsilon <= 0.0 || epsilon >= 0.5)
@@ -6036,10 +5957,8 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
 		participating[uav.ID] = 1;
 		uav_by_id[uav.ID] = uav;
 	}
-	if (uavs.empty()) {
-		if (diagnostics) { diagnostics->pre_residual_utility = 0; diagnostics->post_residual_utility = 0; }
+	if (uavs.empty())
 		return { uav_results, construct_user_results(uav_results) };
-	}
 
 	// selected 防止同一 UAV 被重复选择；selection_order 同时决定后续平局和残余处理顺序。
 	vector<char> selected(model_uav_count, 0);
@@ -6053,42 +5972,14 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
 	auto solve_single_uav = [&](const Uav& candidate_uav,
 		const vector<User>& candidates,
 		const vector<double>& state,
-		const vector<double>& bases, int selector, const string& phase, size_t round) {
-		TonSingleUavDiagnostics* single = nullptr;
-		if (diagnostics) {
-			// 在求解前登记输入；即使本次抛异常，调用方仍可保存最后一个未完成调用。
-			diagnostics->calls.emplace_back();
-			auto& trace = diagnostics->calls.back();
-			trace.phase = phase; trace.round = round; trace.uav_id = candidate_uav.ID;
-			trace.selector = selector; trace.budget = candidate_uav.total_bandwidth;
-			trace.selected = phase == "residual";
-			trace.current_utilities = state; trace.base_bandwidths = bases;
-			for (const auto& user : candidates) trace.candidate_ids.push_back(user.ID);
-			single = &trace.oracle;
-		}
-		if (selector == 1) {
-			auto result = AlgFast_singleUAV_ToN(candidate_uav, candidates, state, bases,
-				single ? &single->fast : nullptr);
-			if (single) {
-				single->candidate_count = single->fast.candidate_count;
-				single->retained_count = single->fast.retained_count;
-				single->concave_count = single->fast.concave_count;
-				single->nonconcave_count = single->fast.nonconcave_count;
-				single->fast_value = result.totalValue; single->final_value = result.totalValue;
-				single->return_reason = "fast_" + single->fast.return_reason;
-			}
-			return result;
-		}
-		if (selector == 2) {
-			auto result = AlgBetter_singleUAV_ToN(candidate_uav, candidates, state, bases, epsilon);
-			if (single) {
-				single->candidate_count = candidates.size(); single->epsilon = epsilon;
-				single->final_value = result.totalValue; single->return_reason = "legacy_dp_uninstrumented";
-			}
-			return result;
-		}
+		const vector<double>& bases) {
+		if (used_single_alg == 1)
+			return AlgFast_singleUAV_ToN(candidate_uav, candidates, state, bases);
+		if (used_single_alg == 2)
+			return AlgBetter_singleUAV_ToN(
+				candidate_uav, candidates, state, bases, epsilon);
 		return AlgBetter_singleUAV_ToN_faster(
-			candidate_uav, candidates, state, bases, epsilon, options, single);
+			candidate_uav, candidates, state, bases, epsilon);
 		};
 
 	for (size_t round = 0; round < uavs.size(); ++round)
@@ -6110,8 +6001,7 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
 				? empty_candidates
 				: service_it->second;
 			KnapsackResult marginal_result = solve_single_uav(
-				candidate_uav, candidates, frozen_state, zero_base_bandwidths,
-				used_single_alg, "greedy", round);
+				candidate_uav, candidates, frozen_state, zero_base_bandwidths);
 			double score = marginal_result.totalValue;
 			if (best_uav_id < 0 || score > best_score + EPS ||
 				(std::abs(score - best_score) <= EPS && uav_id < best_uav_id))
@@ -6138,12 +6028,6 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
 			sysModel, best_uav_id, absolute_bandwidths);
 		selected[best_uav_id] = 1;
 		selection_order.push_back(best_uav_id);
-		if (diagnostics) {
-			diagnostics->selection_order.push_back(best_uav_id);
-			for (auto& trace : diagnostics->calls)
-				if (trace.phase == "greedy" && trace.round == round && trace.uav_id == best_uav_id)
-					trace.selected = true;
-		}
 
 		// 只有本轮真正选中的 UAV 才能在所有候选评估结束后更新网络状态 m_j。
 		for (int user_id : uav_results[best_uav_id].allocatedList)
@@ -6208,9 +6092,11 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
 		};
 
 	// 按实际选中顺序使用残余带宽；先处理的 UAV 新接纳用户后，后续 UAV 会将其视为 b 类。
-	if (diagnostics) diagnostics->pre_residual_utility = total_network_utility();
 	for (int uav_id : selection_order)
 	{
+		// Fast 在唯一关联完成后结束分配；两种 Better 保留残余带宽分配。
+		if (used_single_alg == 1)
+			break;
 		const Uav& original_uav = uav_by_id[uav_id];
 		double residual_bandwidth = original_uav.total_bandwidth -
 			uav_results[uav_id].totalWeight;
@@ -6255,10 +6141,8 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
 		Uav residual_uav = original_uav;
 		residual_uav.total_bandwidth = residual_bandwidth;
 		// 残余带宽阶段统一使用 AlgFast，基于已有带宽和当前效用优化新增带宽。
-		KnapsackResult marginal_result = diagnostics ? solve_single_uav(
-			residual_uav, residual_candidates, residual_state, residual_bases,
-			1, "residual", static_cast<size_t>(std::find(selection_order.begin(), selection_order.end(), uav_id) - selection_order.begin()))
-			: AlgFast_singleUAV_ToN(residual_uav, residual_candidates, residual_state, residual_bases);
+		KnapsackResult marginal_result = AlgFast_singleUAV_ToN(
+			residual_uav, residual_candidates, residual_state, residual_bases);
 		if (marginal_result.totalValue <= EPS)
 			continue;
 
@@ -6300,7 +6184,6 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
 			throw std::logic_error("ToN residual allocation decreased network utility");
 	}
 
-	if (diagnostics) diagnostics->post_residual_utility = total_network_utility();
 	map<int, UserResult> user_results = construct_user_results(uav_results);
 	return { uav_results, user_results };
 }

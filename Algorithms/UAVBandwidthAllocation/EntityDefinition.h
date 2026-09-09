@@ -2,7 +2,6 @@
 // 本文件声明 UAV 带宽分配系统模型、结果结构以及各类算法接口。
 #include "predefine.h"
 #include "allocation_contract.h"
-#include "ton_quality_diagnostics.h"
 
 
 /// @brief AlgSA-DD 的连续近似、对偶带宽求解及现有后处理参数；不保证激活新的关联。
@@ -635,7 +634,6 @@ public:
 
 	/**
 	 * @brief 使用 LCM 与二候选舍入求解 ToN 快速单 UAV 边际效用问题。
-	 * @param diagnostics 可选 Fast 分支接收器；空指针关闭诊断。
 	 * @param uav 待评估 UAV；total_bandwidth 表示本次可用的新增带宽预算。
 	 * @param candidate_users 该 UAV 在本次调用中可以服务的候选用户。
 	 * @param current_utilities 按用户 ID 索引的当前网络绝对效用 m_j。
@@ -646,8 +644,7 @@ public:
 		const Uav& uav,
 		const vector<User>& candidate_users,
 		const vector<double>& current_utilities,
-		const vector<double>& base_bandwidths,
-		TonFastDiagnostics* diagnostics = nullptr); // 可选观测接收器；不改变求解规则。
+		const vector<double>& base_bandwidths);
 
 	/**
 	 * @brief 使用缩放利润 DP 与 SMAWK 求解 ToN 改进单 UAV 边际效用问题。
@@ -669,8 +666,6 @@ public:
 	// Faster 新接口开始：保留旧接口和正式调度，供后续显式切换使用。
 	/**
 	 * @brief 通过对偶认证、非凹用户 DP 与凹用户精确注水实现改进的 ToN 单 UAV 近似算法。
-	 * @param options 显式证书早退设置；关闭时仍观测证书，但不据此返回。
-	 * @param diagnostics 可选单次调用诊断；未计算的值保持 NaN。
 	 * @param uav 本次可用的新增带宽预算。
 	 * @param candidate_users 本次可服务的候选用户子集，输入顺序不被修改。
 	 * @param current_utilities 按全局用户 ID 索引的当前网络绝对效用。
@@ -683,9 +678,7 @@ public:
 		const vector<User>& candidate_users,
 		const vector<double>& current_utilities,
 		const vector<double>& base_bandwidths,
-		double epsilon = 0.1,
-		const TonFasterOptions& options = TonFasterOptions(),
-		TonSingleUavDiagnostics* diagnostics = nullptr);
+		double epsilon = 0.1);
 	// Faster 新接口结束。
 
 	/// <summary>
@@ -747,8 +740,6 @@ public:
 	 * @param used_single_alg 取 1 时调用 AlgFast_singleUAV_ToN，取 2 时调用 AlgBetter_singleUAV_ToN，
 	 *        取 3 时调用 AlgBetter_singleUAV_ToN_faster。
 	 * @param epsilon 传给两种 AlgBetter 单 UAV 算法的近似参数，必须满足 0 < epsilon < 1/2。
-	 * @param options 仅控制 Faster 的证书早退；默认不改变正式流程。
-	 * @param diagnostics 可选轨迹容器；非空时重置并记录本次调用，不改动输入状态。
 	 * @return 最终绝对结果：allocatedBandwidth 为总带宽，allocatedValue/totalValue 为绝对效用；
 	 *         同时返回与 UAV 结果一致的逐用户投影。
 	 */
@@ -756,9 +747,7 @@ public:
 		const vector<Uav>& uavs,
 		const vector<User>& users,
 		int used_single_alg = 2,
-		double epsilon = 0.1,
-		const TonFasterOptions& options = TonFasterOptions(),
-		TonNetworkDiagnostics* diagnostics = nullptr);
+		double epsilon = 0.1);
 
 
 	/**

@@ -216,6 +216,7 @@
     <ClInclude Include="test.h" />
     <ClInclude Include="allocation_contract.h" />
     <ClInclude Include="experiment_support.h" />
+    <ClInclude Include="localization_experiments.h" />
     <ClInclude Include="test_route_a.h" />
     <ClInclude Include="route_a_batch.h" />
   </ItemGroup>

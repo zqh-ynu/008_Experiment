@@ -59,6 +59,9 @@
     <ClInclude Include="experiment_support.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="localization_experiments.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="test_route_a.h">
       <Filter>头文件</Filter>
     </ClInclude>

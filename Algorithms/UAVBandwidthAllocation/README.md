@@ -2,7 +2,18 @@
 
 面向混合 QoS 用户的多 UAV 用户关联与带宽分配研究代码，包含两种 ToN 提出方法、四种基准、EXP1–EXP4 驱动及逐实例记录/比较均值逻辑。
 
-> **当前状态：固定 ToN 批次 / EXP1–EXP4 各条件先跑 10 个实例（2026-09-07）**
+当前入口已接入 [EXP5 定位误差实验](LOCALIZATION_EXPERIMENT.md)：十网络、六方法、
+7 个水平 RMSE 档位，共 780 次调用，在 EXP1–EXP3 定向重跑成功后执行。
+旧三网络默认接口保留；独立合成验证不代表正式实验已执行。
+
+> **当前入口：EXP1–EXP3 定向重跑 → 十网络 EXP5（2026-09-08）**
+>
+> 固定批次已备好，不重跑生成器。本轮只重算 EXP1–EXP3 的两个提出方法（300 次），
+> 然后执行十网络 EXP5（780 次）。先备份，再替换 30 份提出方法 CSV、刷新 36 张汇总；
+> 60 份基线 CSV 保持字节不变。EXP4、旧 `run_01`、EXP5 `pilot_01` 不变。
+> 新版独立断点与原正式结果隔离，全部阶段完成前不宣称新实验完成。
+>
+> **以下为此前四实验输入准备与运行方式的历史记录，不是本轮执行指令：**
 >
 > - 用户先手动生成固定批次 `data_ToN/2026-09-07` 的 30 个输入，再在 Visual Studio 中编译、运行 `main.cpp`。四个实验顺序执行，各条件先算 ID 1–10，默认输出 `run_ton_01`。
 > - 正常运行逐算法、逐实例立即保存，只生成逐实例 CSV、12 个 summary CSV 和每实验一份 `run_info.json`。
@@ -19,7 +30,7 @@
 
 | 新标签 | 实际调用 | 实现文件 | 历史标签 |
 | --- | --- | --- | --- |
-| `ApproBetter` | `Appro_multiUAV_ToN(..., 2, 0.1)` | [EntityDefinition.cpp](EntityDefinition.cpp) | 同名 |
+| `ApproBetter` | `Appro_multiUAV_ToN(..., 3, 0.1)` → `AlgBetter_singleUAV_ToN_faster` | [EntityDefinition.cpp](EntityDefinition.cpp) | 同名 |
 | `ApproFast` | `Appro_multiUAV_ToN(..., 1, 0.1)` | [EntityDefinition.cpp](EntityDefinition.cpp) | 同名 |
 | `AlgRelaxRound` | `ConvexRelaxationAndRounding_multiUAV()` | [Convexrelaxationandrounding.cpp](Convexrelaxationandrounding.cpp) | `AlgDRL` |
 | `AlgSwapMatching` | `MatchingSQP_Allocation()` | [MatchingSQP.cpp](MatchingSQP.cpp) | `AlgMatching` |
@@ -50,10 +61,10 @@
 
 ### 1.1.1 独立的新接口：AlgBetter_singleUAV_ToN_faster
 
-新函数已独立提供，**尚未接入正式实验**。现有 `ApproBetter` 仍调用旧 `AlgBetter_singleUAV_ToN`；AlgFast、多 UAV 贪心和残余带宽路径不变。需要使用新算法时，可显式调用：
+新函数已通过 selector `3` **接入公共正式调度**；旧单 UAV 接口保留。AlgFast、多 UAV 贪心和残余带宽路径不变。也可显式调用：
 
 ```cpp
-// 参数和返回值沿用旧单 UAV 接口；这里仅演示调用，不会修改正式实验调度。
+// 参数和返回值沿用旧单 UAV 接口；公共 ApproBetter 已使用对应的多 UAV selector 3。
 auto result = problem.AlgBetter_singleUAV_ToN_faster(
     uav, candidate_users, current_utilities, base_bandwidths, 0.1);
 ```
@@ -68,7 +79,7 @@ auto result = problem.AlgBetter_singleUAV_ToN_faster(
 
 理论依据：最多 `s` 个非凹用户发生向下取整，总损失不超过 `s*Delta=epsilon*L<=epsilon*OPT`；凹部分精确求解。因此在当前模型及论文实数算术约定下保持 `(1-epsilon)` 近似保证，时间为 `O(n log n+(d*s+s log n)/epsilon) ⊆ O(n²/epsilon)`。浮点认证向保守方向保护，裁剪不确定时保留更多状态；非法输入、非有限数值、容量溢出及实质性回溯错误明确报错，不静默伪造成功。
 
-最终版本的 MSVC 独立编译通过（退出码 0），20 个确定性合成小例、374 项断言通过，包括极小激活集合连续参考解、认证通过/不通过路径、矩形 SMAWK 枚举核对，以及稀疏全局用户 ID 和非零 UAV ID 的映射。未运行正式数据、未写入现有结果，不提供性能提速结论。验证产物置于本地忽略目录 `x64/AlgBetterFasterSmoke/20260908_153414/`；不增加长期测试框架，也不修改定位误差实验测试。后续若接入正式实验，必须显式选择新结果批次，避免与旧算法结果混写。
+最终版本的 MSVC 独立编译通过（退出码 0），20 个确定性合成小例、374 项断言通过，包括极小激活集合连续参考解、认证通过/不通过路径、矩形 SMAWK 枚举核对，以及稀疏全局用户 ID 和非零 UAV ID 的映射。未运行正式数据、未写入现有结果，不提供性能提速结论。验证产物置于本地忽略目录 `x64/AlgBetterFasterSmoke/20260908_153414/`；不增加长期测试框架，也不修改定位误差实验测试。上述是历史独立接口验证，不是本轮复测。本轮已接入调度，采用独立新版检查点和受控替换，不向旧正式 CSV 追加新版行；两个提出方法的全部指标和耗时均重新计算，不要求新旧分配逐位相同。
 
 旧 MASS 函数（包括 `WaterFillingAlgorithm_singleUAV_new`、`FPTAS_singleUAV_new` 和 `approposed_multiUAV_allocation_new`）仍在源文件中，但不是上述两个正式标签的入口。
 
@@ -133,22 +144,24 @@ $$
 
 ## 3. 在 Visual Studio 中设置与运行
 
-先在具备 Python 3.10+、NumPy、pandas 的环境中手动运行 [generate_instances_ToN.py](../../ExperimentsData/DatasetTest/instance_generator/generate_instances_ToN.py)。它的 `main()` 固定 `batch_date="2026-09-07"`、生成种子 `20260904`、`replicate_count=30`，检查所有输入文件后才写 `generation_status="complete"` 的配置。生成完成后，不要为 C++ 续跑或扩样重新运行生成器。
+固定批次当前已完成，**不要重新运行生成器**。以下设置说明仅用于追溯 [generate_instances_ToN.py](../../ExperimentsData/DatasetTest/instance_generator/generate_instances_ToN.py)。它的 `main()` 固定 `batch_date="2026-09-07"`、生成种子 `20260904`、`replicate_count=30`，检查所有输入文件后才写 `generation_status="complete"` 的配置。生成完成后，不要为 C++ 续跑或扩样重新运行生成器。
 
 然后打开本项目解决方案，选择 **Release / x64**，在 [main.cpp](main.cpp) 的参数区查看设置，由用户编译并按 F5 或 Ctrl+F5 执行。项目调试命令参数留空；任何旧 CLI 参数均被拒绝。**数据生成、编译及正式实验均由用户显式启动，C++ 不自动调用 Python。**
 
 | 参数 | 第一轮默认值 | 用法 |
 | --- | --- | --- |
-| `instance_count` | 10 | 每个条件计算 ID 1–10；本批次备好 30 个输入，后续改为 30 补算 ID 11–30 |
+| `instance_count` | 10 | 本轮固定 ID 1–10，EXP5 使用十网络；临时入口拒绝改为 30 |
 | `master_seed` | 20260905 | 保持同一实例/方法的随机种子稳定 |
 | `rounding_trials` | 2 | AlgRelaxRound 的既有舍入次数 |
-| `ton_epsilon` | 0.1 | 允许算法已有范围 `0 < epsilon < 0.5` |
+| `ton_epsilon` | 0.1 | 算法范围不变，但本轮临时入口固定为 0.1 |
 | `input_root` | `ExperimentsData/data_ToN/2026-09-07` 的绝对路径 | 只控制输入；固定批次不随续跑日期变化；结构体默认值仍是旧 `data` 以兼容已有调用 |
 | `output_name` | `run_ton_01` | 仅字母、数字、下划线或连字符；不是完整路径 |
-| `conditions` | 空列表 | 四个实验各自使用全部标准条件，不共用 EXP1 的条件键 |
+| `conditions` | 空列表 | 三个实验各自使用完整标准条件；EXP5 使用独立 RMSE 矩阵 |
 | `reuse_exp1_root` | 空字符串 | 后续运行保持为空，不再指向下文的历史来源路径 |
 
-`main()` 直接按 EXP1 → EXP2 → EXP3 → EXP4 调用四个已有驱动；临时 HardFirst 重跑调用及其提前退出已注释，函数定义保留。任一实验出错即停止，后续实验不会自动启动；再次手动运行时跳过已保存的有效记录。EXP2–EXP4 忽略 EXP1 复用来源。
+`main()` 当前只调用 `rerun_proposed_exp1_exp3(options)`，成功后再调用 `exp5_different_location_error(options)`；EXP4 调用保留为注释。任一阶段失败即停止，不重试、不进入后续阶段。同一入口重启只恢复新版检查点；不把旧 CSV 视作新计算。旧临时 HardFirst/算法试运行代码不恢复。
+
+本轮定向重跑为 EXP1/2/3 的 100/80/120 次，加上 EXP5 的 780 次，共 1080 次。输入根目录、输出名、ID 1–10、种子、舍入次数和 epsilon 均由临时入口严格固定。以后扩样须另行显式调整入口，不能只将本轮 `instance_count` 改为 30。
 
 `config/route_a_run_options.json` 已不参与运行。各实验的物理参数仍读取对应的 `ExperimentsResults/EXP*/def_config.json`，没有修改原有信道配置。
 
@@ -159,7 +172,7 @@ $$
 | EXP3 hard 比例 | 0/2/4/6/8/10，代表 0/0.2/…/1.0 | `variable_hard_user_ratio/<ratio>/` | 40 MHz |
 | EXP4 带宽 | 10/20/30/40/50 | `variable_user_num/3000u_num/`，10 UAV | 条件值，MHz |
 
-第一轮共 20 个条件、200 个“条件—实例”组合、1200 次算法调用（EXP1/2/3/4 分别为 300/240/360/300），不是 200 个独立网络样本。
+历史四实验全方法矩阵共 20 个条件、200 个“条件—实例”组合、1200 次算法调用（EXP1/2/3/4 分别为 300/240/360/300），不是 200 个独立网络样本。
 
 除旧 `data` 兼容目录外，输入根目录必须有 `generation_config_ToN.json`，且 `generation_status="complete"`、声明的连续 ID 和实例总数足以覆盖当前目标。目录或完成配置缺失均报错，绝不自动退回旧输入。实际文件必须成对包含 ID 1–N，不能跳过缺失 ID 后用更高编号补数；重复 ID、不可读或配对不足也会停止。用户/UAV CSV 保留既定表头：
 
@@ -179,6 +192,21 @@ uav_id,longitude,latitude,bandwidth
 本机已有的 `.vcxproj.user` 为 Release|x64 配置了 IPOPT DLL 路径，Release 输出目录也已有依赖 DLL。若换机后出现缺失 DLL，应恢复该依赖环境，不必恢复旧批次脚本。
 
 ## 4. 写盘、续跑与最小输出
+
+### 4.0 本轮定向替换的专用记录
+
+每个已有 `run_ton_01` 下新增 `rerun_proposed/ton-proposed-fast-faster-v1/`：
+
+- `state.json`：运行身份、源版本、输入/配置 SHA-256、构建设置、基线校验值及恢复阶段。
+- `backup/`：原两个提出方法 CSV、12 张汇总和运行信息；一次性备份，不覆盖、不删除。
+- `new_results/`：逐实例原子保存的新版提出方法 CSV，不向正式旧文件追加。
+- `candidate/`：完整待发布文件，发布中断后保留并校验。
+
+先只读检查三个实验及全部输入，再完成全部备份，最后计算。恢复阶段为 `backing_up → computing → publishing → complete`。过渡期正式汇总标为 `stale`/`writing` 且保留旧版本；一个实验全部文件和汇总发布、基线校验通过后，才切换为规范的新版本元数据。发布目标只能是旧内容或精确的新候选，第三种内容报错停止。
+
+主入口用 Windows 命名互斥对象限制并发，退出自动释放，不创建锁文件。旧程序不认识此锁，仍须手动确保无其他写入者。原子性是逐文件重命名，不承诺整目录事务或断电耐久性；临时文件保留，不计入完成记录。
+
+**下面的普通全方法驱动说明不适用于上述临时替换流程；本轮会额外生成 4.0 的检查点和备份。**
 
 执行顺序为 **实验 → 条件 → 实例 → 六种算法**。每个算法运行完即计算指标、追加一行、刷新并关闭 CSV，然后运行下一种算法。控制台显示 `RUN`、`SAVED`、`SKIP` 和耗时；不生成监测日志。
 
@@ -225,7 +253,7 @@ instance_id,seed,status,elapsed_ms,diagnostics,duration,total_num,hard_num,elast
 
 ### 4.3 参数记录与汇总
 
-`run_info.json` 记录实际参数、物理配置数值、条件/输入路径及 ID、算法版本、IDE 构建配置、复用来源和汇总状态。新算法版本为 `hardfirst-subchannel-da-v1-residual-fast-v1`，同时记录 `hard_first_da_policy`（偏好、单 UAV 改投、有限恢复和有效/占用宽度口径），与其他设置一起严格比对。旧成组版本和缺少/改变策略的记录不能续写；`run_01` 保持原样。它不保存输入或源码副本，也不核对文件内容哈希；**同路径输入内容、算法代码或依赖发生变化时，应由维护者换新输出名称，不能依赖本框架自动识别这些变化。**
+`run_info.json` 记录实际参数、物理配置数值、条件/输入路径及 ID、算法版本、IDE 构建配置、复用来源和汇总状态。当前算法组合版本为 `ton-proposed-fast-faster-v1`，记录 `proposed_algorithms` 的实际 selector/入口，以及 `hard_first_da_policy`（偏好、单 UAV 改投、有限恢复和有效/占用宽度口径），与其他设置一起严格比对。旧成组版本和缺少/改变策略的记录不能续写；`run_01` 保持原样。它不保存输入或源码副本，也不核对文件内容哈希；**同路径输入内容、算法代码或依赖发生变化时，应由维护者换新输出名称，不能依赖本框架自动识别这些变化。**
 
 `summary.instance_count` 表示已有汇总对应的每条件样本数；`summary.status` 为 `not_generated`、`stale`、`writing` 或 `complete`。只有 `complete` 且样本数等于当前目标时，才是当前完整汇总。
 

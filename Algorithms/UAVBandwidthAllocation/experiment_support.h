@@ -23,7 +23,13 @@ inline const vector<string> method_name_list = {
 };
 inline const string TON_RESULT_VERSION_DIR = "ToN_simple/";
 inline const string SIMPLE_RUN_SCHEMA = "ton-simple-v1";
-inline const string SIMPLE_ALGORITHM_VERSION = "hardfirst-subchannel-da-v1-residual-fast-v1";
+inline const string SIMPLE_ALGORITHM_VERSION = "ton-proposed-fast-faster-v1";
+
+/// Record the actual proposed-method dispatch without changing labels or deterministic seeds.
+inline json proposed_algorithm_policy() {
+    return {{"ApproBetter", {{"selector", 3}, {"entry", "AlgBetter_singleUAV_ToN_faster"}}},
+        {"ApproFast", {{"selector", 1}, {"entry", "AlgFast_singleUAV_ToN"}}}};
+}
 
 /// Immutable DA adaptation identity, compared by the existing lightweight run-info gate.
 inline json hard_first_da_policy() {
@@ -270,7 +276,7 @@ inline AlgorithmRunResult run_algorithm(const SystemMd& model, size_t method,
             return AllocationPair{empty, problem.construct_user_results(empty)};
         }
         switch (method) {
-        case 0: return problem.Appro_multiUAV_ToN(model.uavs, model.users, 2, options.ton_epsilon);
+        case 0: return problem.Appro_multiUAV_ToN(model.uavs, model.users, 3, options.ton_epsilon);
         case 1: return problem.Appro_multiUAV_ToN(model.uavs, model.users, 1, options.ton_epsilon);
         case 2: return problem.ConvexRelaxationAndRounding_multiUAV(1e-4, seed, options.rounding_trials, &diagnostics);
         case 3: return problem.MatchingSQP_Allocation(MatchingSQPConfig(), &diagnostics);

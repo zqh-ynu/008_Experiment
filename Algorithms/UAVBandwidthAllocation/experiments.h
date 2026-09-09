@@ -89,6 +89,7 @@ inline json make_experiment_run_info(const string& experiment, const vector<Expe
     load_global_channel_config(config);
     json info = {
         {"schema", SIMPLE_RUN_SCHEMA}, {"algorithm_version", SIMPLE_ALGORITHM_VERSION},
+        {"proposed_algorithms", proposed_algorithm_policy()},
         {"experiment", experiment}, {"methods", method_name_list},
         {"hard_first_da_policy", hard_first_da_policy()},
         {"instance_count", options.instance_count}, {"master_seed", options.master_seed},

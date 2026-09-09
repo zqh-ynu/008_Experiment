@@ -1,5 +1,6 @@
 ﻿// Visual Studio 直接运行入口：集中设置实验参数，按条件/实例/算法保存结果并支持断点续跑。
 // 备份并定向重跑 EXP1--EXP3 两个提出方法，再接续十网络 EXP5；不删除、不自动重试、不运行 EXP4。
+// 显式定义 TON_QUALITY_ABLATION 或 TON_QUALITY_ABLATION_TESTS 时改走互斥的独立入口。
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -475,14 +476,31 @@ void rerun_proposed_exp1_exp3(const ExperimentRunOptions& options) {
 }
 
 // Standalone tests compile the helpers but cannot enter this formal main().
+#if defined(TON_QUALITY_ABLATION) && defined(TON_QUALITY_ABLATION_TESTS)
+#error TON_QUALITY_ABLATION and TON_QUALITY_ABLATION_TESTS are mutually exclusive
+#endif
+#if defined(TON_QUALITY_ABLATION) || defined(TON_QUALITY_ABLATION_TESTS)
+#include "ton_quality_ablation.h"
+#endif
+#if defined(TON_QUALITY_ABLATION_TESTS)
+#include "tests/ton_quality_ablation_tests.h"
+#endif
 #ifndef TON_RERUN_TESTING
 /// 使用固定批次先定向重跑 EXP1--EXP3，再接续 EXP5；argc 必须为 1，不接收旧 CLI 参数。
+/// 定义质量消融/合成测试宏时，只运行对应独立分支并立即返回，不进入正式实验。
 /// 成功返回 0；遇到错误保留已写结果并返回 1，后续实验不再自动启动。
 int main(int argc, char*[]) {
     try {
         if (argc != 1)
             throw invalid_argument("Legacy batch/test CLI is disabled. Select experiments and parameters in main.cpp.");
 
+#if defined(TON_QUALITY_ABLATION_TESTS)
+        // 纯合成验证分支不读正式输入、不创建输出，结束后不进入任何正式实验。
+        return ton_quality_tests::run();
+#elif defined(TON_QUALITY_ABLATION)
+        // 独立质量消融分支；每次新目录、固定 50 次，不进入下方重跑或 EXP5。
+        return ton_quality::run(true); // true 开启诊断；另行比较开销时可显式改为 false。
+#else
         // 本轮临时重跑严格固定这些设置，不能改为 30 或更换输出名后继续使用此入口。
         ExperimentRunOptions options;
         options.instance_count = 10;         // 本轮仅 ID 1--10；EXP5 也显式使用 10 个网络。
@@ -502,6 +520,7 @@ int main(int argc, char*[]) {
         // EXP4 暂停；保留代码和已有结果。
         // exp4_different_total_bandwidth(options);
         return 0;
+#endif // 独立消融/合成测试与原正式入口互斥。
     } catch (const exception& error) {
         cerr << "实验停止，已写入的结果保持不变。\n原因: " << error.what() << std::endl;
         return 1;

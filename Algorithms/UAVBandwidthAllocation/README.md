@@ -2,6 +2,11 @@
 
 面向混合 QoS 用户的多 UAV 用户关联与带宽分配研究代码，包含两种 ToN 提出方法、四种基准、EXP1–EXP4 驱动及逐实例记录/比较均值逻辑。
 
+**可选质量消融（2026-09-09，默认关闭）**：见 [Better/Fast 同实例质量消融](QUALITY_ABLATION.md)。
+仅定义 `TON_QUALITY_ABLATION` 时运行 EXP1/3000 用户/ID1–10 的五设置共 50 次求解；
+`TON_QUALITY_ABLATION_TESTS` 是互斥的纯合成测试入口。均不会续接正式重跑或 EXP5。
+本次仅实现与静态检查，尚未编译或运行；现有正式输出保持不变。
+
 当前入口已接入 [EXP5 定位误差实验](LOCALIZATION_EXPERIMENT.md)：十网络、六方法、
 7 个水平 RMSE 档位，共 780 次调用，在 EXP1–EXP3 定向重跑成功后执行。
 旧三网络默认接口保留；独立合成验证不代表正式实验已执行。

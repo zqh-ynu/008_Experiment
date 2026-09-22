@@ -1,6 +1,6 @@
 """为 ToN 扩展实验生成用户业务、类型、QoS 和权重属性。
 
-本文件保留现有用户 CSV schema，并把三类信息明确分开：ScientificData2025
+本文件保留旧生成函数供历史代码引用，并新增multi-hard请求构造。三类信息明确分开：ScientificData2025
 Table 3/6 提供的应用标签与 session 权重、本研究定义的 Hard/Elastic 映射，
 以及 EXP3 为控制 Hard 用户比例而沿用的历史 QoS 配置。本模块只提供数据生成
 函数；导入模块不会创建文件或执行完整实例生成。
@@ -26,6 +26,13 @@ USER_COLUMNS = [
     "user_requirement_1",
     "user_requirement_2",
     "app_category",
+]
+
+# 新用户格式：hard需求只在应用配置中定义；两列旧需求仅供elastic保留原值。
+MULTI_USER_COLUMNS = [
+    "user_id", "longitude", "latitude", "user_type", "user_weight",
+    "user_requirement_1", "user_requirement_2", "app_label", "service_category",
+    "profile_id", "config_version",
 ]
 
 # ScientificData2025 Table 6 中 Our datasets 一列的原始 session 数。
@@ -125,6 +132,102 @@ EXP3_ELASTIC_PROFILES = (
         "r_max_range": (0.01, 0.02),
     },
 )
+
+
+def generate_multi_controlled(
+    locations: pd.DataFrame, rng: np.random.Generator, version: str
+) -> tuple[pd.DataFrame, dict[float, pd.DataFrame]]:
+    """从5000空间前缀构造受控请求及3000用户比例实验；返回主池与各比例表，不写文件。
+
+    locations保留源ID及坐标顺序；rng只用于主体属性，version对应独立应用配置。
+    每1000人精确200个hard；转换类型时使用预生成属性，不重新抽样。
+    """
+    _require_location_columns(locations, "multi-hard locations")
+    if len(locations) != 5000 or locations["user_id"].duplicated().any():
+        raise ValueError("受控输入必须有5000个唯一用户")
+    n = len(locations)
+    hard_choice = rng.choice(3, n, p=[p["probability"] for p in EXP3_HARD_PROFILES])
+    hard_names = np.array([p["name"] for p in EXP3_HARD_PROFILES], dtype=object)[hard_choice]
+    hard_profiles = np.array(["voice", "video", "remote_control"], dtype=object)[hard_choice]
+    hard_categories = np.array(["voice", "video", "remote-control"], dtype=object)[hard_choice]
+    hard_weights = rng.integers(1, 11, n)
+    elastic_choice = rng.choice(len(EXP3_ELASTIC_PROFILES), n,
+                                p=[p["probability"] for p in EXP3_ELASTIC_PROFILES])
+    elastic_names = np.array([p["name"] for p in EXP3_ELASTIC_PROFILES], dtype=object)[elastic_choice]
+    elastic_categories = np.array(["instant-message", "mail-service", "network-storage",
+                                    "web-browsing", "network-transmission"], dtype=object)[elastic_choice]
+    # 沿用旧受控elastic需求区间和四位小数精度，但在切换类型前一次性生成。
+    low = np.array([p["r_min_range"] for p in EXP3_ELASTIC_PROFILES])[elastic_choice]
+    high = np.array([p["r_max_range"] for p in EXP3_ELASTIC_PROFILES])[elastic_choice]
+    req1 = np.round(rng.uniform(low[:, 0], low[:, 1]), 4)
+    req2 = np.round(rng.uniform(high[:, 0], high[:, 1]), 4)
+    elastic_weights = rng.integers(1, 6, n)
+    hard_mask = np.zeros(n, dtype=bool)
+    for start in range(0, n, 1000):
+        hard_mask[start + rng.permutation(1000)[:200]] = True
+
+    def assemble(mask: np.ndarray) -> pd.DataFrame:
+        """根据mask选择预生成属性；返回新表，不改变坐标和预生成数组。"""
+        count = len(mask)
+        table = locations.iloc[:count].copy().reset_index(drop=True)
+        table["user_type"] = np.where(mask, "hard", "elastic")
+        table["user_weight"] = np.where(mask, hard_weights[:count], elastic_weights[:count])
+        table["user_requirement_1"] = np.where(mask, "", req1[:count].astype(str))
+        table["user_requirement_2"] = np.where(mask, "", req2[:count].astype(str))
+        table["app_label"] = np.where(mask, hard_names[:count], elastic_names[:count])
+        table["service_category"] = np.where(mask, hard_categories[:count], elastic_categories[:count])
+        table["profile_id"] = np.where(mask, hard_profiles[:count], "elastic")
+        table["config_version"] = version
+        return table[MULTI_USER_COLUMNS]
+
+    # 前600人正好是主体3000用户的hard集合，后续比例只扩张集合。
+    order = np.concatenate((rng.permutation(np.flatnonzero(hard_mask[:3000])),
+                            rng.permutation(np.flatnonzero(~hard_mask[:3000]))))
+    ratio_sets = {}
+    for ratio in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0):
+        mask = np.zeros(3000, dtype=bool)
+        mask[order[:int(round(3000 * ratio))]] = True
+        ratio_sets[ratio] = assemble(mask)
+    return assemble(hard_mask), ratio_sets
+
+
+def generate_multi_real(
+    locations: pd.DataFrame, rng: np.random.Generator, version: str
+) -> pd.DataFrame:
+    """按会话计数和类别内均匀应用抽样生成新请求池；返回表，不写文件。
+
+    video/game全部hard；即时消息20%为hard，其中语音视频各半；elastic保留0/0需求约定。
+    """
+    _require_location_columns(locations, "real-request locations")
+    table = locations.copy().reset_index(drop=True)
+    categories = list(TABLE_6_SESSION_WEIGHTS)
+    weights = np.array(list(TABLE_6_SESSION_WEIGHTS.values()), dtype=float)
+    sampled = rng.choice(categories, len(table), p=weights / weights.sum())
+    profiles, labels = [], []
+    for category in sampled:
+        apps = TABLE_3_APPLICATIONS[category]
+        labels.append(apps[int(rng.integers(len(apps)))])
+        profile = "elastic"
+        if category == "video":
+            profile = "video"
+        elif category == "game":
+            profile = "remote_control"
+        elif category == "instant-message" and rng.random() < 0.2:
+            profile = "voice" if rng.random() < 0.5 else "video"
+        profiles.append(profile)
+    mask = np.array(profiles) != "elastic"
+    user_weights = np.empty(len(table), dtype=int)
+    user_weights[mask] = rng.integers(1, 11, mask.sum())
+    user_weights[~mask] = rng.integers(1, 6, (~mask).sum())
+    table["user_type"] = np.where(mask, "hard", "elastic")
+    table["user_weight"] = user_weights
+    table["user_requirement_1"] = np.where(mask, "", "0.0")
+    table["user_requirement_2"] = np.where(mask, "", "0.0")
+    table["app_label"] = labels
+    table["service_category"] = sampled
+    table["profile_id"] = profiles
+    table["config_version"] = version
+    return table[MULTI_USER_COLUMNS]
 
 
 def _require_location_columns(dataframe: pd.DataFrame, source_name: str) -> None:

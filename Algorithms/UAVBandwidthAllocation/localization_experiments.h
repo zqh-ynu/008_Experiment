@@ -38,6 +38,9 @@ inline ExperimentRunOptions algorithm_options(const Options& options) {
 /// Only shared numerical/input/output settings are accepted; EXP5 has its own fixed RMSE matrix.
 inline Options from_experiment_options(const ExperimentRunOptions& options) {
     validate_run_options(options);
+    // 旧定位误差实验不扩展残余开关，必须明确拒绝而不是转换时静默丢失。
+    if (options.reallocate_residual)
+        throw invalid_argument("Legacy EXP5 localization does not support residual reallocation");
     if (!options.conditions.empty() || !options.reuse_exp1_root.empty())
         throw invalid_argument("EXP5 wrapper requires empty conditions and no historical reuse");
     Options result;

@@ -3,6 +3,9 @@
 #include "predefine.h"
 #include "allocation_contract.h"
 
+// HardFirst每次调用的局部搜索上限；每轮至多提交一个改进，无改进时立即结束。
+inline constexpr int HARD_FIRST_LOCAL_SEARCH_MAX_ROUNDS = 5000;
+
 
 /// @brief AlgSA-DD 的连续近似、对偶带宽求解及现有后处理参数；不保证激活新的关联。
 struct SADAConfig {
@@ -186,8 +189,22 @@ public:
 	int uType = HARD_UTILITY; // 用户效用类型，默认硬效用
 	double weight = 1; // 用户权重，默认1
 	double rData = 0;		// 需求的最小数据量
-	double rMin = 0;		// 需求的最小数据速率 Mbps
+	double rMin = 0;		// 内部Kbps；多级hard为最高等级阈值，供单阈值基线使用。
 	double pOut = 0;		// 需求的最大中断概率
+
+	// 源文件身份与业务信息；ID仍是重排后的连续数组下标。
+	string source_user_id;
+	string app_label;
+	string service_category;
+	string profile_id;
+	string config_version;
+	vector<double> hard_rate_levels; // 完整正等级速率，严格递增，单位Kbps；旧单阈值对象可为空。
+	double elastic_requirement_2 = 0; // elastic原第二需求字段，读入后为Kbps，不用于真实效用。
+
+	/// 返回bandwidth(kHz)*capacity(bit/s/Hz)达到的最高hard等级；0表示未满足最低等级。
+	int achieved_hard_level(double bandwidth, double capacity) const;
+	/// 返回等级总效用w*log2(1+r)，r为Kbps；0级返回0，无效等级抛出异常。
+	double hard_level_utility(int level) const;
 
 	double B = 0.18; // 180 KHz
 	double BSub = 0.18;   // 子载波带宽 180 KHz
@@ -218,7 +235,7 @@ public:
 	void set_Bandwidth();
 
 	/// <summary>
-	/// 硬效用函数, 用户的效用函数是一个阶跃函数，当分配给用户的带宽和信道容量的乘积大于等于用户的最小速率需求时，用户的效用为其权重，否则为0。
+	/// 硬效用函数：按可靠速率达到的最高等级计分；最低等级以下为0，最高等级以上效用不增加。
 	/// </summary>
 	/// <param name="bandwidth_">用户被分配的带宽.</param>
 	/// <param name="capacity_">用户与发送者之间的信道容量.</param>
@@ -236,7 +253,7 @@ public:
 
 	/// <summary>
 	/// 弹性效用函数, 用户的效用函数是一个凹函数,
-	/// weight * log(1 + r) / log(1 + rMin);
+	/// weight * log2(1 + r)，r为内部Kbps；无最低速率门槛或归一化分母。
 	/// </summary>
 	/// <param name="bandwidth_">用户被分配的带宽.</param>
 	/// <param name="capacity_">用户与发送者之间的信道容量.</param>
@@ -424,7 +441,7 @@ public:
 	vector<vector<double>> SNRth_list;    // m*(n1+n2) 记录各个用户与无人机之间的信噪比
 	vector<vector<double>> M_list;      // m*(n1+n2) 记录各个用户与无人机之间的Nakagami-M参数
 	vector<vector<double>> cap_list;    // m*(n1+n2) 记录各个用户与无人机之间的信道容量
-	vector<vector<double>> Bth_list; // m*n1 记录各个离散效用用户与无人机之间的最小带宽需求
+	vector<vector<double>> Bth_list; // m*n1：rMin对应的带宽阈值；多级hard为最高等级，其他等级用rate/cap计算。
 	map<int, vector<User>> uav_serviceable_users_map;	// 记录每个无人机可服务的用户列表，key为uav_id，value为该uav可服务的用户列表，分离硬效用用户和弹性效用用户
 
 	SystemMd() {}
@@ -440,6 +457,11 @@ public:
 	/// <param name="user_file">The user file.</param>
 	/// <param name="uav_file">The uav file.</param>
 	SystemMd(string user_file, string uav_file, string config_file);
+	/// 读取新用户CSV、UAV CSV、物理配置和应用等级JSON；Mbps/MHz转为内部Kbps/kHz。
+	/// 验证输入后沿用原坐标转换并初始化信道；不自动兼容旧用户CSV。
+	SystemMd(string user_file, string uav_file, string config_file, string application_profiles_file);
+	/// 返回最高等级基线副本；不修改本实例、不重算信道，保留用户身份与原信道矩阵。
+	SystemMd highest_level_view() const;
 	/// <summary>
 	/// Initializes the syetem model.
 	/// </summary>
@@ -633,28 +655,15 @@ public:
 	KnapsackResult FPTAS_singleUAV_new(Uav uav, vector<User> unproc_users, double epsilon = 0.02);
 
 	/**
-	 * @brief 使用 LCM 与二候选舍入求解 ToN 快速单 UAV 边际效用问题。
-	 * @param uav 待评估 UAV；total_bandwidth 表示本次可用的新增带宽预算。
-	 * @param candidate_users 该 UAV 在本次调用中可以服务的候选用户。
-	 * @param current_utilities 按用户 ID 索引的当前网络绝对效用 m_j。
-	 * @param base_bandwidths 按用户 ID 索引的同一 UAV 已有基准带宽 b_{kj}^{old}。
-	 * @return allocatedBandwidth 为新增带宽，allocatedValue/totalValue 为真实边际效用。
+	 * @brief 新稿单UAV绝对效用Fast：多级凹松弛、临界斜率搜索及两候选舍入。
+	 * @param uav 本次完整可用预算，单位kHz，不含基准带宽或历史效用语义。
+	 * @param candidate_users 候选用户，用内部ID访问sysModel原始用户和信道。
+	 * @return 真实绝对效用与带宽；不修改输入，不执行剩余带宽优化。
 	 */
 	KnapsackResult AlgFast_singleUAV_ToN(
-		const Uav& uav,
-		const vector<User>& candidate_users,
-		const vector<double>& current_utilities,
-		const vector<double>& base_bandwidths);
+		const Uav& uav, const vector<User>& candidate_users);
 
-	/**
-	 * @brief 使用缩放利润 DP 与 SMAWK 求解 ToN 改进单 UAV 边际效用问题。
-	 * @param uav 待评估 UAV；total_bandwidth 表示本次可用的新增带宽预算。
-	 * @param candidate_users 该 UAV 在本次调用中可以服务的候选用户。
-	 * @param current_utilities 按用户 ID 索引的当前网络绝对效用 m_j。
-	 * @param base_bandwidths 按用户 ID 索引的同一 UAV 已有基准带宽 b_{kj}^{old}。
-	 * @param epsilon 近似参数，必须满足 0 < epsilon < 1/2，默认值为 0.1。
-	 * @return allocatedBandwidth 为新增带宽，allocatedValue/totalValue 为真实边际效用。
-	 */
+	/// 旧边际Better已移除，暂保留签名；参数不参与计算，调用明确报错，待后续按新稿实现。
 	KnapsackResult AlgBetter_singleUAV_ToN(
 		const Uav& uav,
 		const vector<User>& candidate_users,
@@ -662,24 +671,13 @@ public:
 		const vector<double>& base_bandwidths,
 		double epsilon = 0.1);
 
-
-	// Faster 新接口开始：保留旧接口和正式调度，供后续显式切换使用。
-	/**
-	 * @brief 通过对偶认证、非凹用户 DP 与凹用户精确注水实现改进的 ToN 单 UAV 近似算法。
-	 * @param uav 本次可用的新增带宽预算。
-	 * @param candidate_users 本次可服务的候选用户子集，输入顺序不被修改。
-	 * @param current_utilities 按全局用户 ID 索引的当前网络绝对效用。
-	 * @param base_bandwidths 同一 UAV 已有的基准带宽，按全局用户 ID 索引。
-	 * @param epsilon 误差参数，要求 0<epsilon<1/2，默认 0.1。
-	 * @return 新增带宽及真实边际效用；保持 (1-epsilon) 保证但不承诺与旧版输出一致。
-	 */
+	/// 新稿单UAV绝对效用Better：hard等级DP与elastic预算分配，_faster仅保留原入口名称。
+	/// uav提供完整kHz预算；candidate_users用内部ID访问原实例；epsilon须在(0,0.5)内。
+	/// 返回真实绝对效用和带宽，不采用历史效用/基准带宽，不执行额外剩余分配。
 	KnapsackResult AlgBetter_singleUAV_ToN_faster(
 		const Uav& uav,
 		const vector<User>& candidate_users,
-		const vector<double>& current_utilities,
-		const vector<double>& base_bandwidths,
-		double epsilon = 0.1);
-	// Faster 新接口结束。
+		double epsilon = 0.083);
 
 	/// <summary>
 	/// 在当前状态下，计算无人机uav_id子分配问题的KKT参数
@@ -733,21 +731,16 @@ public:
 	/// <returns></returns>
 	pair<vector<KnapsackResult>, map<int, UserResult>>  approposed_multiUAV_allocation_new(vector<Uav> uavs, vector<User> users, int used_single_alg = 2, double parameter = 0.083);
 
-	/**
-	 * @brief 执行 ToN 固定状态贪心多 UAV 分配及残余带宽阶段。
-	 * @param uavs 参与选择的 UAV 集合，每架 UAV 恰好处理一次。
-	 * @param users 当前系统模型中的完整用户集合。
-	 * @param used_single_alg 取 1 时调用 AlgFast_singleUAV_ToN，取 2 时调用 AlgBetter_singleUAV_ToN，
-	 *        取 3 时调用 AlgBetter_singleUAV_ToN_faster。
-	 * @param epsilon 传给两种 AlgBetter 单 UAV 算法的近似参数，必须满足 0 < epsilon < 1/2。
-	 * @return 最终绝对结果：allocatedBandwidth 为总带宽，allocatedValue/totalValue 为绝对效用；
-	 *         同时返回与 UAV 结果一致的逐用户投影。
-	 */
+	/// 新多UAV外循环：绝对效用候选按真实增量选取，最后保留唯一关联。
+	/// uavs/users须覆盖原实例全部ID；选择器1=Fast、3=最新版Better，其他值报错。
+	/// epsilon在(0,0.5)内；reallocate_residual默认关闭，开启后冻结旧分配并接纳未服务用户。
+	/// 返回按UAV ID排列的绝对结果和全用户投影，不修改原实例或跨UAV累加用户效用。
 	pair<vector<KnapsackResult>, map<int, UserResult>> Appro_multiUAV_ToN(
 		const vector<Uav>& uavs,
 		const vector<User>& users,
-		int used_single_alg = 2,
-		double epsilon = 0.1);
+		int used_single_alg = 3,
+		double epsilon = 0.083,
+		bool reallocate_residual = false);
 
 
 	/**
@@ -803,12 +796,12 @@ public:
 			AllocationDiagnostics* diagnostics = nullptr);
 
 
-	/// AlgHardFirst: per-subchannel priority-aware DA, finite hard recovery, then elastic DA.
-	/// Common BSub is effective MHz; each slot occupies BSub*10/9 including guard overhead.
-	/// Returns effective bandwidth; normalized-demand/dynamic preferences are adaptations, not a stability claim.
+	/// AlgHardFirst：hard优先匹配与恢复、有限最佳改进局部搜索，再执行elastic匹配。
+	/// BSub为有效MHz，每槽占用BSub*10/9以包含保护开销；返回有效带宽与逐用户分配。
+	/// 局部搜索优先提高hard总效用，其次减少槽占用，不保证全局最优或总网络效用提升。
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 		HardFirstPriorityMatchingAllocation();
-	/// Same DA allocation with one aggregate proposal/replacement/recovery JSON diagnostics event.
+	/// 相同分配接口，diagnostics非空时附加一条匹配/局部搜索轮次、操作次数和停止原因记录。
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 		HardFirstPriorityMatchingAllocation(AllocationDiagnostics* diagnostics);
 	/// Compatibility alias only: forwards to HardFirstPriorityMatchingAllocation, not Hungarian/KM.

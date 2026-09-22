@@ -1,973 +1,14 @@
 ﻿#include "EntityDefinition.h"
 
-// 辅助函数：分割字符串
-// 本文件实现系统模型及各类带宽分配算法。下方 ToN 辅助函数均限制在本编译单元内部，
-// 以便复用现有数据结构，同时不暴露新接口或改变历史算法的行为。
+// 本文件实现系统模型、真实效用及带宽分配算法；新稿Fast直接在BAProblem成员函数中求解。
+// 最新版Better实现等级DP，多UAV使用绝对候选/增量选择；较旧Better仍明确报错。
 #include <numeric>
 #include <stdexcept>
 #include <utility>
 
-namespace {
+// 旧ToN边际效用专属辅助代码已移除；新稿Fast在现有类方法内完成求解。
 
-constexpr double TON_ROOT_TOL = 1e-11;
-
-/**
- * @brief 描述单个用户平移后的边际效用函数，仅供 ToN 算法内部使用。
- *
- * 所有 bandwidth 字段均采用“新增带宽”坐标 x。对于 elastic 用户，max_extra
- * 等于本次调用的 UAV 可用预算；对于 hard 用户，它等于从已有带宽补足阈值所需的带宽。
- */
-struct TonUserProfile {
-	int user_id = -1;                 // 用户 ID，也是系统状态向量的下标。
-	int user_type = -1;               // HARD_UTILITY 或 ELASTIC_UTILITY。
-	double weight = 0.0;              // 效用权重 w_i。
-	double channel = 0.0;             // 当前 UAV 到该用户的信道系数 C_{ki}。
-	double base_bandwidth = 0.0;      // 当前 UAV 已分配给该用户的基准带宽 b_i^{old}。
-	double current_utility = 0.0;     // 当前网络绝对效用 m_i，可能来自另一架 UAV。
-	double max_extra = 0.0;           // 本次允许分配的最大新增带宽 x_i。
-	double tau = 0.0;                 // 最小凹上界线性激活段的右端点 tau_i。
-	double activation_slope = 0.0;    // 线性激活段斜率 s_i。
-	double start_derivative = 0.0;    // 最小凹上界在 x=0 处的右导数。
-	double end_derivative = 0.0;      // 最小凹上界在 x=max_extra 处的左导数。
-	double hard_threshold = 0.0;      // hard 用户的总带宽阈值 B_{ki}^{th}。
-	double hard_full_utility = 0.0;   // hard 用户达到阈值后的绝对效用 pi_i。
-	double max_marginal = 0.0;        // 在 max_extra 内可达到的最大真实边际效用。
-	bool retained = false;            // 预处理后是否仍具有可达的正边际效用。
-};
-
-/** @brief 使用相对容差比较两个浮点导数，避免临界斜率去重和分支判断受舍入误差影响。 */
-bool ton_nearly_equal(double lhs, double rhs)
-{
-	double scale = std::max(1.0, std::max(std::abs(lhs), std::abs(rhs)));
-	return std::abs(lhs - rhs) <= 1e-10 * scale;
-}
-
-/** @brief 计算 elastic 用户的绝对效用 w log2(1 + Cb)。 */
-double ton_elastic_utility(const User& user, double channel, double bandwidth)
-{
-	if (bandwidth <= 0.0 || channel <= 0.0 || user.weight <= 0.0)
-		return 0.0;
-	return user.weight * std::log2(1.0 + bandwidth * channel);
-}
-
-/** @brief 在不修改 User 对象的前提下计算 hard/elastic 用户的绝对效用。 */
-double ton_absolute_utility(const User& user, double channel, double bandwidth)
-{
-	if (user.uType == ELASTIC_UTILITY)
-		return ton_elastic_utility(user, channel, bandwidth);
-	if (user.uType == HARD_UTILITY)
-	{
-		if (hard_qos_satisfied(bandwidth, channel, user.rMin))
-			return user.weight * std::log2(1.0 + user.rMin);
-		return 0.0;
-	}
-	throw std::invalid_argument("ToN algorithms support only hard and elastic users");
-}
-
-/** @brief 计算 elastic 绝对效用在总带宽 b 处的导数。 */
-double ton_elastic_derivative(const TonUserProfile& profile, double bandwidth)
-{
-	if (profile.channel <= 0.0 || profile.weight <= 0.0)
-		return 0.0;
-	return profile.weight * profile.channel /
-		(std::log(2.0) * (1.0 + bandwidth * profile.channel));
-}
-
-/** @brief 对非负目标效用求 w log2(1 + Cb) 的反函数，返回对应总带宽 b。 */
-double ton_elastic_inverse(const TonUserProfile& profile, double target_utility)
-{
-	if (target_utility <= 0.0)
-		return 0.0;
-	if (profile.channel <= 0.0 || profile.weight <= 0.0)
-		return INF;
-	return std::expm1(target_utility * std::log(2.0) / profile.weight) /
-		profile.channel;
-}
-
-/**
- * @brief 校验两个 ToN 单 UAV 算法共用的输入，以及按用户 ID 索引的状态向量。
- * @throws std::invalid_argument 当状态长度、ID、用户类型或数值不合法时抛出。
- */
-void ton_validate_single_inputs(
-	const SystemMd& model,
-	const Uav& uav,
-	const vector<User>& candidate_users,
-	const vector<double>& current_utilities,
-	const vector<double>& base_bandwidths)
-{
-	const size_t user_count = model.users.size();
-	if (current_utilities.size() != user_count || base_bandwidths.size() != user_count)
-		throw std::invalid_argument("ToN state vectors must match sysModel.users.size()");
-	if (uav.ID < 0 || uav.ID >= static_cast<int>(model.cap_list.size()))
-		throw std::invalid_argument("ToN candidate UAV ID is out of range");
-	if (!std::isfinite(uav.total_bandwidth) || uav.total_bandwidth < -EPS)
-		throw std::invalid_argument("ToN candidate UAV bandwidth must be finite and nonnegative");
-	if (model.cap_list[uav.ID].size() < user_count)
-		throw std::invalid_argument("ToN channel-capacity row is shorter than the user vector");
-
-	// candidate_users 可能是系统用户的子集，但其 ID 必须唯一且仍能安全索引全局状态。
-	vector<char> seen(user_count, 0);
-	for (const User& candidate : candidate_users)
-	{
-		const int user_id = candidate.ID;
-		if (user_id < 0 || user_id >= static_cast<int>(user_count))
-			throw std::invalid_argument("ToN candidate user ID is out of range");
-		if (seen[user_id])
-			throw std::invalid_argument("ToN candidate user IDs must be unique");
-		seen[user_id] = 1;
-
-		const User& user = model.users[user_id];
-		if (user.uType != HARD_UTILITY && user.uType != ELASTIC_UTILITY)
-			throw std::invalid_argument("ToN algorithms support only hard and elastic users");
-		if (!std::isfinite(user.weight) || user.weight < 0.0 ||
-			!std::isfinite(user.rMin) || user.rMin < 0.0)
-			throw std::invalid_argument("ToN user parameters must be finite and nonnegative");
-		if (!std::isfinite(current_utilities[user_id]) || current_utilities[user_id] < -EPS ||
-			!std::isfinite(base_bandwidths[user_id]) || base_bandwidths[user_id] < -EPS)
-			throw std::invalid_argument("ToN state entries must be finite and nonnegative");
-
-		const double channel = model.cap_list[uav.ID][user_id];
-		if (!std::isfinite(channel) || channel < 0.0)
-			throw std::invalid_argument("ToN channel capacity must be finite and nonnegative");
-		if (user.uType == HARD_UTILITY)
-		{
-			if (uav.ID >= static_cast<int>(model.Bth_list.size()) ||
-				user_id >= static_cast<int>(model.Bth_list[uav.ID].size()))
-				throw std::invalid_argument("ToN hard-user threshold ID is out of range");
-			double threshold = model.Bth_list[uav.ID][user_id];
-			if (std::isnan(threshold) || threshold < 0.0)
-				throw std::invalid_argument("ToN hard-user threshold must be nonnegative");
-		}
-
-		// m_i 至少应覆盖当前 UAV 已有基准带宽产生的绝对效用，否则平移状态自相矛盾。
-		const double base = std::max(0.0, base_bandwidths[user_id]);
-		const double current = std::max(0.0, current_utilities[user_id]);
-		const double base_utility = ton_absolute_utility(user, channel, base);
-		double state_tolerance = 1e-8 * std::max(1.0, base_utility);
-		if (base_utility > current + state_tolerance)
-			throw std::invalid_argument(
-				"ToN current utility must dominate the utility of the supplied base bandwidth");
-	}
-}
-
-/**
- * @brief 为一个候选用户构造平移边际函数及其最小凹上界（LCM）参数。
- * @return 仅当该用户在当前预算内具有可达的正边际效用时返回 true。
- */
-bool ton_build_profile(
-	const SystemMd& model,
-	const Uav& uav,
-	int user_id,
-	const vector<double>& current_utilities,
-	const vector<double>& base_bandwidths,
-	TonUserProfile& profile)
-{
-	const User& user = model.users[user_id];
-	const double budget = std::max(0.0, uav.total_bandwidth);
-	profile = TonUserProfile();
-	profile.user_id = user_id;
-	profile.user_type = user.uType;
-	profile.weight = user.weight;
-	profile.channel = model.cap_list[uav.ID][user_id];
-	profile.base_bandwidth = std::max(0.0, base_bandwidths[user_id]);
-	profile.current_utility = std::max(0.0, current_utilities[user_id]);
-
-	if (user.uType == HARD_UTILITY)
-	{
-		// hard 用户只有“补足阈值”这一种正收益动作；已满足或预算内不可满足者直接剔除。
-		profile.hard_threshold = model.Bth_list[uav.ID][user_id];
-		profile.hard_full_utility = user.weight * std::log2(1.0 + user.rMin);
-		profile.max_marginal = std::max(
-			0.0, profile.hard_full_utility - profile.current_utility);
-		if (profile.max_marginal <= EPS || !std::isfinite(profile.hard_threshold))
-			return false;
-
-		profile.max_extra = std::max(
-			0.0, profile.hard_threshold - profile.base_bandwidth);
-		if (profile.max_extra > budget + EPS)
-			return false;
-		if (profile.max_extra <= EPS)
-		{
-			profile.max_extra = 0.0;
-			profile.retained = true;
-			return true;
-		}
-
-		profile.tau = profile.max_extra;
-		profile.activation_slope = profile.max_marginal / profile.max_extra;
-		profile.start_derivative = profile.activation_slope;
-		profile.end_derivative = profile.activation_slope;
-		profile.retained = true;
-		return true;
-	}
-
-	// elastic 用户允许使用至多整个本次预算，并在总带宽 b_old+x 上计算真实效用。
-	profile.max_extra = budget;
-	if (budget <= EPS || profile.channel <= 0.0 || profile.weight <= 0.0)
-		return false;
-	const double utility_at_base = ton_elastic_utility(
-		user, profile.channel, profile.base_bandwidth);
-	const double utility_at_max = ton_elastic_utility(
-		user, profile.channel, profile.base_bandwidth + budget);
-	profile.max_marginal = std::max(0.0, utility_at_max - profile.current_utility);
-	if (profile.max_marginal <= EPS)
-		return false;
-
-	double utility_tolerance = 1e-10 * std::max(1.0, utility_at_base);
-	if (profile.current_utility <= utility_at_base + utility_tolerance)
-	{
-		// 当前效用未高于基准带宽效用时，边际函数从 x=0 起就是凹函数，无激活前缀。
-		profile.tau = 0.0;
-		profile.activation_slope = ton_elastic_derivative(
-			profile, profile.base_bandwidth);
-	}
-	else
-	{
-		// break_even 是 g(b_old+x)=m_i 的零增益点；接触点 tau 必定位于其右侧。
-		double break_even = ton_elastic_inverse(profile, profile.current_utility) -
-			profile.base_bandwidth;
-		break_even = std::max(0.0, std::min(budget, break_even));
-		// 接触方程 x*g'(b_old+x)=g(b_old+x)-m_i 保证原点至接触点的弦与凹尾部相切。
-		auto tangent_residual = [&](double extra_bandwidth) {
-			double total_bandwidth = profile.base_bandwidth + extra_bandwidth;
-			double derivative = ton_elastic_derivative(profile, total_bandwidth);
-			double marginal = ton_elastic_utility(user, profile.channel, total_bandwidth) -
-				profile.current_utility;
-			return extra_bandwidth * derivative - marginal;
-			};
-
-		if (tangent_residual(budget) >= -TON_ROOT_TOL)
-		{
-			// 若预算端点前仍未出现内部根，则整个可行区间都由一条激活线段覆盖。
-			profile.tau = budget;
-		}
-		else
-		{
-			// 残差在 break_even 侧为正、预算端为负，使用区间二分稳定求内部接触点。
-			double lower = break_even;
-			double upper = budget;
-			for (int iteration = 0; iteration < 100; ++iteration)
-			{
-				double middle = 0.5 * (lower + upper);
-				if (tangent_residual(middle) > 0.0)
-					lower = middle;
-				else
-					upper = middle;
-				if (upper - lower <= TON_ROOT_TOL * std::max(1.0, budget))
-					break;
-			}
-			profile.tau = 0.5 * (lower + upper);
-		}
-
-		double marginal_at_tau = ton_elastic_utility(
-			user, profile.channel, profile.base_bandwidth + profile.tau) -
-			profile.current_utility;
-		profile.activation_slope = marginal_at_tau / profile.tau;
-	}
-
-	profile.start_derivative = profile.tau > EPS
-		? profile.activation_slope
-		: ton_elastic_derivative(profile, profile.base_bandwidth);
-	profile.end_derivative = profile.tau >= budget - EPS
-		? profile.activation_slope
-		: ton_elastic_derivative(profile, profile.base_bandwidth + budget);
-	profile.retained = true;
-	return true;
-}
-
-/** @brief 计算真实平移边际效用 h_i(x)=[g_i(b_i^{old}+x)-m_i]^+。 */
-double ton_marginal_value(const TonUserProfile& profile, double extra_bandwidth)
-{
-	extra_bandwidth = std::max(0.0, extra_bandwidth);
-	if (profile.user_type == HARD_UTILITY)
-	{
-		if (profile.base_bandwidth + extra_bandwidth >= profile.hard_threshold - EPS)
-			return std::max(0.0, profile.hard_full_utility - profile.current_utility);
-		return 0.0;
-	}
-	double absolute_utility = profile.weight * std::log2(
-		1.0 + (profile.base_bandwidth + extra_bandwidth) * profile.channel);
-	return std::max(0.0, absolute_utility - profile.current_utility);
-}
-
-/**
- * @brief 返回在 LCM 中与试探导数 lambda 对应的最小新增带宽。
- *
- * 当 lambda 恰好等于线性激活段斜率时，先返回该平台的左端点 0；同斜率平台上的
- * 剩余预算随后按用户 ID 进行规范填充，从而将非唯一最优解固定为可复现的 canonical 解。
- */
-double ton_relaxed_min_allocation(const TonUserProfile& profile, double lambda)
-{
-	if (profile.max_extra <= EPS)
-		return 0.0;
-	if (profile.tau > EPS && ton_nearly_equal(profile.activation_slope, lambda))
-		return 0.0;
-	if (profile.end_derivative > lambda &&
-		!ton_nearly_equal(profile.end_derivative, lambda))
-		return profile.max_extra;
-	if (profile.start_derivative < lambda &&
-		!ton_nearly_equal(profile.start_derivative, lambda))
-		return 0.0;
-	if (profile.user_type == HARD_UTILITY)
-		return profile.activation_slope > lambda ? profile.max_extra : 0.0;
-	if (lambda <= 0.0)
-		return profile.max_extra;
-
-	double extra = profile.weight / (lambda * std::log(2.0)) -
-		1.0 / profile.channel - profile.base_bandwidth;
-	double lower = profile.tau > EPS ? profile.tau : 0.0;
-	return std::max(lower, std::min(profile.max_extra, extra));
-}
-
-/**
- * @brief 将内部新增带宽向量物化为单 UAV 返回结果，并重新计算真实边际效用。
- * @return allocatedBandwidth 为新增带宽，allocatedValue/totalValue 为真实边际效用。
- */
-KnapsackResult ton_make_marginal_result(
-	int uav_id,
-	const vector<TonUserProfile>& profiles,
-	const vector<double>& allocations)
-{
-	KnapsackResult result;
-	result.uav_id = uav_id;
-	// 按 user_id 输出，避免候选输入顺序影响结果文件和确定性测试。
-	vector<size_t> order(profiles.size());
-	std::iota(order.begin(), order.end(), size_t(0));
-	std::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) {
-		return profiles[lhs].user_id < profiles[rhs].user_id;
-		});
-
-	for (size_t index : order)
-	{
-		const TonUserProfile& profile = profiles[index];
-		double bandwidth = std::max(0.0, allocations[index]);
-		double value = ton_marginal_value(profile, bandwidth);
-		if (value <= EPS)
-			continue;
-		result.allocatedList.push_back(profile.user_id);
-		result.allocatedBandwidth[profile.user_id] = bandwidth;
-		result.allocatedValue[profile.user_id] = value;
-		result.totalWeight += bandwidth;
-		result.totalValue += value;
-		if (profile.user_type == HARD_UTILITY)
-		{
-			result.hardWeight += bandwidth;
-			result.hardValue += value;
-		}
-		else
-		{
-			result.elasticWeight += bandwidth;
-			result.elasticValue += value;
-		}
-	}
-	return result;
-}
-
-/**
- * @brief 根据最终总带宽完整重建兼容旧实验框架的绝对结果。
- *
- * 该函数同时重算列表、映射以及 hard/elastic 聚合字段，避免删除重复关联后遗留旧总值。
- */
-KnapsackResult ton_make_absolute_result(
-	const SystemMd& model,
-	int uav_id,
-	const map<int, double>& bandwidths)
-{
-	KnapsackResult result;
-	result.uav_id = uav_id;
-	for (const auto& entry : bandwidths)
-	{
-		const int user_id = entry.first;
-		const double bandwidth = std::max(0.0, entry.second);
-		if (user_id < 0 || user_id >= static_cast<int>(model.users.size()) ||
-			uav_id < 0 || uav_id >= static_cast<int>(model.cap_list.size()))
-			throw std::invalid_argument("ToN final allocation contains an out-of-range ID");
-		double value = ton_absolute_utility(
-			model.users[user_id], model.cap_list[uav_id][user_id], bandwidth);
-		if (value <= EPS)
-			continue;
-		result.allocatedList.push_back(user_id);
-		result.allocatedBandwidth[user_id] = bandwidth;
-		result.allocatedValue[user_id] = value;
-		result.totalWeight += bandwidth;
-		result.totalValue += value;
-		if (model.users[user_id].uType == HARD_UTILITY)
-		{
-			result.hardWeight += bandwidth;
-			result.hardValue += value;
-		}
-		else
-		{
-			result.elasticWeight += bandwidth;
-			result.elasticValue += value;
-		}
-	}
-	return result;
-}
-
-/** @brief 一层 SMAWK 递归的独占缓冲区；clear 只清空标签，不释放已预留的容量。 */
-struct TonSmawkLevel {
-	vector<int> reduced_columns;
-	vector<int> odd_rows;
-};
-
-/**
- * @brief 单次 AlgBetter 求解内复用的 SMAWK 工作区，不共享全局或跨调用状态。
- * 行列标签固定为 0..P；不同递归深度各有独立缓冲区，防止覆盖仍被父层使用的标签。
- */
-struct TonSmawkWorkspace {
-	vector<int> rows;
-	vector<int> columns;
-	vector<int> minima;
-	vector<int> positions;
-	vector<TonSmawkLevel> levels;
-
-	/** @brief 首个有效 elastic 层按 P+1 初始化；后续同规模调用仅重置最小列及位置表。 */
-	void prepare(size_t state_count)
-	{
-		if (rows.size() != state_count)
-		{
-			rows.resize(state_count);
-			columns.resize(state_count);
-			std::iota(rows.begin(), rows.end(), 0);
-			std::iota(columns.begin(), columns.end(), 0);
-			minima.resize(state_count);
-			positions.resize(state_count);
-			size_t depth_count = 0;
-			for (size_t count = state_count; count > 0; count /= 2)
-				++depth_count;
-			// 递归前完整建立层级；递归内部不得扩容 levels，以保持父层引用有效。
-			levels.resize(depth_count);
-			size_t count = state_count;
-			for (TonSmawkLevel& level : levels)
-			{
-				level.reduced_columns.reserve(count);
-				level.odd_rows.reserve(count / 2);
-				count /= 2;
-			}
-		}
-		std::fill(minima.begin(), minima.end(), -1);
-		std::fill(positions.begin(), positions.end(), -1);
-	}
-};
-
-/**
- * @brief 对完整全单调矩阵递归执行 SMAWK，在线性查询次数内求各行最小列。
- * @param rows 当前递归层保留的行标签。
- * @param columns 当前递归层保留的列标签。
- * @param minima 按原始行标签保存其最小值所在列。
- * @param positions 复用的“列标签到约简后位置”临时数组。
- * @param workspace 已建立全部层级的本次求解工作区。
- * @param depth 当前递归深度，用于选择独占的标签缓冲区。
- * @param lookup 矩阵元素查询回调；矩阵不需要显式存储。
- */
-template <typename Lookup>
-void ton_smawk_recursive(
-	const vector<int>& rows,
-	const vector<int>& columns,
-	vector<int>& minima,
-	vector<int>& positions,
-	TonSmawkWorkspace& workspace,
-	size_t depth,
-	const Lookup& lookup)
-{
-	if (rows.empty())
-		return;
-
-	// 列约简：利用全单调性弹出不可能成为任何行最优解的列。
-	vector<int>& reduced_columns = workspace.levels[depth].reduced_columns;
-	reduced_columns.clear();
-	for (int column : columns)
-	{
-		while (!reduced_columns.empty())
-		{
-			size_t row_position = reduced_columns.size() - 1;
-			int row = rows[row_position];
-			if (lookup(row, column) < lookup(row, reduced_columns.back()))
-				reduced_columns.pop_back();
-			else
-				break;
-		}
-		if (reduced_columns.size() < rows.size())
-			reduced_columns.push_back(column);
-	}
-
-	// 递归求奇数位置行；这些结果将给相邻偶数位置行提供单调搜索边界。
-	vector<int>& odd_rows = workspace.levels[depth].odd_rows;
-	odd_rows.clear();
-	for (size_t index = 1; index < rows.size(); index += 2)
-		odd_rows.push_back(rows[index]);
-	ton_smawk_recursive(odd_rows, reduced_columns, minima, positions, workspace, depth + 1, lookup);
-
-	// 在相邻奇数行最优列之间扫描偶数位置行，完成插值阶段。
-	for (size_t index = 0; index < reduced_columns.size(); ++index)
-		positions[reduced_columns[index]] = static_cast<int>(index);
-	for (size_t row_position = 0; row_position < rows.size(); row_position += 2)
-	{
-		int left = row_position == 0
-			? 0
-			: positions[minima[rows[row_position - 1]]];
-		int right = row_position + 1 >= rows.size()
-			? static_cast<int>(reduced_columns.size()) - 1
-			: positions[minima[rows[row_position + 1]]];
-		int best_column = reduced_columns[left];
-		double best_value = lookup(rows[row_position], best_column);
-		for (int index = left + 1; index <= right; ++index)
-		{
-			int column = reduced_columns[index];
-			double value = lookup(rows[row_position], column);
-			if (value < best_value)
-			{
-				best_value = value;
-				best_column = column;
-			}
-		}
-		minima[rows[row_position]] = best_column;
-	}
-}
-
-/**
- * @brief 复用 workspace 求 0..maximum_index 的全部行最小列。
- * @return 工作区内结果的只读引用；调用者必须在下一次求解/工作区销毁前完成消费。
- */
-template <typename Lookup>
-const vector<int>& ton_smawk_row_minima(
-	int maximum_index, TonSmawkWorkspace& workspace, const Lookup& lookup)
-{
-	workspace.prepare(static_cast<size_t>(maximum_index) + 1);
-	ton_smawk_recursive(workspace.rows, workspace.columns, workspace.minima,
-		workspace.positions, workspace, 0, lookup);
-	return workspace.minima;
-}
-
-/**
- * @brief 计算 Phi_i(q)：用户取得 q 个缩放利润单位所需的最小新增带宽。
- *
- * elastic 用户通过绝对效用反函数减去 b_i^{old}；hard 用户只会以完整利润调用本函数。
- */
-double ton_scaled_bandwidth_cost(
-	const TonUserProfile& profile,
-	int scaled_profit,
-	double delta)
-{
-	if (scaled_profit <= 0)
-		return 0.0;
-	if (profile.user_type == HARD_UTILITY)
-		return profile.max_extra;
-	double target = profile.current_utility + scaled_profit * delta;
-	double total_bandwidth = ton_elastic_inverse(profile, target);
-	double extra = std::max(0.0, total_bandwidth - profile.base_bandwidth);
-	if (extra > profile.max_extra &&
-		extra - profile.max_extra <= 1e-8 * std::max(1.0, profile.max_extra))
-		extra = profile.max_extra;
-	return extra;
-}
-
-// ==================== Faster 单 UAV 算法的内部辅助代码 ====================
-
-/**
- * @brief 将候选子问题局部编号，复用原校验与 AlgFast 而不分配全局用户规模的临时数组。
- * @param ordered 已按原用户 ID 升序排列的候选；local_utilities/local_bases 接收局部状态。
- * @return 仅含 AlgFast 所需字段的单 UAV 局部模型，不得作为通用物理模型使用。
- */
-SystemMd ton_faster_local_model(const SystemMd& model, const Uav& uav,
-	const vector<User>& ordered, const vector<double>& utilities, const vector<double>& bases,
-	vector<double>& local_utilities, vector<double>& local_bases)
-{
-	const size_t global_count = model.users.size();
-	if (utilities.size() != global_count || bases.size() != global_count)
-		throw std::invalid_argument("Faster 状态向量与全局模型长度不一致");
-	if (uav.ID < 0 || static_cast<size_t>(uav.ID) >= model.cap_list.size() ||
-		model.cap_list[uav.ID].size() < global_count)
-		throw std::invalid_argument("Faster UAV 或信道向量索引非法");
-	if (!std::isfinite(uav.total_bandwidth) || uav.total_bandwidth < -EPS)
-		throw std::invalid_argument("Faster 新增带宽预算非法");
-	if (ordered.size() > static_cast<size_t>(std::numeric_limits<int>::max()))
-		throw std::length_error("Faster 候选数量超过 int 范围");
-	SystemMd local;
-	local.m = 1;
-	local.uavs.push_back(uav);
-	local.uavs[0].ID = 0;
-	local.cap_list.assign(1, vector<double>(ordered.size(), 0.0));
-	local.Bth_list.assign(1, vector<double>(ordered.size(), 0.0));
-	local.users.reserve(ordered.size());
-	local_utilities.resize(ordered.size());
-	local_bases.resize(ordered.size());
-	for (size_t i = 0; i < ordered.size(); ++i)
-	{
-		int id = ordered[i].ID;
-		if (id < 0 || static_cast<size_t>(id) >= global_count ||
-			(i > 0 && id == ordered[i - 1].ID) || model.users[id].ID != id)
-			throw std::invalid_argument("Faster 候选 ID 越界、重复或与模型不一致");
-		User user = model.users[id];
-		user.ID = static_cast<int>(i);
-		local.users.push_back(user);
-		local.cap_list[0][i] = model.cap_list[uav.ID][id];
-		local_utilities[i] = utilities[id];
-		local_bases[i] = bases[id];
-		if (user.uType == HARD_UTILITY)
-		{
-			if (static_cast<size_t>(uav.ID) >= model.Bth_list.size() ||
-				static_cast<size_t>(id) >= model.Bth_list[uav.ID].size())
-				throw std::invalid_argument("Faster hard 阈值向量索引非法");
-			local.Bth_list[0][i] = model.Bth_list[uav.ID][id];
-			++local.n1;
-		}
-		else ++local.n2;
-	}
-	// 参数、用户类型及基准效用一致性继续由原校验负责，临时数组大小现在为 n_k。
-	ton_validate_single_inputs(local, local.uavs[0], local.users, local_utilities, local_bases);
-	return local;
-}
-
-
-
-/**
- * @brief 构造真实边际收益配置；不求 LCM 接触点，不依赖其带容差的凹性分类。
- * @param model 已校验模型；其余参数沿用单 UAV 接口。
- * @return 按用户 ID 排序、预算内可能取得正收益的配置。
- */
-vector<TonUserProfile> ton_faster_profiles(
-	const SystemMd& model, const Uav& uav, const vector<User>& candidates,
-	const vector<double>& utilities, const vector<double>& bases)
-{
-	vector<TonUserProfile> profiles;
-	profiles.reserve(candidates.size());
-	for (const User& candidate : candidates)
-	{
-		const User& user = model.users[candidate.ID];
-		TonUserProfile p;
-		p.user_id = user.ID;
-		p.user_type = user.uType;
-		p.weight = user.weight;
-		p.channel = model.cap_list[uav.ID][user.ID];
-		p.base_bandwidth = std::max(0.0, bases[user.ID]);
-		p.current_utility = std::max(0.0, utilities[user.ID]);
-		if (p.user_type == HARD_UTILITY)
-		{
-			p.hard_threshold = model.Bth_list[uav.ID][user.ID];
-			if (!std::isfinite(p.hard_threshold)) continue;
-			p.hard_full_utility = p.weight * std::log2(1.0 + user.rMin);
-			p.max_extra = std::max(0.0, p.hard_threshold - p.base_bandwidth);
-			if (p.max_extra > uav.total_bandwidth + EPS) continue;
-			p.max_marginal = std::max(0.0, p.hard_full_utility - p.current_utility);
-		}
-		else
-		{
-			if (p.weight <= 0.0 || p.channel <= 0.0) continue;
-			p.max_extra = uav.total_bandwidth;
-			p.max_marginal = std::max(0.0,
-				ton_elastic_utility(user, p.channel, p.base_bandwidth + p.max_extra) -
-				p.current_utility);
-		}
-		if (!std::isfinite(p.max_marginal) || !std::isfinite(p.max_extra))
-			throw std::logic_error("Faster 预处理产生非有限收益或带宽");
-		if (p.max_marginal <= 0.0) continue;
-		p.retained = true;
-		profiles.push_back(p);
-	}
-	// 排序只作用于局部配置，不改变调用方的候选顺序或系统对象。
-	std::sort(profiles.begin(), profiles.end(),
-		[](const TonUserProfile& a, const TonUserProfile& b) {
-			return a.user_id < b.user_id;
-		});
-	return profiles;
-}
-
-/**
- * @brief 从新增带宽重建并校验真实结果；不使用缩放利润或松弛利润充当返回效用。
- * @param allocations 与 profiles 一一对应；budget 是新增带宽总预算。
- * @return 合法 KnapsackResult；实质性资源或数值错误抛出异常。
- */
-KnapsackResult ton_faster_result(const SystemMd& model, int uav_id,
-	const vector<TonUserProfile>& profiles, const vector<double>& allocations, double budget)
-{
-	if (allocations.size() != profiles.size())
-		throw std::logic_error("Faster 配置与带宽向量长度不一致");
-	double used = 0.0;
-	for (size_t i = 0; i < profiles.size(); ++i)
-	{
-		const auto& p = profiles[i];
-		double x = allocations[i];
-		if (!std::isfinite(x) || x < 0.0 ||
-			x > p.max_extra + allocation_tolerance(x, p.max_extra))
-			throw std::logic_error("Faster 返回了非法新增带宽");
-		used += x;
-		if (p.user_type == HARD_UTILITY && ton_marginal_value(p, x) > EPS &&
-			!hard_qos_satisfied(p.base_bandwidth + x, p.channel, model.users[p.user_id].rMin))
-			throw std::logic_error("Faster 返回的 hard 分配未满足 QoS");
-	}
-	if (!std::isfinite(used) || used > budget + allocation_tolerance(used, budget))
-		throw std::logic_error("Faster 分配超过新增带宽预算");
-	auto result = ton_make_marginal_result(uav_id, profiles, allocations);
-	if (!std::isfinite(result.totalValue) || result.totalValue < 0.0)
-		throw std::logic_error("Faster 返回了非法边际效用");
-	return result;
-}
-
-/** @brief 单个对偶价格的保守效用上界及对应最小化方向所需的带宽需求。 */
-struct TonFasterDualPoint {
-	double upper = INF;
-	double demand = 0.0;
-};
-
-/**
- * @brief 计算任意非负 lambda 的弱对偶上界；价格不必达到对偶最优。
- * @return 向上加入公共误差保护的上界，以及选取的局部最大化分配的带宽和。
- */
-TonFasterDualPoint ton_faster_dual(
-	const vector<TonUserProfile>& profiles, double budget, double lambda)
-{
-	if (!std::isfinite(lambda) || lambda < 0.0)
-		throw std::logic_error("Faster 对偶价格非法");
-	double upper = lambda * budget;
-	double demand = 0.0;
-	for (const auto& p : profiles)
-	{
-		double value = 0.0;
-		double x = 0.0;
-		if (p.user_type == HARD_UTILITY)
-		{
-			// EPS 与真实 hard 边际函数一致；进一步向下放宽成本只会提高上界。
-			double cost = std::max(0.0, p.max_extra -
-				std::max(EPS, allocation_tolerance(p.max_extra, budget)));
-			double gain = p.max_marginal - lambda * cost;
-			if (gain > 0.0) { value = gain; x = cost; }
-		}
-		else
-		{
-			// 正分支为凹函数，最大点是截断后的驻点；零分支最大值在 x=0。
-			x = lambda == 0.0 ? p.max_extra :
-				std::clamp(p.weight / (lambda * std::log(2.0)) -
-					1.0 / p.channel - p.base_bandwidth, 0.0, p.max_extra);
-			double at_zero = ton_marginal_value(p, 0.0);
-			double candidate = ton_marginal_value(p, x) - lambda * x;
-			if (candidate <= at_zero) { value = at_zero; x = 0.0; }
-			else value = candidate;
-		}
-		if (!std::isfinite(value) || !std::isfinite(x))
-			return {}; // 这个价格不能用于认证，调用方继续尝试或进入 DP。
-		upper += value + allocation_tolerance(value, 0.0);
-		demand += x;
-	}
-	if (!std::isfinite(upper) || !std::isfinite(demand)) return {};
-	upper = std::nextafter(upper + allocation_tolerance(upper, 0.0), INF);
-	return { upper, demand };
-}
-
-/**
- * @brief 以最多 80 次二分寻找足够紧的对偶界；只有通过保守判据才允许快速返回。
- * @param feasible_value 已重新计算的 Fast 真实可行值。
- * @return 是否已证明该可行解达到本次 epsilon 要求；搜索失败不等于算法失败。
- */
-bool ton_faster_certified(const vector<TonUserProfile>& profiles, double budget,
-	const KnapsackResult& fast, double feasible_value, double epsilon)
-{
-	// 下修可行值、上修对偶值；不使用近似松弛可行值冒充上界。
-	auto sufficient = [&](double upper) {
-		return std::isfinite(upper) &&
-			feasible_value - allocation_tolerance(feasible_value, upper) >=
-			(1.0 - epsilon) * upper;
-	};
-	if (sufficient(ton_faster_dual(profiles, budget, 0.0).upper)) return true;
-	double high = 0.0;
-	double trial = -1.0;
-	for (const auto& p : profiles)
-	{
-		double slope = 0.0;
-		if (p.user_type == HARD_UTILITY)
-		{
-			double cost = std::max(0.0, p.max_extra -
-				std::max(EPS, allocation_tolerance(p.max_extra, budget)));
-			if (cost > 0.0) slope = p.max_marginal / cost;
-		}
-		else
-		{
-			slope = ton_elastic_derivative(p, p.base_bandwidth);
-			auto found = fast.allocatedBandwidth.find(p.user_id);
-			if (trial < 0.0 && found != fast.allocatedBandwidth.end() && found->second > 0.0)
-				trial = ton_elastic_derivative(p, p.base_bandwidth + found->second);
-		}
-		if (!std::isfinite(slope)) return false;
-		high = std::max(high, slope);
-	}
-	if (sufficient(ton_faster_dual(profiles, budget, high).upper)) return true;
-	double low = 0.0;
-	// 优先复用 Fast 解透露的边际价格，其余迭代始终在非负区间内进行。
-	for (int iteration = 0; iteration < 80 && high > low; ++iteration)
-	{
-		double lambda = iteration == 0 && trial > low && trial < high
-			? trial : low + (high - low) * 0.5;
-		if (lambda <= low || lambda >= high) break;
-		auto point = ton_faster_dual(profiles, budget, lambda);
-		if (sufficient(point.upper)) return true;
-		if (!std::isfinite(point.upper)) return false;
-		if (point.demand > budget) low = lambda;
-		else high = lambda;
-	}
-	return false;
-}
-
-/**
- * @brief 凹用户池的解析注水值函数；用前缀统计实现 O(log n) 查询，最后才重建带宽。
- * 对每个用户令 a=1/C+b_old、theta=a/w，分段内 x=w*level-a。
- */
-struct TonFasterConcavePool {
-	struct Entry {
-		size_t index;
-		double weight;
-		double offset;
-		double threshold;
-	};
-	vector<Entry> entries;
-	vector<double> prefix_weight, prefix_offset, prefix_log, breakpoints;
-	double constant_value = 0.0;
-
-	/** @brief 预处理给定凹用户下标；profiles 必须在该对象使用期间保持不变。 */
-	TonFasterConcavePool(const vector<TonUserProfile>& profiles, const vector<size_t>& indices)
-	{
-		for (size_t index : indices)
-		{
-			const auto& p = profiles[index];
-			double offset = 1.0 / p.channel + p.base_bandwidth;
-			double threshold = offset / p.weight;
-			if (!std::isfinite(offset) || !std::isfinite(threshold) || threshold <= 0.0)
-				throw std::logic_error("Faster 注水偏移或激活水位非法");
-			entries.push_back({ index, p.weight, offset, threshold });
-			constant_value += ton_marginal_value(p, 0.0);
-		}
-		// 相同起始水位按用户 ID 顺序处理，避免排序平局的不确定性。
-		std::sort(entries.begin(), entries.end(), [&](const Entry& a, const Entry& b) {
-			return a.threshold < b.threshold ||
-				(a.threshold == b.threshold &&
-					profiles[a.index].user_id < profiles[b.index].user_id);
-		});
-		double weights = 0.0, offsets = 0.0, logs = 0.0;
-		for (size_t i = 0; i < entries.size(); ++i)
-		{
-			const auto& e = entries[i];
-			weights += e.weight;
-			offsets += e.offset;
-			logs -= e.weight * std::log(e.threshold);
-			if (!std::isfinite(weights) || !std::isfinite(offsets) || !std::isfinite(logs))
-				throw std::logic_error("Faster 注水前缀统计溢出");
-			prefix_weight.push_back(weights);
-			prefix_offset.push_back(offsets);
-			prefix_log.push_back(logs);
-			if (i + 1 < entries.size())
-			{
-				double boundary = weights * entries[i + 1].threshold - offsets;
-				if (!std::isfinite(boundary))
-					throw std::logic_error("Faster 注水断点溢出");
-				// 理论断点单调非负，仅向单调方向消除浮点累计的微小逆序。
-				breakpoints.push_back(std::max(
-					breakpoints.empty() ? 0.0 : breakpoints.back(), boundary));
-			}
-		}
-		if (!std::isfinite(constant_value))
-			throw std::logic_error("Faster 注水常数收益溢出");
-	}
-
-	/** @brief 查询非负预算所在的注水分段；仅在池非空时调用。 */
-	size_t segment(double budget) const
-	{
-		return static_cast<size_t>(std::upper_bound(
-			breakpoints.begin(), breakpoints.end(), budget) - breakpoints.begin());
-	}
-
-	/** @brief 返回给定剩余预算的最优真实边际效用，不逐用户遍历或分配内存。 */
-	double value(double budget) const
-	{
-		if (!std::isfinite(budget) || budget < 0.0)
-			throw std::logic_error("Faster 注水查询预算非法");
-		if (entries.empty() || budget == 0.0) return constant_value;
-		size_t k = segment(budget);
-		double level = (budget + prefix_offset[k]) / prefix_weight[k];
-		double gain = (prefix_log[k] + prefix_weight[k] * std::log(level)) / std::log(2.0);
-		if (!std::isfinite(gain) || gain < -allocation_tolerance(gain, constant_value))
-			throw std::logic_error("Faster 注水值函数发生实质性数值错误");
-		return constant_value + std::max(0.0, gain);
-	}
-
-	/** @brief 只为最终获选预算重建凹用户新增带宽，写入按 profiles 对齐的向量。 */
-	void allocate(double budget, vector<double>& allocations) const
-	{
-		if (entries.empty() || budget <= 0.0) return;
-		size_t k = segment(budget);
-		double level = (budget + prefix_offset[k]) / prefix_weight[k];
-		double sum = 0.0;
-		for (size_t i = 0; i <= k; ++i)
-			sum += std::max(0.0, entries[i].weight * level - entries[i].offset);
-		if (!std::isfinite(sum) || sum > budget + allocation_tolerance(sum, budget))
-			throw std::logic_error("Faster 注水重建超过预算");
-		double remaining = budget;
-		for (size_t i = 0; i <= k; ++i)
-		{
-			const auto& e = entries[i];
-			// 只截除累计舍入造成的微小超额，不改动 hard 阈值分配。
-			double added = std::min(remaining, std::max(0.0, e.weight * level - e.offset));
-			allocations[e.index] = added;
-			remaining = std::max(0.0, remaining - added);
-		}
-	}
-};
-
-/**
- * @brief 按正收益所需的必要带宽下界，计算非凹用户可同时激活数的安全上界。
- * @return 至多为 indices.size()；逆函数或求和无法可靠计算时退回该全集大小。
- */
-size_t ton_faster_activation_bound(const vector<TonUserProfile>& profiles,
-	const vector<size_t>& indices, double budget)
-{
-	vector<double> lower_costs;
-	lower_costs.reserve(indices.size());
-	for (size_t index : indices)
-	{
-		const auto& p = profiles[index];
-		double cost = p.user_type == HARD_UTILITY ? p.max_extra :
-			ton_elastic_inverse(p, p.current_utility) - p.base_bandwidth;
-		if (!std::isfinite(cost)) return indices.size();
-		// 必须使用 break-even 而非 tau；降低下界、放宽预算只会增大 s。
-		lower_costs.push_back(std::max(0.0, cost - allocation_tolerance(cost, budget)));
-	}
-	std::sort(lower_costs.begin(), lower_costs.end());
-	double sum = 0.0;
-	size_t count = 0;
-	for (double cost : lower_costs)
-	{
-		double next = sum + cost;
-		if (!std::isfinite(next)) return indices.size();
-		if (next > budget + allocation_tolerance(next, budget)) break;
-		sum = next;
-		++count;
-	}
-	return count;
-}
-
-/**
- * @brief 在活动行 0..row_max、活动列 0..column_max 上执行矩形 SMAWK。
- * @return 工作区内的最优列；不改变原方形适配器及其调用行为。
- */
-template <typename Lookup>
-const vector<int>& ton_faster_rectangular_minima(
-	int row_max, int column_max, TonSmawkWorkspace& workspace, const Lookup& lookup)
-{
-	if (row_max < 0 || column_max < 0)
-		throw std::logic_error("Faster SMAWK 活动范围非法");
-	workspace.prepare(static_cast<size_t>(std::max(row_max, column_max)) + 1);
-	workspace.rows.resize(static_cast<size_t>(row_max) + 1);
-	workspace.columns.resize(static_cast<size_t>(column_max) + 1);
-	std::iota(workspace.rows.begin(), workspace.rows.end(), 0);
-	std::iota(workspace.columns.begin(), workspace.columns.end(), 0);
-	ton_smawk_recursive(workspace.rows, workspace.columns, workspace.minima,
-		workspace.positions, workspace, 0, lookup);
-	return workspace.minima;
-}
-
-// ==================== Faster 内部辅助代码结束 ====================
-
-} // namespace
-
+// 按delimiter拆分旧输入字段；返回字符串列表，保留旧读取入口的行为。
 vector<string> split(const string& s, char delimiter) {
 	vector<string> tokens;
 	string token;
@@ -1042,17 +83,34 @@ void Point::print_point()
 {
 }
 
-/// Return hard utility only when actual reliable rate meets the common QoS rule.
+/// 根据可靠速率确定实际等级；复用现有容差，旧对象使用rMin作为唯一正等级。
+int User::achieved_hard_level(double bandwidth, double capacity) const
+{
+	if (uType != HARD_UTILITY) return 0;
+	if (hard_rate_levels.empty())
+		return hard_qos_satisfied(bandwidth, capacity, rMin) ? 1 : 0;
+	// 从最高等级向下查找，不修改完整等级表，也不跨UAV累加速率。
+	for (size_t count = hard_rate_levels.size(); count > 0; --count)
+		if (hard_qos_satisfied(bandwidth, capacity, hard_rate_levels[count - 1]))
+			return static_cast<int>(count);
+	return 0;
+}
+
+/// level为1起始等级；返回总效用而非增量，速率采用内部Kbps数值。
+double User::hard_level_utility(int level) const
+{
+	if (level == 0) return 0.0;
+	const size_t count = hard_rate_levels.empty() ? 1 : hard_rate_levels.size();
+	if (uType != HARD_UTILITY || level < 0 || static_cast<size_t>(level) > count)
+		throw std::invalid_argument("Invalid hard service level");
+	const double rate_kbps = hard_rate_levels.empty() ? rMin : hard_rate_levels[level - 1];
+	return weight * std::log2(1.0 + rate_kbps);
+}
+
+/// bandwidth为kHz，capacity为可靠频谱效率；保留SNR参数以兼容原调用接口。
 double User::hard_utility(double bandwidth_, double capacity_, double SNR_avg_dB) const
 {
-	if (hard_qos_satisfied(bandwidth_, capacity_, rMin))
-	{
-		double uti = weight * log2(1 + rMin);
-		//double uti = hard_utility_SNR_avg(bandwidth_, SNR_avg_dB);
-		return uti;
-	}
-	else
-		return 0.0;
+	return hard_level_utility(achieved_hard_level(bandwidth_, capacity_));
 }
 
 double User::hard_utility_SNR_avg(double bandwidth_, double SNR_avg_dB) const
@@ -1068,27 +126,19 @@ double User::hard_utility_SNR_avg(double bandwidth_, double SNR_avg_dB) const
 
 double User::hard_utility(double outage_) const
 {
+	// 单个outage值没有所针对的速率阈值，不能判定多级服务。
+	if (hard_rate_levels.size() > 1)
+		throw std::invalid_argument("Multi-level utility requires bandwidth and reliable capacity");
 	if (outage_ <= pOut)
-		return weight * log2(1 + rMin);
+		return hard_level_utility(1);
 	else
 		return 0.0;
 }
 
 double User::elastic_utility(double bandwidth_, double capacity_) const
 {
+	// 真实elastic效用使用内部Kbps速率；不加门槛，不除以参考速率效用。
 	double r = bandwidth_ * capacity_;
-	// 参数p的选取会影响函数的增长速度，p越大，函数增长越快
-	// 备注：当r < rMin时，效用为0；当r >= rMin时，
-	// 具体定义参见tanUtilityMaximizationResource2015
-	/*double v = 0.2;
-	if(r < rMin)
-		return 0.0;
-	else
-		return weight * (1 - exp(-v * (r - rMin)));*/
-
-		// 定义2：参见shiNetworkUtilityMaximization2008 公式(4)
-		// user(r) = w * log(1 + r) / log(1 + rMin)
-		// return weight * log(1 + r) / log(1 + rMin);
 	return weight * log2(1 + r);
 }
 
@@ -1473,7 +523,7 @@ struct RawUserData {
 	double lon, lat;
 	string type;
 	double weight;
-	double req1; // rMin (Kbps)
+	double req1; // 旧文件中的rMin，单位Mbps；构造User时转为Kbps。
 	double req2; // pOut or ignored
 };
 
@@ -1571,28 +621,19 @@ SystemMd::SystemMd(string user_file, string uav_file, string config_file)
 		double z = 0.0; // 用户默认为地面 0
 
 		int type = (raw.type == "hard") ? HARD_UTILITY : ELASTIC_UTILITY;
-		// 权重取整? User构造函数里weight是int，但文件里是double(0.606)。
-		// 建议修改User类支持double权重，或者这里暂时放大/取整。
-		// 根据User类定义 `int weight`，这里只能取整或者修改User类。
-		// 为了保持逻辑，这里暂时强制转int，建议后续优化User类支持double权重。
-		// *修正*：为了保持精度，这里假设User类未修改，若权重非常小(0.xxx)，int会变成0。
-		// 假设User类的weight应该改为double。如果不能改，这里建议 * 10 或者向上取整。
-		// 鉴于上下文是PhD研究，通常权重是相对值，这里暂时使用 ceil 确保不为0，或者假设User类已改为double。
-		// 这里按照 int 转换 (如果User::weight是int):
+		// User权重为double，按输入原值传递，不取整或放大。
 		double w = raw.weight;
-		// 如果User::weight已经改为了double (推荐)，则直接传 raw.weight。
-		// 假设这里按照代码现状 int 处理。
 
-		double rMin_mbps = raw.req1 * unit_para;
+		double rMin_kbps = raw.req1 * unit_para; // 文件Mbps转为内部Kbps。
 
 		double pOut = 0.0;
 		if (type == HARD_UTILITY) {
 			pOut = raw.req2;
-			hard_users.emplace_back(user_id_counter++, type, w, x, y, z, rMin_mbps, pOut);
+			hard_users.emplace_back(user_id_counter++, type, w, x, y, z, rMin_kbps, pOut);
 		}
 		else {
 			// Elastic 用户也有 rMin (user_requirement_1), req2 忽略
-			elastic_users.emplace_back(user_id_counter++, type, w, x, y, z, rMin_mbps, pOut);
+			elastic_users.emplace_back(user_id_counter++, type, w, x, y, z, rMin_kbps, pOut);
 		}
 	}
 	// 拼接两个vector
@@ -1611,17 +652,13 @@ SystemMd::SystemMd(string user_file, string uav_file, string config_file)
 		double x = (raw.lon - min_lon) * lon_to_meter;
 		double y = (raw.lat - min_lat) * lat_to_meter;
 
-		// 带宽：文件中是 50 (MHz)。
-		// 系统默认带宽往往是 20. 如果 config.h 或 predefine.h 有默认值，这里会覆盖。
-		// 保持单位一致，内部计算使用 MHz，则存 50。
+		// 文件MHz转为内部kHz；例如40MHz存为40000，信道噪声积分处再转换为Hz。
 		double bw = raw.bandwidth * unit_para;
 
-		// Uav(int id_, double x1, double y1, double z1, int total_bandwidth_)
-		// 注意 Uav 构造函数最后一个参数是 int，如果 bandwidth 是 double，这里也会截断。
-		// 同样建议 Uav 类支持 double bandwidth。
+		// Uav构造参数为double，保留带宽小数精度。
 		this->uavs.emplace_back(uav_id_counter++, x, y, uav_alt, bw);
 
-		// 强行赋值以防构造函数参数类型限制
+		// 发射功率沿用本次加载的物理配置。
 		this->uavs.back().pTrans = uav_trans_power;
 	}
 
@@ -1654,6 +691,215 @@ SystemMd::SystemMd(string user_file, string uav_file, string config_file)
 	// cout << "UAVs: " << uavs.size() << endl;
 }
 
+namespace {
+
+/// 读取新格式的一行CSV，支持带引号字段及双引号转义；返回字段列表，坏引号明确报错。
+vector<string> model_csv_fields(const string& line)
+{
+	vector<string> fields;
+	string field;
+	bool quoted = false, closed_quote = false;
+	for (size_t i = 0; i < line.size(); ++i) {
+		const char ch = line[i];
+		if (quoted) {
+			if (ch == '"' && i + 1 < line.size() && line[i + 1] == '"') {
+				field += '"'; ++i;
+			} else if (ch == '"') { quoted = false; closed_quote = true; }
+			else field += ch;
+		} else if (ch == ',') {
+			fields.push_back(field); field.clear(); closed_quote = false;
+		} else if (ch == '"' && field.empty() && !closed_quote) quoted = true;
+		else {
+			if (ch == '"' || closed_quote) throw std::invalid_argument("Invalid CSV quoting");
+			field += ch;
+		}
+	}
+	if (quoted) throw std::invalid_argument("Unclosed CSV quote");
+	fields.push_back(field);
+	return fields;
+}
+
+/// 读取指定表头的新CSV；保留空字段，拒绝坏行而不是静默丢弃用户，错误包含路径与行号。
+vector<vector<string>> model_read_csv(const string& path, const string& header)
+{
+	ifstream input(path);
+	if (!input) throw std::runtime_error("Cannot open CSV: " + path);
+	string line;
+	getline(input, line);
+	if (!line.empty() && line.back() == '\r') line.pop_back();
+	if (line.compare(0, 3, "\xEF\xBB\xBF") == 0) line.erase(0, 3);
+	if (line != header) throw std::invalid_argument("Unexpected CSV header: " + path);
+	const size_t columns = model_csv_fields(header).size();
+	vector<vector<string>> rows;
+	size_t line_number = 1;
+	while (getline(input, line)) {
+		++line_number;
+		if (!line.empty() && line.back() == '\r') line.pop_back();
+		if (line.empty()) continue;
+		try {
+			auto fields = model_csv_fields(line);
+			if (fields.size() != columns) throw std::invalid_argument("Wrong field count");
+			rows.push_back(std::move(fields));
+		} catch (const std::exception& error) {
+			throw std::invalid_argument(path + ":" + std::to_string(line_number) + ": " + error.what());
+		}
+	}
+	if (input.bad()) throw std::runtime_error("CSV read failed: " + path);
+	return rows;
+}
+
+/// 将字段完整解析为有限非负数；不接受空值、NaN或数字后的杂字符，context用于定位输入。
+double model_nonnegative_number(const string& value, const string& context)
+{
+	size_t consumed = 0;
+	double result;
+	try { result = std::stod(value, &consumed); }
+	catch (const std::exception&) { throw std::invalid_argument("Invalid number: " + context); }
+	if (consumed != value.size() || !std::isfinite(result) || result < 0)
+		throw std::invalid_argument("Invalid nonnegative number: " + context);
+	return result;
+}
+
+/// 经/纬度允许负值；解析完整字段并检查地理范围，context标识用户或UAV。
+double model_coordinate(const string& value, double bound, const string& context)
+{
+	size_t consumed = 0;
+	double result;
+	try { result = std::stod(value, &consumed); }
+	catch (const std::exception&) { throw std::invalid_argument("Invalid coordinate: " + context); }
+	if (consumed != value.size() || !std::isfinite(result) || std::abs(result) > bound)
+		throw std::invalid_argument("Coordinate out of range: " + context);
+	return result;
+}
+
+} // 新输入解析辅助函数仅在本文件使用。
+
+/// 新输入入口：应用表确定完整等级，用户CSV确定身份/权重，物理配置与UAV文件确定环境。
+SystemMd::SystemMd(string user_file, string uav_file, string config_file, string application_profiles_file)
+{
+	// 1. 先校验整个应用表；等级在读入时从Mbps转换为Kbps，不缓存重复的等级效用。
+	ifstream profile_stream(application_profiles_file);
+	if (!profile_stream) throw std::runtime_error("Cannot open application profiles: " + application_profiles_file);
+	json document;
+	profile_stream >> document;
+	const string version = document.at("config_version").get<string>();
+	if (version.empty() || !document.at("profiles").is_object() || document.at("profiles").empty())
+		throw std::invalid_argument("Invalid application profile table");
+	map<string, User> profiles; // 配置模板仅携带QoS和类型，用户权重稍后从CSV填入。
+	for (auto entry = document.at("profiles").begin(); entry != document.at("profiles").end(); ++entry) {
+		User profile;
+		profile.profile_id = entry.key();
+		profile.config_version = version;
+		const string type = entry.value().at("user_type").get<string>();
+		if (entry.key().empty() || (type != "hard" && type != "elastic"))
+			throw std::invalid_argument("Invalid profile type: " + entry.key());
+		profile.uType = type == "hard" ? HARD_UTILITY : ELASTIC_UTILITY;
+		if (profile.uType == HARD_UTILITY) {
+			profile.pOut = entry.value().at("p_out").get<double>();
+			if (!std::isfinite(profile.pOut) || profile.pOut <= 0 || profile.pOut >= 1)
+				throw std::invalid_argument("Invalid outage probability: " + entry.key());
+			const auto rates = entry.value().at("rate_thresholds_mbps").get<vector<double>>();
+			double previous_rate = 0;
+			if (rates.empty()) throw std::invalid_argument("Empty hard levels: " + entry.key());
+			for (double rate : rates) {
+				const double internal_rate = rate * unit_para;
+				if (!std::isfinite(internal_rate) || rate <= previous_rate)
+					throw std::invalid_argument("Hard rates must be positive and increasing: " + entry.key());
+				profile.hard_rate_levels.push_back(internal_rate);
+				previous_rate = rate;
+			}
+			profile.rMin = profile.hard_rate_levels.back();
+		} else if (entry.value().contains("p_out") || entry.value().contains("rate_thresholds_mbps")) {
+			throw std::invalid_argument("Elastic profile must not define hard levels: " + entry.key());
+		}
+		profiles.emplace(entry.key(), std::move(profile));
+	}
+
+	// 2. 读取用户并保留原ID；暂把经纬度存在Point.X/Y中，稍后统一转换为米。
+	const auto user_rows = model_read_csv(user_file,
+		"user_id,longitude,latitude,user_type,user_weight,user_requirement_1,user_requirement_2,app_label,service_category,profile_id,config_version");
+	map<string, bool> seen_users;
+	for (const auto& row : user_rows) {
+		const string context = user_file + ": user " + row[0];
+		if (row[0].empty() || !seen_users.emplace(row[0], true).second)
+			throw std::invalid_argument("Empty or duplicate user ID: " + context);
+		const auto found = profiles.find(row[9]);
+		if (found == profiles.end()) throw std::invalid_argument("Unknown profile: " + context);
+		User user = found->second;
+		if (row[10] != version || row[3] != (user.uType == HARD_UTILITY ? "hard" : "elastic"))
+			throw std::invalid_argument("Profile version/type mismatch: " + context);
+		if (row[7].empty() || row[8].empty()) throw std::invalid_argument("Missing application/category: " + context);
+		user.source_user_id = row[0];
+		user.app_label = row[7];
+		user.service_category = row[8];
+		user.weight = model_nonnegative_number(row[4], context + " weight");
+		if (user.weight == 0) throw std::invalid_argument("Weight must be positive: " + context);
+		user.X = model_coordinate(row[1], 180, context + " longitude");
+		user.Y = model_coordinate(row[2], 90, context + " latitude");
+		if (user.uType == HARD_UTILITY) {
+			if (!row[5].empty() || !row[6].empty())
+				throw std::invalid_argument("Hard requirements must come only from profile: " + context);
+		} else {
+			user.rMin = model_nonnegative_number(row[5], context + " requirement_1") * unit_para;
+			user.elastic_requirement_2 = model_nonnegative_number(row[6], context + " requirement_2") * unit_para;
+			if (!std::isfinite(user.rMin) || !std::isfinite(user.elastic_requirement_2))
+				throw std::invalid_argument("Elastic requirement conversion overflow: " + context);
+		}
+		users.push_back(std::move(user));
+	}
+
+	// 3. UAV格式沿用原输入，但新入口不再静默跳过缺列或非法带宽。
+	const auto uav_rows = model_read_csv(uav_file, "uav_id,longitude,latitude,bandwidth");
+	map<string, bool> seen_uavs;
+	for (const auto& row : uav_rows) {
+		const string context = uav_file + ": UAV " + row[0];
+		if (row[0].empty() || !seen_uavs.emplace(row[0], true).second)
+			throw std::invalid_argument("Empty or duplicate UAV ID: " + context);
+		const double bandwidth = model_nonnegative_number(row[3], context + " bandwidth") * unit_para;
+		if (!std::isfinite(bandwidth)) throw std::invalid_argument("Bandwidth conversion overflow: " + context);
+		uavs.emplace_back(static_cast<int>(uavs.size()), model_coordinate(row[1], 180, context),
+			model_coordinate(row[2], 90, context), 0.0, bandwidth);
+	}
+
+	// 4. 沿用原等距投影：以用户和UAV共同的最小经纬度为原点；hard稳定排在elastic前。
+	load_global_channel_config(config_file);
+	double min_lon = 180.0, min_lat = 90.0;
+	for (const auto& user : users) { min_lon = std::min(min_lon, user.X); min_lat = std::min(min_lat, user.Y); }
+	for (const auto& uav : uavs) { min_lon = std::min(min_lon, uav.X); min_lat = std::min(min_lat, uav.Y); }
+	const double lat_to_meter = pi * EARTH_RADIUS / 180.0;
+	const double lon_to_meter = lat_to_meter * std::cos(min_lat * pi / 180.0);
+	std::stable_partition(users.begin(), users.end(), [](const User& user) { return user.uType == HARD_UTILITY; });
+	for (size_t i = 0; i < users.size(); ++i) {
+		users[i].ID = static_cast<int>(i);
+		users[i].X = (users[i].X - min_lon) * lon_to_meter;
+		users[i].Y = (users[i].Y - min_lat) * lat_to_meter;
+		users[i].Z = 0;
+	}
+	for (auto& uav : uavs) {
+		uav.X = (uav.X - min_lon) * lon_to_meter;
+		uav.Y = (uav.Y - min_lat) * lat_to_meter;
+		uav.Z = uav_alt;
+		uav.pTrans = uav_trans_power;
+	}
+	// 信道仅依赖几何、用户类型和共享outage；等级不需要逐个重建信道。
+	init_SystemModel();
+}
+
+/// 将完整实例复制为最高等级单阈值视图；刷新覆盖用户缓存，不重新构造信道矩阵。
+SystemMd SystemMd::highest_level_view() const
+{
+	SystemMd view = *this;
+	for (auto& user : view.users) {
+		if (user.uType != HARD_UTILITY || user.hard_rate_levels.empty()) continue;
+		user.rMin = user.hard_rate_levels.back();
+		user.hard_rate_levels = { user.rMin };
+	}
+	// 缓存中也包含User副本，必须一并换为新视图，防止基线从缓存读到中间等级。
+	for (auto& entry : view.uav_serviceable_users_map)
+		for (auto& user : entry.second) user = view.users.at(user.ID);
+	return view;
+}
+
 /// Rebuild all derived channel state; identical inputs produce identical repeated initializations.
 void SystemMd::init_SystemModel()
 {
@@ -1669,6 +915,21 @@ void SystemMd::init_SystemModel()
 		if (user.uType == HARD_UTILITY && n2 == 0) ++n1;
 		else if (user.uType == ELASTIC_UTILITY) ++n2;
 		else throw std::invalid_argument("Expected hard users followed by elastic users");
+		// 多级对象无论来自文件还是内存，都必须保持完整正等级与最高阈值的一致性。
+		if (!user.hard_rate_levels.empty()) {
+			if (user.uType != HARD_UTILITY || !std::isfinite(user.pOut) || user.pOut <= 0 || user.pOut >= 1 ||
+				!std::isfinite(user.weight) || user.weight <= 0)
+				throw std::invalid_argument("Invalid multi-level hard user");
+			double previous = 0;
+			for (double rate : user.hard_rate_levels) {
+				if (!std::isfinite(rate) || rate <= previous ||
+					!std::isfinite(user.weight * std::log2(1.0 + rate)))
+					throw std::invalid_argument("Invalid hard rate levels or utility overflow");
+				previous = rate;
+			}
+			if (user.rMin != user.hard_rate_levels.back())
+				throw std::invalid_argument("rMin must equal highest hard rate level");
+		}
 	}
 	for (size_t k = 0; k < uavs.size(); ++k)
 		if (uavs[k].ID != static_cast<int>(k) ||
@@ -1705,7 +966,7 @@ void SystemMd::init_SystemModel()
 
 		for (int j = 0; j < n1; j++)
 		{
-			// 计算每个硬性用户的最小带宽需求
+			// 保存rMin对应的带宽阈值；多级hard为最高等级，供旧单阈值基线使用。
 			double cap = cap_list[i][j];
 			if (cap > 0)
 				Bth_list[i][j] = users[j].rMin / cap;
@@ -5094,1098 +4355,828 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::approposed_multiUA
 
 
 /**
- * @brief 使用 ToN Algorithm 1 求解平移后的单 UAV 边际效用问题。
- *
- * 函数在新增带宽坐标中构造每个用户的最小凹上界，利用临界导数求解松弛问题，
- * 并在出现 unsafe 用户时执行二候选舍入。
- * @param uav 待评估 UAV；其 total_bandwidth 是本次可分配的新增带宽预算。
- * @param candidate_users 本次调用考虑的可服务用户集合。
- * @param current_utilities 按用户 ID 索引的当前网络绝对效用 m_j。
- * @param base_bandwidths 按用户 ID 索引的当前 UAV 已有基准带宽 b_{kj}^{old}。
- * @return 新增带宽以及由原始非凹边际函数重新计算的真实边际效用。
+ * @brief 按新稿Algorithm 1求解单UAV绝对效用：多级凹松弛、临界斜率搜索及两候选舍入。
+ * @param uav 待求解UAV，其total_bandwidth是本次完整可用预算，单位kHz。
+ * @param candidate_users 候选用户；用其内部ID访问sysModel中的原始用户与信道，不修改输入。
+ * @return 实际带宽及真实绝对效用，各分项与返回分配一致；非法输入或数值异常抛错。
  */
 KnapsackResult BAProblem::AlgFast_singleUAV_ToN(
-	const Uav& uav,
-	const vector<User>& candidate_users,
-	const vector<double>& current_utilities,
-	const vector<double>& base_bandwidths)
+    const Uav& uav, const vector<User>& candidate_users)
 {
-	ton_validate_single_inputs(
-		sysModel, uav, candidate_users, current_utilities, base_bandwidths);
-	KnapsackResult empty_result;
-	empty_result.uav_id = uav.ID;
-	const double budget = std::max(0.0, uav.total_bandwidth);
-	if (candidate_users.empty() || budget <= EPS)
-		return empty_result;
+    const double budget = uav.total_bandwidth;
+    const double ln2 = std::log(2.0); // 只缓存相同标量，不重排后续乘除表达式。
+    if (!std::isfinite(budget) || budget < 0 || uav.ID < 0 ||
+        static_cast<size_t>(uav.ID) >= sysModel.uavs.size() ||
+        static_cast<size_t>(uav.ID) >= sysModel.cap_list.size() ||
+        static_cast<size_t>(uav.ID) >= sysModel.dis_list.size())
+        throw std::invalid_argument("Fast: invalid UAV or bandwidth budget");
 
-	// 先剔除零增益、不可达或预算内无法满足的用户，仅保留有效边际配置。
-	vector<TonUserProfile> profiles;
-	profiles.reserve(candidate_users.size());
-	for (const User& candidate : candidate_users)
-	{
-		TonUserProfile profile;
-		if (ton_build_profile(
-			sysModel, uav, candidate.ID, current_utilities, base_bandwidths, profile))
-			profiles.push_back(profile);
-	}
-	if (profiles.empty())
-		return empty_result;
+    // 局部求解数据：hard的thresholds含零端点，slopes[l-1]对应第l段。
+    // 所有等级只在此处筛选；原始用户的完整等级表与最高等级rMin不变。
+    struct FastUser {
+        const User* user = nullptr;
+        double capacity = 0;
+        double inverse_capacity = 0; // 与原1.0/capacity表达式完全一致。
+        vector<double> level_values; // 预处理已计算的各等级真实效用，含0级。
+        double upper = 0;
+        double derivative_zero = 0, derivative_upper = 0; // elastic两端导数。
+        vector<double> thresholds;
+        vector<double> slopes;
+    };
+    vector<FastUser> active;
+    active.reserve(candidate_users.size());
+    // 已有升序时相邻查重；乱序输入仍使用原map路径，避免分配全网长度标记数组。
+    const bool ordered_ids = std::is_sorted(candidate_users.begin(), candidate_users.end(),
+        [](const User& x, const User& y) { return x.ID < y.ID; });
+    int previous_id = -1;
+    map<int, bool> seen_ids;
+    for (const User& candidate : candidate_users) {
+        const int id = candidate.ID;
+        if (id < 0 || static_cast<size_t>(id) >= sysModel.users.size() ||
+            sysModel.users[id].ID != id ||
+            (ordered_ids ? id == previous_id : !seen_ids.emplace(id, true).second))
+            throw std::invalid_argument("Fast: invalid or duplicate candidate ID");
+        previous_id = id;
+        const User& user = sysModel.users[id];
+        if ((user.uType != HARD_UTILITY && user.uType != ELASTIC_UTILITY) ||
+            !std::isfinite(user.weight) || user.weight <= 0)
+            throw std::invalid_argument("Fast: invalid user type or weight");
+        if (static_cast<size_t>(id) >= sysModel.cap_list[uav.ID].size() ||
+            static_cast<size_t>(id) >= sysModel.dis_list[uav.ID].size())
+            throw std::invalid_argument("Fast: incomplete channel matrices");
+        const double cap = sysModel.cap_list[uav.ID][id];
+        const double distance = sysModel.dis_list[uav.ID][id];
+        if (!std::isfinite(cap) || cap < 0 || !std::isfinite(distance) || distance < 0)
+            throw std::invalid_argument("Fast: invalid channel or distance");
+        if (budget == 0 || cap == 0 || distance > max_coverage_distance) continue;
 
-	// 仅建立输出及平台填充所需的 ID 下标顺序，不改变求解时 profiles 的遍历顺序。
-	vector<size_t> output_order(profiles.size());
-	std::iota(output_order.begin(), output_order.end(), size_t(0));
-	/** @brief 比较两个配置下标对应的用户 ID，返回是否为升序。 */
-	auto by_user_id = [&](size_t lhs, size_t rhs) {
-		return profiles[lhs].user_id < profiles[rhs].user_id;
-		};
-	if (!std::is_sorted(output_order.begin(), output_order.end(), by_user_id))
-		std::sort(output_order.begin(), output_order.end(), by_user_id);
+        FastUser item;
+        item.user = &user;
+        item.capacity = cap;
+        item.inverse_capacity = 1.0 / cap;
+        if (user.uType == ELASTIC_UTILITY) {
+            item.upper = budget;
+            item.derivative_zero = user.weight * cap / ln2;
+            item.derivative_upper = user.weight / ln2 / (budget + item.inverse_capacity);
+            if (!std::isfinite(item.derivative_zero) || !std::isfinite(item.derivative_upper) ||
+                item.derivative_upper <= 0)
+                throw std::logic_error("Fast: nonrepresentable elastic derivatives");
+        } else {
+            const size_t level_count = user.hard_rate_levels.empty() ? 1 : user.hard_rate_levels.size();
+            item.thresholds.reserve(level_count + 1);
+            item.slopes.reserve(level_count);
+            item.level_values.reserve(level_count + 1);
+            item.thresholds.push_back(0.0);
+            item.level_values.push_back(0.0);
+            double previous_rate = 0, previous_value = 0;
+            for (size_t level = 0; level < level_count; ++level) {
+                const double rate = user.hard_rate_levels.empty() ? user.rMin : user.hard_rate_levels[level];
+                if (!std::isfinite(rate) || rate <= previous_rate)
+                    throw std::invalid_argument("Fast: hard levels must be positive and increasing");
+                previous_rate = rate;
+                const double threshold = rate / cap;
+                // 仅保留本预算可满足的等级；正好在容差边界处按同一可靠速率规则处理。
+                if (threshold > budget && !hard_qos_satisfied(budget, cap, rate)) break;
+                const double endpoint = std::min(threshold, budget);
+                const double value = user.hard_level_utility(static_cast<int>(level + 1));
+                const double slope = (value - previous_value) / (endpoint - item.thresholds.back());
+                if (!std::isfinite(slope) || slope <= 0 || endpoint <= item.thresholds.back() ||
+                    (!item.slopes.empty() && slope >= item.slopes.back()))
+                    throw std::logic_error("Fast: invalid or nondecreasing hard segment slopes");
+                item.thresholds.push_back(endpoint);
+                item.slopes.push_back(slope);
+                item.level_values.push_back(value);
+                previous_value = value;
+            }
+            if (item.slopes.empty()) continue;
+            item.upper = item.thresholds.back();
+        }
+        active.push_back(std::move(item));
+    }
+    // 内部ID顺序同时决定同斜率填充和输出顺序；不重排调用者的候选向量。
+    auto by_id = [](const FastUser& a, const FastUser& b) { return a.user->ID < b.user->ID; };
+    if (!std::is_sorted(active.begin(), active.end(), by_id))
+        std::sort(active.begin(), active.end(), by_id);
+    vector<double> allocations(active.size(), 0.0);
+    const double budget_tol = allocation_tolerance(budget, budget);
 
-	vector<double> allocations(profiles.size(), 0.0);
-	/**
-	 * @brief 按已准备的 ID 顺序构造当前 allocations 的真实边际结果。
-	 * @param cached_values 按 profiles 下标缓存的获选候选效用；为空时使用原函数计算。
-	 * @return 保持原过滤条件及各字段累加顺序的 KnapsackResult，不修改共用构造函数。
-	 */
-	auto make_result = [&](const vector<double>* cached_values) {
-		KnapsackResult result;
-		result.uav_id = uav.ID;
-		result.allocatedList.reserve(profiles.size());
-		for (size_t index : output_order)
-		{
-			const TonUserProfile& profile = profiles[index];
-			double bandwidth = std::max(0.0, allocations[index]);
-			double value = cached_values != nullptr
-				? (*cached_values)[index]
-				: ton_marginal_value(profile, bandwidth);
-			if (value <= EPS)
-				continue;
-			result.allocatedList.push_back(profile.user_id);
-			// ID 唯一且升序，尾部提示避免重复树查找，键值及迭代顺序保持不变。
-			result.allocatedBandwidth.emplace_hint(
-				result.allocatedBandwidth.end(), profile.user_id, bandwidth);
-			result.allocatedValue.emplace_hint(
-				result.allocatedValue.end(), profile.user_id, value);
-			result.totalWeight += bandwidth;
-			result.totalValue += value;
-			if (profile.user_type == HARD_UTILITY)
-			{
-				result.hardWeight += bandwidth;
-				result.hardValue += value;
-			}
-			else
-			{
-				result.elasticWeight += bandwidth;
-				result.elasticValue += value;
-			}
-		}
-		return result;
-		};
-	double sum_of_upper_bounds = 0.0;
-	for (const TonUserProfile& profile : profiles)
-		sum_of_upper_bounds += profile.max_extra;
-	if (sum_of_upper_bounds <= budget + EPS)
-	{
-		// 每个用户的最大新增带宽之和不超预算时，无需搜索水位，全部取上界即最优。
-		for (size_t index = 0; index < profiles.size(); ++index)
-			allocations[index] = profiles[index].max_extra;
-		return make_result(nullptr);
-	}
+    // 根据真实效用构造结果，同时检查hard端点与带宽预算；不使用松弛目标作实验计分。
+    // materialize=false只检查并累计候选值；evaluated接收原顺序求出的效用，cached供获选结果复用。
+    auto make_result = [&](const vector<double>& bandwidths, const vector<double>* cached = nullptr,
+        vector<double>* evaluated = nullptr, bool materialize = true) {
+        KnapsackResult result;
+        result.uav_id = uav.ID;
+        if (materialize) result.allocatedList.reserve(active.size());
+        if (evaluated) evaluated->assign(active.size(), 0.0);
+        for (size_t i = 0; i < active.size(); ++i) {
+            const FastUser& item = active[i];
+            const double bandwidth = bandwidths[i];
+            if (!std::isfinite(bandwidth) || bandwidth < 0 ||
+                bandwidth > item.upper + allocation_tolerance(bandwidth, item.upper))
+                throw std::logic_error("Fast: invalid output bandwidth");
+            if (bandwidth == 0) continue;
+            const User& user = *item.user;
+            double value;
+            if (user.uType == HARD_UTILITY) {
+                bool endpoint = false;
+                for (double threshold : item.thresholds)
+                    if (bandwidth == threshold) endpoint = true;
+                const int level = user.achieved_hard_level(bandwidth, item.capacity);
+                if (!endpoint || level == 0)
+                    throw std::logic_error("Fast: hard allocation is not a feasible level");
+                value = cached ? (*cached)[i] : (static_cast<size_t>(level) < item.level_values.size()
+                    ? item.level_values[level] : user.hard_level_utility(level));
+            } else value = cached ? (*cached)[i] : user.elastic_utility(bandwidth, item.capacity);
+            if (!std::isfinite(value) || value <= 0)
+                throw std::logic_error("Fast: invalid real utility");
+            if (evaluated) (*evaluated)[i] = value;
+            if (materialize) {
+                result.allocatedList.push_back(user.ID);
+                result.allocatedBandwidth.emplace_hint(result.allocatedBandwidth.end(), user.ID, bandwidth);
+                result.allocatedValue.emplace_hint(result.allocatedValue.end(), user.ID, value);
+            }
+            result.totalWeight += bandwidth;
+            result.totalValue += value;
+            if (user.uType == HARD_UTILITY) {
+                result.hardWeight += bandwidth; result.hardValue += value;
+            } else {
+                result.elasticWeight += bandwidth; result.elasticValue += value;
+            }
+        }
+        if (!std::isfinite(result.totalWeight) || result.totalWeight > budget + budget_tol ||
+            !std::isfinite(result.totalValue) ||
+            !allocation_near(result.totalValue, result.hardValue + result.elasticValue) ||
+            !allocation_near(result.totalWeight, result.hardWeight + result.elasticWeight))
+            throw std::logic_error("Fast: inconsistent result or exceeded budget");
+        return result;
+    };
 
-	// critical_derivatives 收集每个 LCM 可行段的首尾导数；重复斜率只在搜索序列中去重。
-	vector<double> critical_derivatives;
-	critical_derivatives.reserve(2 * profiles.size());
-	for (const TonUserProfile& profile : profiles)
-	{
-		if (profile.max_extra <= EPS)
-			continue;
-		critical_derivatives.push_back(profile.start_derivative);
-		critical_derivatives.push_back(profile.end_derivative);
-	}
-	std::sort(critical_derivatives.begin(), critical_derivatives.end(),
-		std::greater<double>());
-	// 原地压缩仍与最后保留值比较，不改变原近似去重规则及搜索序列。
-	size_t unique_count = 0;
-	for (size_t read_index = 0; read_index < critical_derivatives.size(); ++read_index)
-	{
-		double derivative = critical_derivatives[read_index];
-		if (unique_count == 0 ||
-			!ton_nearly_equal(critical_derivatives[unique_count - 1], derivative))
-			critical_derivatives[unique_count++] = derivative;
-	}
-	critical_derivatives.resize(unique_count);
-	if (critical_derivatives.empty())
-		return make_result(nullptr);
+    // 全部上界可同时满足时直接返回；零候选也在此处返回空分配。
+    long double upper_sum = 0;
+    for (const FastUser& item : active) upper_sum += item.upper;
+    if (upper_sum <= budget) {
+        for (size_t i = 0; i < active.size(); ++i) allocations[i] = active[i].upper;
+        return make_result(allocations);
+    }
 
-	// minimum_total 是给定导数下各用户“最小”规范分配之和；plateau_capacity 则是
-	// 所有同斜率线性激活段还能承接的带宽。预算落在二者之间时，该导数就是最优水位。
-	auto evaluate_critical = [&](double derivative, vector<double>* minimum_allocations) {
-		double minimum_total = 0.0;
-		double plateau_capacity = 0.0;
-		if (minimum_allocations != nullptr)
-			minimum_allocations->assign(profiles.size(), 0.0);
-		for (size_t index = 0; index < profiles.size(); ++index)
-		{
-			const TonUserProfile& profile = profiles[index];
-			double allocation = ton_relaxed_min_allocation(profile, derivative);
-			minimum_total += allocation;
-			if (minimum_allocations != nullptr)
-				(*minimum_allocations)[index] = allocation;
-			if (profile.tau > EPS &&
-				ton_nearly_equal(profile.activation_slope, derivative))
-				plateau_capacity += profile.tau;
-		}
-		return std::make_pair(minimum_total, plateau_capacity);
-		};
+    // 临界序列使用严格排序与double精确去重；段匹配也用相同规则，避免近似关系不传递。
+    // 不合并仅仅“接近”的斜率；带宽/速率仍使用项目既有容差。
+    vector<double> critical;
+    size_t critical_count = 0;
+    for (const FastUser& item : active)
+        critical_count += item.user->uType == HARD_UTILITY ? item.slopes.size() : 2;
+    critical.reserve(critical_count);
+    for (const FastUser& item : active) {
+        if (item.user->uType == HARD_UTILITY)
+            critical.insert(critical.end(), item.slopes.begin(), item.slopes.end());
+        else {
+            critical.push_back(item.derivative_zero);
+            critical.push_back(item.derivative_upper);
+        }
+    }
+    std::sort(critical.begin(), critical.end(), std::greater<double>());
+    critical.erase(std::unique(critical.begin(), critical.end()), critical.end());
+    // 一次试探返回最小带宽总和及同斜率段总长度；需要时填写各用户最小分配。
+    auto evaluate = [&](double lambda, vector<double>* minimum) {
+        long double total = 0, equal_length = 0;
+        for (size_t i = 0; i < active.size(); ++i) {
+            const FastUser& item = active[i];
+            double bandwidth = 0;
+            if (item.user->uType == ELASTIC_UTILITY) {
+                bandwidth = std::clamp(item.user->weight / (lambda * ln2) -
+                    item.inverse_capacity, 0.0, item.upper);
+            } else {
+                for (size_t segment = 0; segment < item.slopes.size(); ++segment) {
+                    if (item.slopes[segment] > lambda) bandwidth = item.thresholds[segment + 1];
+                    else if (item.slopes[segment] == lambda)
+                        equal_length += item.thresholds[segment + 1] - item.thresholds[segment];
+                }
+            }
+            total += bandwidth;
+            if (minimum) (*minimum)[i] = bandwidth;
+        }
+        return std::make_pair(total, equal_length);
+    };
 
-	int search_left = 0;
-	int search_right = static_cast<int>(critical_derivatives.size()) - 1;
-	int exact_index = -1;
-	while (search_left <= search_right)
-	{
-		int middle = search_left + (search_right - search_left) / 2;
-		auto totals = evaluate_critical(critical_derivatives[middle], nullptr);
-		if (totals.first > budget + EPS)
-		{
-			// 分配过多说明试探导数低于 lambda*；序列按降序排列，因此向更大导数方向搜索。
-			search_right = middle - 1;
-		}
-		else if (totals.first + totals.second < budget - EPS)
-		{
-			// 即使用尽该斜率平台仍分配不足，说明试探导数高于 lambda*，应搜索更小导数。
-			search_left = middle + 1;
-		}
-		else
-		{
-			exact_index = middle;
-			break;
-		}
-	}
+    // 降序临界值二分：最小分配已超预算时向更大斜率搜索，填满同斜率仍不足则向更小值搜索。
+    int left = 0, right = static_cast<int>(critical.size()) - 1, exact = -1;
+    while (left <= right) {
+        const int middle = left + (right - left) / 2;
+        const auto totals = evaluate(critical[middle], nullptr);
+        if (totals.first > budget + budget_tol) right = middle - 1;
+        else if (totals.first + totals.second < budget - budget_tol) left = middle + 1;
+        else { exact = middle; break; }
+    }
+    if (exact >= 0) {
+        const double lambda = critical[exact];
+        const auto totals = evaluate(lambda, &allocations);
+        long double remaining = std::max(0.0L, static_cast<long double>(budget) - totals.first);
+        // 依次填满同斜率hard段，只有最后一个得到部分带宽的用户可能位于段内部。
+        for (size_t i = 0; i < active.size(); ++i) {
+            const FastUser& item = active[i];
+            for (size_t segment = 0; segment < item.slopes.size(); ++segment) {
+                if (item.slopes[segment] != lambda) continue;
+                const double length = item.thresholds[segment + 1] - item.thresholds[segment];
+                if (remaining >= length) {
+                    allocations[i] = item.thresholds[segment + 1]; remaining -= length;
+                } else {
+                    allocations[i] = item.thresholds[segment] + static_cast<double>(remaining);
+                    remaining = 0;
+                }
+            }
+        }
+        if (remaining > budget_tol) throw std::logic_error("Fast: equal-slope fill left excess bandwidth");
+    } else {
+        if (right < 0 || left >= static_cast<int>(critical.size()) || right + 1 != left)
+            throw std::logic_error("Fast: failed to bracket optimal slope");
+        const double high = critical[right], low = critical[left];
+        vector<size_t> elastic_interior;
+        elastic_interior.reserve(active.size());
+        long double fixed_bandwidth = 0, weight_sum = 0, inverse_capacity_sum = 0;
+        // 区间内部没有临界点，故hard等级以及非内部elastic用户的边界固定。
+        for (size_t i = 0; i < active.size(); ++i) {
+            const FastUser& item = active[i];
+            if (item.user->uType == HARD_UTILITY) {
+                for (size_t segment = 0; segment < item.slopes.size(); ++segment)
+                    if (item.slopes[segment] >= high) allocations[i] = item.thresholds[segment + 1];
+            } else if (item.derivative_upper >= high) allocations[i] = item.upper;
+            else if (item.derivative_zero <= low) allocations[i] = 0;
+            else {
+                elastic_interior.push_back(i);
+                weight_sum += item.user->weight / ln2;
+                inverse_capacity_sum += item.inverse_capacity;
+            }
+            fixed_bandwidth += allocations[i];
+        }
+        if (elastic_interior.empty() || fixed_bandwidth > budget + budget_tol)
+            throw std::logic_error("Fast: invalid interior elastic set");
+        const long double residual = static_cast<long double>(budget) - fixed_bandwidth;
+        const double lambda = static_cast<double>(weight_sum / (residual + inverse_capacity_sum));
+        if (!std::isfinite(lambda) || lambda <= 0 || lambda < low || lambda > high)
+            throw std::logic_error("Fast: invalid closed-form optimal slope");
+        for (size_t i : elastic_interior) {
+            const FastUser& item = active[i];
+            const double bandwidth = item.user->weight / (lambda * ln2) - item.inverse_capacity;
+            if (!std::isfinite(bandwidth) || bandwidth < -budget_tol || bandwidth > item.upper + budget_tol)
+                throw std::logic_error("Fast: invalid elastic inverse allocation");
+            allocations[i] = std::clamp(bandwidth, 0.0, item.upper);
+        }
+    }
 
-	if (exact_index >= 0)
-	{
-		// lambda* 等于某个临界斜率：先取各用户最小分配，再在等斜率平台中按用户 ID 填充。
-		// 这种确定性顺序保证最终至多产生一个位于 (0,tau_i) 的 unsafe 用户。
-		auto totals = evaluate_critical(
-			critical_derivatives[exact_index], &allocations);
-		double remaining = std::max(0.0, budget - totals.first);
-		vector<size_t> plateau_users;
-		// 从公共 ID 顺序筛选平台用户，得到与原单独排序相同的填充顺序。
-		for (size_t index : output_order)
-		{
-			if (profiles[index].tau > EPS &&
-				ton_nearly_equal(
-					profiles[index].activation_slope,
-					critical_derivatives[exact_index]))
-				plateau_users.push_back(index);
-		}
-		for (size_t index : plateau_users)
-		{
-			double added = std::min(remaining, profiles[index].tau);
-			allocations[index] = added;
-			remaining -= added;
-			if (remaining <= EPS)
-				break;
-		}
-		if (remaining > 1e-7 * std::max(1.0, budget))
-			throw std::logic_error("ToN canonical plateau filling did not use the budget");
-	}
-	else
-	{
-		// 二分结束后，search_right 对应 gamma_p，search_left 对应 gamma_{p+1}，
-		// 最优导数严格位于这两个相邻临界导数之间。
-		if (search_right < 0 ||
-			search_left >= static_cast<int>(critical_derivatives.size()) ||
-			search_right + 1 != search_left)
-			throw std::logic_error("ToN critical-derivative search failed to bracket lambda");
-		const double upper_derivative = critical_derivatives[search_right];
-		const double lower_derivative = critical_derivatives[search_left];
-		double fixed_bandwidth = 0.0;
-		vector<size_t> strictly_concave_users;
-		for (size_t index = 0; index < profiles.size(); ++index)
-		{
-			const TonUserProfile& profile = profiles[index];
-			if (profile.max_extra <= EPS)
-				continue;
-			if (profile.end_derivative > upper_derivative ||
-				ton_nearly_equal(profile.end_derivative, upper_derivative))
-			{
-				allocations[index] = profile.max_extra;
-				fixed_bandwidth += profile.max_extra;
-			}
-			else if (profile.start_derivative < lower_derivative ||
-				ton_nearly_equal(profile.start_derivative, lower_derivative))
-			{
-				allocations[index] = 0.0;
-			}
-			else
-			{
-				if (profile.user_type != ELASTIC_UTILITY)
-					throw std::logic_error(
-						"A hard user cannot cross a derivative interval");
-				strictly_concave_users.push_back(index);
-			}
-		}
-		if (strictly_concave_users.empty())
-			throw std::logic_error("ToN derivative bracket has no elastic crossing user");
+    // 识别唯一实质分数hard用户；仅在端点容差内归位，不统一缩放所有带宽。
+    int fractional_user = -1;
+    size_t fractional_segment = 0;
+    long double relaxed_bandwidth = 0;
+    for (size_t i = 0; i < active.size(); ++i) {
+        const FastUser& item = active[i];
+        if (item.user->uType == HARD_UTILITY) {
+            bool endpoint = false;
+            for (double threshold : item.thresholds) {
+                if (allocation_near(allocations[i], threshold)) {
+                    allocations[i] = threshold; endpoint = true; break;
+                }
+            }
+            if (!endpoint) {
+                bool inside = false;
+                for (size_t segment = 0; segment < item.slopes.size(); ++segment) {
+                    if (allocations[i] > item.thresholds[segment] && allocations[i] < item.thresholds[segment + 1]) {
+                        if (fractional_user >= 0) throw std::logic_error("Fast: multiple fractional hard users");
+                        fractional_user = static_cast<int>(i); fractional_segment = segment; inside = true;
+                        break;
+                    }
+                }
+                if (!inside) throw std::logic_error("Fast: hard allocation outside segments");
+            }
+        }
+        relaxed_bandwidth += allocations[i];
+    }
+    if (std::abs(relaxed_bandwidth - budget) > budget_tol)
+        throw std::logic_error("Fast: canonical allocation does not match budget");
+    if (fractional_user < 0) return make_result(allocations);
 
-		// 对跨越该导数区间的 elastic 用户，KKT 条件给出共同导数 lambda*。
-		// 将 x_i=w_i/(lambda* ln2)-1/C_i-b_i^{old} 代入预算约束可直接解出 lambda*。
-		double remaining = budget - fixed_bandwidth;
-		double numerator = 0.0;
-		double denominator = remaining;
-		for (size_t index : strictly_concave_users)
-		{
-			const TonUserProfile& profile = profiles[index];
-			numerator += profile.weight / std::log(2.0);
-			denominator += 1.0 / profile.channel + profile.base_bandwidth;
-		}
-		if (remaining < -EPS || denominator <= 0.0 || numerator <= 0.0)
-			throw std::logic_error("ToN shifted water level has invalid parameters");
-		double optimal_derivative = numerator / denominator;
-		for (size_t index : strictly_concave_users)
-		{
-			const TonUserProfile& profile = profiles[index];
-			double extra = profile.weight /
-				(optimal_derivative * std::log(2.0)) -
-				1.0 / profile.channel - profile.base_bandwidth;
-			allocations[index] = std::max(
-				profile.tau, std::min(profile.max_extra, extra));
-		}
-
-		// 仅修正浮点累计误差；若偏差超过容差，则说明临界区间或闭式水位计算有误。
-		double total_allocated = 0.0;
-		for (double bandwidth : allocations)
-			total_allocated += bandwidth;
-		double correction = budget - total_allocated;
-		double correction_tolerance = 1e-7 * std::max(1.0, budget);
-		if (std::abs(correction) > correction_tolerance)
-			throw std::logic_error("ToN shifted water-level allocation missed the budget");
-		if (std::abs(correction) > 0.0)
-		{
-			size_t index = strictly_concave_users.front();
-			allocations[index] = std::max(
-				profiles[index].tau,
-				std::min(profiles[index].max_extra, allocations[index] + correction));
-		}
-	}
-
-	// LCM 解中 0<x_i<tau_i 的用户在原始边际函数上不可直接实现，称为 unsafe 用户。
-	vector<size_t> unsafe_users;
-	for (size_t index = 0; index < profiles.size(); ++index)
-	{
-		double tolerance = 1e-8 * std::max(1.0, profiles[index].tau);
-		if (allocations[index] > EPS &&
-			allocations[index] < profiles[index].tau - tolerance)
-			unsafe_users.push_back(index);
-	}
-	if (unsafe_users.empty())
-		return make_result(nullptr);
-	if (unsafe_users.size() != 1)
-		throw std::logic_error("ToN canonical LCM solution has multiple unsafe users");
-
-	// canonical 解保证至多一个 unsafe 用户。比较：
-	// 1) 删除该用户并保留其余分配；2) 仅将该用户服务到 tau_i。返回真实边际值较大者。
-	const size_t unsafe_index = unsafe_users.front();
-	/**
-	 * @brief 按原 ID 累加顺序计算一个候选的总效用，并缓存每个用户的真实效用。
-	 * @param only_unsafe 为真时仅给 unsafe 用户分配 tau；否则仅删除该用户的分配。
-	 * @param values 接收按 profiles 下标对齐的效用，包含随后被 EPS 过滤的值。
-	 * @return 使用原过滤规则得到的总效用；保留零新增带宽常数收益，不用差值代替累加。
-	 */
-	auto evaluate_candidate = [&](bool only_unsafe, vector<double>& values) {
-		values.resize(profiles.size());
-		double total_value = 0.0;
-		for (size_t index : output_order)
-		{
-			double extra = only_unsafe
-				? (index == unsafe_index ? profiles[index].tau : 0.0)
-				: (index == unsafe_index ? 0.0 : allocations[index]);
-			double bandwidth = std::max(0.0, extra);
-			double value = ton_marginal_value(profiles[index], bandwidth);
-			values[index] = value;
-			if (value <= EPS)
-				continue;
-			total_value += value;
-		}
-		return total_value;
-		};
-	vector<double> without_values, only_values;
-	const double without_value = evaluate_candidate(false, without_values);
-	const double only_value = evaluate_candidate(true, only_values);
-	// 比较条件及同分选择不变，只物化获选候选；复用效用缓存避免再次计算对数。
-	if (only_value > without_value + EPS)
-	{
-		std::fill(allocations.begin(), allocations.end(), 0.0);
-		allocations[unsafe_index] = profiles[unsafe_index].tau;
-		return make_result(&only_values);
-	}
-	allocations[unsafe_index] = 0.0;
-	return make_result(&without_values);
+    // 候选1降到左端点、其余不变；候选2只服务分数用户至当前段右端点，不是其最高可行等级。
+    vector<double> first = allocations, second(active.size(), 0.0);
+    first[fractional_user] = active[fractional_user].thresholds[fractional_segment];
+    second[fractional_user] = active[fractional_user].thresholds[fractional_segment + 1];
+    vector<double> first_values, second_values;
+    const KnapsackResult score1 = make_result(first, nullptr, &first_values, false);
+    const KnapsackResult score2 = make_result(second, nullptr, &second_values, false);
+    // 此处可进一步优化剩余带宽，但本实现严格按论文步骤返回，未执行该优化。
+    // 效用相同时保留候选1；仅比较真实绝对效用，不比较松弛值。
+    if (score2.totalValue > score1.totalValue) return make_result(second, &second_values);
+    return make_result(first, &first_values);
 }
 
-/**
- * @brief 使用 ToN Algorithm 2 求解平移后的单 UAV 边际效用问题。
- *
- * 函数缩放真实边际利润：elastic 用户层由局部 SMAWK 加速，hard 用户层只保留
- * “不选/取得完整利润”两个有限选项；两行精确利润 DP 完成后再按逐层决策表回溯。
- * @param uav 待评估 UAV；其 total_bandwidth 是本次可分配的新增带宽预算。
- * @param candidate_users 本次调用考虑的可服务用户集合。
- * @param current_utilities 按用户 ID 索引的当前网络绝对效用 m_j。
- * @param base_bandwidths 按用户 ID 索引的当前 UAV 已有基准带宽 b_{kj}^{old}。
- * @param epsilon 近似参数，必须满足 0 < epsilon < 1/2。
- * @return 新增带宽以及回溯后重新计算的真实边际效用。
- */
+/// 旧边际Better主体已移除；保留签名供工程编译，任何调用均明确失败，待下一阶段实现新稿Better。
 KnapsackResult BAProblem::AlgBetter_singleUAV_ToN(
-	const Uav& uav,
-	const vector<User>& candidate_users,
-	const vector<double>& current_utilities,
-	const vector<double>& base_bandwidths,
-	double epsilon)
+    const Uav&, const vector<User>&, const vector<double>&, const vector<double>&, double)
 {
-	if (!std::isfinite(epsilon) || epsilon <= 0.0 || epsilon >= 0.5)
-		throw std::invalid_argument("ToN epsilon must satisfy 0 < epsilon < 1/2");
-	ton_validate_single_inputs(
-		sysModel, uav, candidate_users, current_utilities, base_bandwidths);
-	KnapsackResult empty_result;
-	empty_result.uav_id = uav.ID;
-	const double budget = std::max(0.0, uav.total_bandwidth);
-	if (candidate_users.empty() || budget <= EPS)
-		return empty_result;
-
-	// Algorithm 1 的可行真实边际值 c 同时给出 opt/2 <= c <= opt，用于安全设置缩放粒度。
-	KnapsackResult fast_result = AlgFast_singleUAV_ToN(
-		uav, candidate_users, current_utilities, base_bandwidths);
-	const double reference_value = fast_result.totalValue;
-	if (reference_value <= EPS)
-		return empty_result;
-
-	// Delta=epsilon*c/n，P=floor(2n/epsilon)；P 覆盖由 c 下界推出的最优缩放利润范围。
-	const int user_count = static_cast<int>(candidate_users.size());
-	const double delta = epsilon * reference_value / user_count;
-	long double raw_state_limit = std::floor(
-		2.0L * static_cast<long double>(user_count) /
-		static_cast<long double>(epsilon));
-	if (raw_state_limit > static_cast<long double>(std::numeric_limits<int>::max()))
-		throw std::length_error("ToN scaled-profit state range exceeds int capacity");
-	const int state_limit = static_cast<int>(raw_state_limit);
-	if (delta <= 0.0 || !std::isfinite(delta) || state_limit <= 0)
-		throw std::logic_error("ToN scaling parameters are not finite and positive");
-
-	// maximum_scaled_profit[i] 即 p_i=floor(max_marginal_i/Delta)，并截断到 DP 状态上界 P。
-	vector<TonUserProfile> profiles(user_count);
-	vector<int> maximum_scaled_profit(user_count, 0);
-	for (int index = 0; index < user_count; ++index)
-	{
-		TonUserProfile profile;
-		bool retained = ton_build_profile(
-			sysModel,
-			uav,
-			candidate_users[index].ID,
-			current_utilities,
-			base_bandwidths,
-			profile);
-		profiles[index] = profile;
-		if (!retained || profile.max_marginal <= EPS)
-			continue;
-		double scaled = std::floor(profile.max_marginal / delta);
-		if (!std::isfinite(scaled) || scaled <= 0.0)
-			continue;
-		maximum_scaled_profit[index] = std::min(
-			state_limit, static_cast<int>(std::min(
-				scaled, static_cast<double>(std::numeric_limits<int>::max()))));
-	}
-
-	// previous/current 是 A(i-1,p) 与 A(i,p) 的两行滚动数组：值为取得精确利润 p
-	// 所需的最小新增带宽。仅为正利润用户连续存储决策行，原始 n 及用户顺序不变。
-	const double dp_sentinel = budget + std::max(1.0, std::abs(budget) + 1.0);
-	const size_t state_count = static_cast<size_t>(state_limit) + 1;
-	vector<double> previous(state_count, dp_sentinel);
-	vector<double> current(state_count, dp_sentinel);
-	const size_t no_choice_row = std::numeric_limits<size_t>::max();
-	vector<size_t> choice_rows(user_count, no_choice_row);
-	size_t active_row_count = 0;
-	for (int index = 0; index < user_count; ++index)
-	{
-		if (maximum_scaled_profit[index] > 0)
-			choice_rows[index] = active_row_count++;
-	}
-	vector<int> choices;
-	// 先验证 size_t 乘法及 vector 上限，再分配；每个有效行仍保留全部 0..P 状态。
-	if (active_row_count > std::numeric_limits<size_t>::max() / state_count ||
-		active_row_count > choices.max_size() / state_count)
-		throw std::length_error("ToN compact decision table exceeds vector capacity");
-	choices.assign(active_row_count * state_count, 0);
-	TonSmawkWorkspace smawk_workspace; // 只在首个有效 elastic 层实际分配 SMAWK 缓冲区。
-	previous[0] = 0.0;
-	const double dp_tolerance = 1e-10 * std::max(1.0, budget);
-
-	for (int user_index = 0; user_index < user_count; ++user_index)
-	{
-		const int user_profit = maximum_scaled_profit[user_index];
-		// 零利润层只有 q=0：previous 原地保持不变，回溯按原始索引读取零贡献。
-		if (user_profit <= 0)
-			continue;
-		// current=previous 显式保留 q=0（不激活当前用户）选项。
-		current = previous;
-		const TonUserProfile& profile = profiles[user_index];
-		const size_t choice_offset = choice_rows[user_index] * state_count;
-
-		if (profile.user_type == HARD_UTILITY)
-		{
-			// hard 用户的中间正利润均不可实现/被支配，只允许 q=0 或 q=p_i 且补足完整阈值。
-			const double full_cost = profile.max_extra;
-			for (int profit = user_profit; profit <= state_limit; ++profit)
-			{
-				double prefix = previous[profit - user_profit];
-				if (prefix > budget + dp_tolerance)
-					continue;
-				double candidate_cost = prefix + full_cost;
-				if (candidate_cost <= budget + dp_tolerance &&
-					candidate_cost < current[profit] - dp_tolerance)
-				{
-					current[profit] = candidate_cost;
-					choices[choice_offset + static_cast<size_t>(profit)] = user_profit;
-				}
-			}
-		}
-		else
-		{
-			// bandwidth_cost[q]=Phi_i(q)，即取得 q*Delta 真实边际效用所需的最小新增带宽。
-			vector<double> bandwidth_cost(user_profit + 1, 0.0);
-			for (int profit = 1; profit <= user_profit; ++profit)
-			{
-				bandwidth_cost[profit] = ton_scaled_bandwidth_cost(
-					profile, profit, delta);
-				if (!std::isfinite(bandwidth_cost[profit]) ||
-					bandwidth_cost[profit] < -EPS ||
-					bandwidth_cost[profit] > budget + 1e-7 * std::max(1.0, budget))
-					throw std::logic_error("ToN elastic scaled bandwidth cost is infeasible");
-			}
-
-			// 活跃转移矩阵仅在 1<=q<=p_i 的 staircase 区域有真实含义。completion_base
-			// 和 completion_step 用有限且足够大的凸延拓补齐矩阵，以满足标准 SMAWK 的完整矩阵
-			// 接口；补全项绝不作为真实 DP 选项，q=0 仍由上面的 current=previous 单独比较。
-			const double completion_base = 4.0 * dp_sentinel + 1.0;
-			const double completion_step = completion_base + budget + 1.0;
-			auto completed_entry = [&](int row, int column) {
-				// row=p 为本层总利润，column=r 为前一层利润，二者之差 q=p-r 是当前用户贡献。
-				int profit = row - column;
-				double transition_cost = 0.0;
-				if (profit <= 0)
-					transition_cost = completion_base +
-						static_cast<double>(-profit) * completion_step;
-				else if (profit > user_profit)
-					transition_cost = completion_base +
-						static_cast<double>(profit - user_profit - 1) * completion_step;
-				else
-					transition_cost = bandwidth_cost[profit];
-				return previous[column] + transition_cost;
-				};
-
-			// SMAWK 返回每个总利润状态 p 对应的最优前缀利润 r。
-			const vector<int>& row_minima = ton_smawk_row_minima(
-				state_limit, smawk_workspace, completed_entry);
-
-#if defined(TON_VERIFY_SMAWK)
-			// 仅显式定义 TON_VERIFY_SMAWK 时做小状态 O(P^2) 对照；正常实验包括 _DEBUG 构建均默认关闭。
-			// 本块只检查 SMAWK 的有限补全和索引映射，不参与下面的 DP 状态更新。
-			if (state_limit <= 128)
-			{
-				for (int row = 0; row <= state_limit; ++row)
-				{
-					double reference_minimum = completed_entry(row, 0);
-					for (int column = 1; column <= state_limit; ++column)
-						reference_minimum = std::min(
-							reference_minimum, completed_entry(row, column));
-					double smawk_minimum = completed_entry(row, row_minima[row]);
-					if (std::abs(reference_minimum - smawk_minimum) >
-						1e-8 * std::max(1.0, std::abs(reference_minimum)))
-						throw std::logic_error(
-							"ToN SMAWK row minimum disagrees with quadratic enumeration");
-				}
-			}
-#endif
-
-			// 只把落回真实 staircase 区域的 SMAWK 最优列写入 DP；补全区域会被过滤。
-			for (int total_profit = 0; total_profit <= state_limit; ++total_profit)
-			{
-				int prefix_profit = row_minima[total_profit];
-				int contributed_profit = total_profit - prefix_profit;
-				if (contributed_profit < 1 || contributed_profit > user_profit ||
-					prefix_profit < 0 || prefix_profit > state_limit ||
-					previous[prefix_profit] > budget + dp_tolerance)
-					continue;
-				double candidate_cost = previous[prefix_profit] +
-					bandwidth_cost[contributed_profit];
-				if (candidate_cost <= budget + dp_tolerance &&
-					candidate_cost < current[total_profit] - dp_tolerance)
-				{
-					current[total_profit] = candidate_cost;
-					choices[choice_offset + static_cast<size_t>(total_profit)] = contributed_profit;
-				}
-			}
-		}
-		// 滚动到下一用户层；紧凑 choices 表仍保留每个有效层的完整回溯信息。
-		previous.swap(current);
-	}
-
-	// 从高到低选取预算内可达的最大精确缩放利润 p*。
-	int best_profit = 0;
-	for (int profit = state_limit; profit >= 0; --profit)
-	{
-		if (previous[profit] <= budget + dp_tolerance)
-		{
-			best_profit = profit;
-			break;
-		}
-	}
-	if (best_profit <= 0)
-		return empty_result;
-
-	// 按原始用户顺序逆向回溯；没有决策行的零利润用户贡献为 0，不改变 remaining_profit。
-	vector<int> selected_profit(user_count, 0);
-	int remaining_profit = best_profit;
-	for (int user_index = user_count - 1; user_index >= 0; --user_index)
-	{
-		int contribution = choice_rows[user_index] == no_choice_row ? 0 :
-			choices[choice_rows[user_index] * state_count + static_cast<size_t>(remaining_profit)];
-		if (contribution < 0 || contribution > remaining_profit)
-			throw std::logic_error("ToN DP backtracking encountered an invalid choice");
-		selected_profit[user_index] = contribution;
-		remaining_profit -= contribution;
-	}
-	if (remaining_profit != 0)
-		throw std::logic_error("ToN DP backtracking did not reach the zero state");
-
-	// 缩放利润仅用于选解；回溯得到带宽后必须由原始 h_i(x) 重算真实边际效用。
-	vector<double> allocations(user_count, 0.0);
-	for (int user_index = 0; user_index < user_count; ++user_index)
-	{
-		if (selected_profit[user_index] > 0)
-			allocations[user_index] = ton_scaled_bandwidth_cost(
-				profiles[user_index], selected_profit[user_index], delta);
-	}
-	KnapsackResult result = ton_make_marginal_result(
-		uav.ID, profiles, allocations);
-	if (result.totalWeight > budget + 1e-7 * std::max(1.0, budget))
-		throw std::logic_error("ToN DP backtracking exceeds the UAV bandwidth budget");
-	double recorded_scaled_value = best_profit * delta;
-	if (result.totalValue + 1e-7 * std::max(1.0, recorded_scaled_value) <
-		recorded_scaled_value)
-		throw std::logic_error("ToN actual marginal value is below its recorded scaled profit");
-	return result;
+    throw std::logic_error("AlgBetter_singleUAV_ToN：待后续阶段按新稿实现");
 }
 
-// ==================== Faster 单 UAV 公开入口 ====================
-
 /**
- * @brief 以对偶认证早退和“非凹 DP + 凹池注水”求解单 UAV 边际效用分配。
- * @param uav 本次新增带宽预算；candidate_users 是候选子集，状态向量按全局用户 ID 索引。
- * @param current_utilities 当前网络绝对效用；base_bandwidths 是本 UAV 已有带宽。
- * @param epsilon 要求的误差参数，0<epsilon<1/2，不修改调用方参数或共享数值规则。
- * @return 新增带宽和真实边际效用；不保证与旧 AlgBetter 的分配逐位相同。
- *
- * 最优解至多激活 s 个非凹用户，利润向下取整损失不超过 s*Delta=epsilon*L。
- * 非凹 DP 在同等利润下只会节省带宽，凹池精确使用剩余预算，故 ALG>=(1-epsilon)*OPT。
- * d 个非凹层、P=O(s/epsilon)，总时间 O(n log n+(d*s+s*log n)/epsilon)。
- * 保证沿用论文的实数算术模型；浮点边界保守认证、保守裁剪，实质性错误明确抛出。
+ * @brief 单UAV绝对效用分配：缩放利润DP、精确剪枝与elastic预算合并。
+ * @param uav 本次完整可用预算，单位kHz。
+ * @param candidate_users 候选用户，按内部ID读取原实例；不修改用户等级或输入顺序。
+ * @param epsilon 近似精度，有限且在(0,0.5)内，默认值在头文件中定义为0.083。
+ * @return 等级DP与elastic最优分配合并后的真实绝对结果；资源或数值异常明确抛错。
  */
 KnapsackResult BAProblem::AlgBetter_singleUAV_ToN_faster(
-	const Uav& uav, const vector<User>& candidate_users,
-	const vector<double>& current_utilities, const vector<double>& base_bandwidths,
-	double epsilon)
+    const Uav& uav, const vector<User>& candidate_users, double epsilon)
 {
-	if (!std::isfinite(epsilon) || epsilon <= 0.0 || epsilon >= 0.5)
-		throw std::invalid_argument("Faster 的 epsilon 必须满足 0<epsilon<1/2");
-	vector<User> ordered_candidates = candidate_users;
-	// 局部编号保持原 ID 的相对顺序，既保留平局规则，又使辅助开销只依赖 n_k。
-	std::sort(ordered_candidates.begin(), ordered_candidates.end(),
-		[](const User& a, const User& b) { return a.ID < b.ID; });
-	vector<double> local_utilities, local_bases;
-	auto local_model = ton_faster_local_model(sysModel, uav, ordered_candidates,
-		current_utilities, base_bandwidths, local_utilities, local_bases);
-	KnapsackResult empty;
-	empty.uav_id = uav.ID;
-	const double budget = std::max(0.0, uav.total_bandwidth);
-	if (candidate_users.empty() || budget <= EPS) return empty;
-	auto profiles = ton_faster_profiles(
-		sysModel, uav, candidate_users, current_utilities, base_bandwidths);
-	if (profiles.empty()) return empty;
+    if (!std::isfinite(epsilon) || epsilon <= 0 || epsilon >= 0.5)
+        throw std::invalid_argument("Better: epsilon must be finite and in (0,0.5)");
 
-	BAProblem local_problem(local_model);
-	auto fast_original = local_problem.AlgFast_singleUAV_ToN(
-		local_model.uavs[0], local_model.users, local_utilities, local_bases);
-	vector<double> fast_allocations(profiles.size(), 0.0);
-	vector<size_t> concave, nonconcave;
-	for (size_t i = 0; i < profiles.size(); ++i)
-	{
-		const auto& p = profiles[i];
-		// 将局部 Fast 的分配还原到原用户 ID；二分查找不创建全局长度的反向索引。
-		auto original = std::lower_bound(ordered_candidates.begin(), ordered_candidates.end(),
-			p.user_id, [](const User& user, int id) { return user.ID < id; });
-		int local_id = static_cast<int>(original - ordered_candidates.begin());
-		auto found = fast_original.allocatedBandwidth.find(local_id);
-		if (found != fast_original.allocatedBandwidth.end())
-			fast_allocations[i] = found->second;
-		double at_base = p.user_type == ELASTIC_UTILITY
-			? ton_elastic_utility(sysModel.users[p.user_id], p.channel, p.base_bandwidth) : 0.0;
-		// 不能用 tau==0 或近似相等把微小但真实的激活区间归入凹池。
-		if (p.user_type == ELASTIC_UTILITY && p.current_utility <= at_base)
-			concave.push_back(i);
-		else nonconcave.push_back(i);
-	}
-	auto fast = ton_faster_result(sysModel, uav.ID, profiles, fast_allocations, budget);
-	const double lower_value = fast.totalValue;
-	if (!nonconcave.empty() && lower_value > EPS &&
-		ton_faster_certified(profiles, budget, fast, lower_value, epsilon))
-		return fast;
+    // 只调用一次新Fast：同时校验候选、信道与预算，并取得缩放所需的真实效用c。
+    KnapsackResult fast_result = AlgFast_singleUAV_ToN(uav, candidate_users);
+    const double reference = fast_result.totalValue;
+    if (reference == 0) return fast_result;
+    const double budget = uav.total_bandwidth;
+    const double budget_tol = allocation_tolerance(budget, budget);
+    const double ln2 = std::log(2.0);
 
-	TonFasterConcavePool pool(profiles, concave);
-	vector<double> allocations(profiles.size(), 0.0);
-	if (nonconcave.empty())
-	{
-		pool.allocate(budget, allocations);
-		auto result = ton_faster_result(sysModel, uav.ID, profiles, allocations, budget);
-		return result.totalValue > fast.totalValue ? result : fast;
-	}
-	if (lower_value <= EPS)
-		throw std::logic_error("Faster 检出正收益，但 Fast 下界不足以安全缩放");
+    // 等级序号在本地从1开始，0为不服务；正等级仍对应原始完整等级列表的前缀。
+    struct HardItem {
+        const User* user = nullptr;
+        double capacity = 0;
+        vector<double> thresholds{0.0}; // kHz，包含不服务的零端点。
+        vector<int> profits{0};        // 每等级的总缩放利润，不是相邻等级增量。
+    };
+    struct ElasticItem {
+        const User* user = nullptr;
+        double capacity = 0;
+        double derivative_zero = 0, derivative_upper = 0;
+        double inverse_capacity = 0; // 缓存原1.0/capacity标量，后续不重排除法。
+    };
+    vector<HardItem> hard;
+    vector<ElasticItem> elastic;
+    hard.reserve(candidate_users.size());
+    elastic.reserve(candidate_users.size());
+    for (const User& candidate : candidate_users) {
+        const User& user = sysModel.users[candidate.ID];
+        const double cap = sysModel.cap_list[uav.ID][user.ID];
+        if (cap == 0 || sysModel.dis_list[uav.ID][user.ID] > max_coverage_distance) continue;
+        if (user.uType == HARD_UTILITY) {
+            HardItem item;
+            item.user = &user; item.capacity = cap;
+            const size_t level_count = user.hard_rate_levels.empty() ? 1 : user.hard_rate_levels.size();
+            item.thresholds.reserve(level_count + 1);
+            item.profits.reserve(level_count + 1);
+            for (size_t level = 0; level < level_count; ++level) {
+                const double rate = user.hard_rate_levels.empty() ? user.rMin : user.hard_rate_levels[level];
+                const double threshold = rate / cap;
+                // 与Fast完全相同的局部可行等级筛选，不改变用户对象中的完整等级。
+                if (threshold > budget && !hard_qos_satisfied(budget, cap, rate)) break;
+                item.thresholds.push_back(std::min(threshold, budget));
+            }
+            if (item.thresholds.size() > 1) hard.push_back(std::move(item));
+        } else {
+            elastic.push_back({&user, cap, user.weight * cap / ln2,
+                user.weight / ln2 / (budget + 1.0 / cap), 1.0 / cap});
+        }
+    }
+    if (hard.empty()) return fast_result;
+    // 确定性顺序：DP用户、等级、利润状态均递增处理，平局不覆盖先遇到的选择。
+    const auto hard_id_order = [](const HardItem& a, const HardItem& b) { return a.user->ID < b.user->ID; };
+    const auto elastic_id_order = [](const ElasticItem& a, const ElasticItem& b) { return a.user->ID < b.user->ID; };
+    if (!std::is_sorted(hard.begin(), hard.end(), hard_id_order)) std::sort(hard.begin(), hard.end(), hard_id_order);
+    if (!std::is_sorted(elastic.begin(), elastic.end(), elastic_id_order)) std::sort(elastic.begin(), elastic.end(), elastic_id_order);
 
-	const size_t active_bound = ton_faster_activation_bound(profiles, nonconcave, budget);
-	if (active_bound == 0)
-		throw std::logic_error("Faster 正收益候选与激活人数上界不一致");
-	const double delta = epsilon * lower_value / static_cast<double>(active_bound);
-	const long double raw_limit = std::ceil(
-		2.0L * static_cast<long double>(active_bound) / static_cast<long double>(epsilon));
-	if (!std::isfinite(delta) || delta <= 0.0 || !std::isfinite(raw_limit))
-		throw std::logic_error("Faster 缩放参数不是有限正数");
-	// 留出循环递增与长度加一的空间，避免 int 边界溢出。
-	if (raw_limit > static_cast<long double>(std::numeric_limits<int>::max() - 2))
-		throw std::length_error("Faster 利润状态超过 int 可表示范围");
-	const int limit = static_cast<int>(raw_limit);
-	vector<int> profits(nonconcave.size(), 0);
-	for (size_t i = 0; i < nonconcave.size(); ++i)
-	{
-		double scaled = std::floor(profiles[nonconcave[i]].max_marginal / delta);
-		if (!std::isfinite(scaled))
-			throw std::logic_error("Faster 单用户缩放利润溢出");
-		profits[i] = static_cast<int>(std::min(static_cast<double>(limit), scaled));
-	}
+    // 缩放仅使用有效hard人数nH；不添加floor偏置，不截断状态上限来掩盖内存不足。
+    const size_t nH = hard.size();
+    const double delta = epsilon * reference / static_cast<double>(nH);
+    const long double raw_limit = std::floor(2.0L * nH / epsilon);
+    if (!std::isfinite(delta) || delta <= 0 || !std::isfinite(raw_limit) || raw_limit > INT_MAX - 1)
+        throw std::length_error("Better: unrepresentable scaling or state limit");
+    const int original_P = static_cast<int>(raw_limit); // 理论利润上限，已校验状态规模可表示。
+    int reachable_total = 0;
+    for (HardItem& item : hard) {
+        if (item.thresholds.size() - 1 > std::numeric_limits<uint16_t>::max())
+            throw std::length_error("Better: hard level index exceeds uint16_t");
+        for (size_t level = 1; level < item.thresholds.size(); ++level) {
+            const double profit = std::floor(item.user->hard_level_utility(static_cast<int>(level)) / delta);
+            if (!std::isfinite(profit) || profit < 0 || profit > INT_MAX)
+                throw std::length_error("Better: unrepresentable scaled profit");
+            item.profits.push_back(static_cast<int>(profit));
+        }
+        // 在理论上限P处饱和累加，避免Q溢出；不为不可达的利润分配工作列。
+        const int max_profit = *std::max_element(item.profits.begin(), item.profits.end());
+        reachable_total = max_profit >= original_P - reachable_total
+            ? original_P : reachable_total + max_profit;
+    }
+    const int P = std::min(original_P, reachable_total);
+    const size_t columns = static_cast<size_t>(P) + 1;
 
-	const double sentinel = budget + std::max(1.0, budget + 1.0);
-	const double completion_base = 4.0 * sentinel + 1.0;
-	const double completion_step = completion_base + budget + 1.0;
-	if (!std::isfinite(completion_base + static_cast<double>(limit) * completion_step + sentinel))
-		throw std::logic_error("Faster 有限矩阵补全数值溢出");
-	const double dp_tolerance = 1e-10 * std::max(1.0, budget);
-	vector<double> previous(1, 0.0), current;
-	vector<int> choices;
-	const size_t no_row = std::numeric_limits<size_t>::max();
-	vector<size_t> row_offsets(nonconcave.size(), no_row);
-	vector<size_t> row_lengths(nonconcave.size(), 0);
-	TonSmawkWorkspace workspace;
-	int previous_max = 0;
+    // 两行double保存最小带宽，uint16_t表保存每个用户/状态的选择以供一次回溯。
+    vector<uint16_t> choices;
+    vector<double> previous, next;
+    if (columns > previous.max_size() || nH > choices.max_size() / columns)
+        throw std::length_error("Better: DP storage size overflow");
+    choices.assign(nH * columns, 0);
+    previous.assign(columns, std::numeric_limits<double>::infinity());
+    next.resize(columns);
+    previous[0] = 0;
+    // 正常有限预算下，零利润等级的正成本不可能严格改善“不服务”。
+    // 极端数值范围逐等级计算，并检查带宽加法是否溢出。
+    const bool skip_zero_profit = budget <= std::numeric_limits<double>::max() / (4.0 * static_cast<double>(nH));
+    vector<uint16_t> levels;
+    int previous_reach = 0; // 上一行以外的前驱一律为无穷大，不能读取滚动数组残留值。
+    const double feasible_limit = budget + budget_tol;
+    for (size_t i = 0; i < nH; ++i) {
+        const HardItem& item = hard[i];
+        const int max_profit = *std::max_element(item.profits.begin(), item.profits.end());
+        const int current_reach = max_profit >= P - previous_reach ? P : previous_reach + max_profit;
+        levels.clear();
+        levels.reserve(item.thresholds.size() - 1);
+        for (size_t level = 1; level < item.thresholds.size(); ++level)
+            if (!skip_zero_profit || item.profits[level] != 0) levels.push_back(static_cast<uint16_t>(level));
+        if (levels.empty()) {
+            // 保留用户层和全状态范围；choices该行已在初始化中全部置0。
+            next = previous;
+            previous.swap(next);
+            previous_reach = current_reach;
+            continue;
+        }
+        const double* prior = previous.data();
+        double* current = next.data();
+        uint16_t* row_choices = choices.data() + i * columns;
+        current[0] = 0;
+        for (int p = 1; p <= current_reach; ++p) {
+            double best = p <= previous_reach ? prior[p] : std::numeric_limits<double>::infinity(); // 先考虑不服务；相同带宽时保持该选择。
+            uint16_t selected_level = 0;
+            for (uint16_t level : levels) {
+                // 等级成本递增，单独成本已不小于best时，后续等级均不能严格改善。
+                if (skip_zero_profit && item.thresholds[level] >= best) break;
+                const int required = item.profits[level] >= p ? 0 : p - item.profits[level];
+                if (required > previous_reach || !std::isfinite(prior[required])) continue;
+                const double cost = item.thresholds[level] + prior[required];
+                if (!std::isfinite(cost)) throw std::overflow_error("Better: DP bandwidth overflow");
+                // 仅舍弃这条超预算组合，未来用户仍能经较小利润前驱满足同一需求。
+                if (skip_zero_profit && cost > feasible_limit) continue;
+                if (cost < best) { best = cost; selected_level = static_cast<uint16_t>(level); }
+            }
+            current[p] = best;
+            row_choices[p] = selected_level;
+        }
+        previous.swap(next); // 所有转移仅读上一行，不能为同一用户同时选多个等级。
+        previous_reach = current_reach;
+    }
 
-	for (size_t layer = 0; layer < nonconcave.size(); ++layer)
-	{
-		const int user_profit = profits[layer];
-		if (user_profit <= 0) continue; // q=0 是唯一保留选项，不消耗回溯行。
-		const auto& p = profiles[nonconcave[layer]];
-		const int current_max = static_cast<int>(std::min(
-			static_cast<long long>(limit), static_cast<long long>(previous_max) + user_profit));
-		const size_t length = static_cast<size_t>(current_max) + 1;
-		if (length > choices.max_size() - choices.size())
-			throw std::length_error("Faster 活动回溯表容量溢出");
-		row_offsets[layer] = choices.size();
-		row_lengths[layer] = length;
-		choices.resize(choices.size() + length, 0);
-		current.assign(length, sentinel);
-		std::copy(previous.begin(), previous.end(), current.begin()); // 显式保留 q=0。
-		const size_t offset = row_offsets[layer];
+    // 一次性构造elastic临界斜率与总预算序列，不保存每个临界点的完整分配矩阵。
+    vector<double> slopes, elastic_budgets;
+    slopes.reserve(2 * elastic.size());
+    elastic_budgets.reserve(2 * elastic.size());
+    for (const ElasticItem& item : elastic) {
+        slopes.push_back(item.derivative_zero);
+        slopes.push_back(item.derivative_upper);
+    }
+    std::sort(slopes.begin(), slopes.end(), std::greater<double>());
+    slopes.erase(std::unique(slopes.begin(), slopes.end()), slopes.end());
+    // 端点显式归位避免反函数相减产生微小负数；内部仍按论文公式计算。
+    auto elastic_bandwidth = [&](const ElasticItem& item, double lambda) {
+        if (lambda >= item.derivative_zero) return 0.0;
+        if (lambda <= item.derivative_upper) return budget;
+        return std::clamp(item.user->weight / (lambda * ln2) - item.inverse_capacity, 0.0, budget);
+    };
+    for (double slope : slopes) {
+        long double total = 0;
+        for (const ElasticItem& item : elastic) total += elastic_bandwidth(item, slope);
+        const double total_double = static_cast<double>(total);
+        if (!std::isfinite(total_double) || (!elastic_budgets.empty() && total_double < elastic_budgets.back()))
+            throw std::logic_error("Better: invalid elastic budget profile");
+        elastic_budgets.push_back(total_double);
+    }
+    const long double elastic_upper_sum = static_cast<long double>(elastic.size()) * budget;
 
-		if (p.user_type == HARD_UTILITY)
-		{
-			for (int total = user_profit; total <= current_max; ++total)
-			{
-				int prefix = total - user_profit;
-				if (prefix > previous_max || previous[prefix] > budget + dp_tolerance) continue;
-				double cost = previous[prefix] + p.max_extra;
-				if (cost <= budget + dp_tolerance && cost < current[total] - dp_tolerance)
-				{
-					current[total] = cost;
-					choices[offset + static_cast<size_t>(total)] = user_profit;
-				}
-			}
-		}
-		else
-		{
-			vector<double> costs(static_cast<size_t>(user_profit) + 1, 0.0);
-			for (int q = 1; q <= user_profit; ++q)
-			{
-				costs[q] = ton_scaled_bandwidth_cost(p, q, delta);
-				if (!std::isfinite(costs[q]) || costs[q] < 0.0 ||
-					costs[q] > budget + allocation_tolerance(costs[q], budget))
-					throw std::logic_error("Faster elastic 利润反函数给出非法成本");
-			}
-			// 正利润成本离散凸；两端有限凸延拓保证矩形仍为 Monge，q=0 不进入此矩阵。
-			auto lookup = [&](int row, int column) {
-				int q = row - column;
-				double cost = q <= 0
-					? completion_base + static_cast<double>(-q) * completion_step
-					: (q > user_profit
-						? completion_base + static_cast<double>(q - user_profit - 1) * completion_step
-						: costs[q]);
-				return previous[column] + cost;
-			};
-			const auto& minima = ton_faster_rectangular_minima(
-				current_max, previous_max, workspace, lookup);
-			for (int total = 0; total <= current_max; ++total)
-			{
-				int prefix = minima[total];
-				int q = total - prefix;
-				if (q < 1 || q > user_profit || prefix < 0 || prefix > previous_max ||
-					previous[prefix] > budget + dp_tolerance) continue;
-				double cost = previous[prefix] + costs[q];
-				if (cost <= budget + dp_tolerance && cost < current[total] - dp_tolerance)
-				{
-					current[total] = cost;
-					choices[offset + static_cast<size_t>(total)] = q;
-				}
-			}
-		}
-		previous_max = current_max;
-		while (previous_max > 0 && current[previous_max] > budget + dp_tolerance)
-			--previous_max;
-		// 超预算前缀无法被非负后续成本救回，删掉尾部不会损失任何可行解。
-		current.resize(static_cast<size_t>(previous_max) + 1);
-		previous.swap(current);
-	}
+    // 每个实际访问区间按用户ID顺序求和一次，不使用改变浮点累加顺序的前缀递推。
+    struct IntervalConstants {
+        bool ready = false;
+        long double fixed = 0, weights = 0, inverse_caps = 0;
+        size_t interior_count = 0;
+    };
+    vector<IntervalConstants> interval_cache(slopes.size());
+    bool has_last_budget = false;
+    double last_budget = 0, last_utility = 0;
 
-	int best_profit = 0;
-	double best_score = -INF;
-	for (int p = 0; p <= previous_max; ++p)
-	{
-		if (previous[p] > budget + dp_tolerance) continue;
-		double score = p * delta + pool.value(std::max(0.0, budget - previous[p]));
-		if (!std::isfinite(score)) throw std::logic_error("Faster 合并目标值非有限");
-		if (score > best_score) { best_score = score; best_profit = p; }
-	}
-	int remaining = best_profit;
-	for (size_t layer = nonconcave.size(); layer-- > 0;)
-	{
-		if (row_offsets[layer] == no_row) continue;
-		if (remaining < 0 || static_cast<size_t>(remaining) >= row_lengths[layer])
-			throw std::logic_error("Faster 回溯越过活动状态范围");
-		int q = choices[row_offsets[layer] + static_cast<size_t>(remaining)];
-		if (q < 0 || q > remaining || q > profits[layer])
-			throw std::logic_error("Faster 回溯利润非法");
-		if (q > 0)
-			allocations[nonconcave[layer]] = ton_scaled_bandwidth_cost(
-				profiles[nonconcave[layer]], q, delta);
-		remaining -= q;
-	}
-	if (remaining != 0) throw std::logic_error("Faster 回溯未到达零利润状态");
-	double used = std::accumulate(allocations.begin(), allocations.end(), 0.0);
-	if (!std::isfinite(used) || used > budget + allocation_tolerance(used, budget))
-		throw std::logic_error("Faster 非凹回溯分配超过预算");
-	pool.allocate(std::max(0.0, budget - used), allocations);
-	auto result = ton_faster_result(sysModel, uav.ID, profiles, allocations, budget);
-	if (result.totalValue + allocation_tolerance(result.totalValue, best_score) < best_score)
-		throw std::logic_error("Faster 真实收益低于 DP 与精确注水的合并收益");
-	return result.totalValue > fast.totalValue ? result : fast;
+    // 返回指定剩余预算的elastic最优真实效用；仅最终重建时通过output保存逐用户带宽。
+    auto solve_elastic = [&](double available, vector<double>* output) {
+        if (!std::isfinite(available) || available < -budget_tol || available > budget + budget_tol)
+            throw std::logic_error("Better: invalid elastic residual budget");
+        available = std::max(0.0, available);
+        if (output) output->assign(elastic.size(), 0.0);
+        if (elastic.empty() || available == 0) return 0.0;
+        // 仅精确相同预算复用；最终请求output时仍完整重建分配。
+        if (!output && has_last_budget && available == last_budget) return last_utility;
+        bool all_upper = available >= elastic_upper_sum;
+        double lambda = 0;
+        if (!all_upper) {
+            // upper_bound选取最后一个不大于当前预算的Bq，也正确跳过重复总预算。
+            auto upper = std::upper_bound(elastic_budgets.begin(), elastic_budgets.end(), available);
+            if (upper == elastic_budgets.begin() || upper == elastic_budgets.end())
+                throw std::logic_error("Better: elastic budget bracket not found");
+            const size_t q = static_cast<size_t>(upper - elastic_budgets.begin() - 1);
+            if (allocation_near(available, elastic_budgets[q])) lambda = slopes[q];
+            else {
+                const double high = slopes[q], low = slopes[q + 1];
+                auto& constants = interval_cache[q];
+                if (!constants.ready) {
+                    // 首次按用户ID顺序以long double累加；未用区间不提前计算。
+                    for (const ElasticItem& item : elastic) {
+                        if (item.derivative_upper >= high) constants.fixed += budget;
+                        else if (item.derivative_zero > low) {
+                            constants.weights += item.user->weight / ln2;
+                            constants.inverse_caps += item.inverse_capacity;
+                            ++constants.interior_count;
+                        }
+                    }
+                    constants.ready = true;
+                }
+                const long double denominator = static_cast<long double>(available) - constants.fixed + constants.inverse_caps;
+                if (constants.interior_count == 0 || denominator <= 0)
+                    throw std::logic_error("Better: invalid elastic interior set");
+                lambda = static_cast<double>(constants.weights / denominator);
+                if (!std::isfinite(lambda) || lambda <= 0 || lambda < low || lambda > high)
+                    throw std::logic_error("Better: invalid closed-form elastic slope");
+            }
+        }
+        long double allocated = 0;
+        double utility = 0;
+        for (size_t i = 0; i < elastic.size(); ++i) {
+            const double bandwidth = all_upper ? budget : elastic_bandwidth(elastic[i], lambda);
+            allocated += bandwidth;
+            utility += elastic[i].user->elastic_utility(bandwidth, elastic[i].capacity);
+            if (output) (*output)[i] = bandwidth;
+        }
+        const long double expected = all_upper ? elastic_upper_sum : available;
+        if (std::abs(allocated - expected) > budget_tol || !std::isfinite(utility))
+            throw std::logic_error("Better: elastic allocation or utility inconsistent");
+        if (!output) {
+            has_last_budget = true; last_budget = available; last_utility = utility;
+        }
+        return utility;
+    };
+
+    // 按论文组合分数p*delta+elastic效用选择状态，不能用hard真实回溯值替代p*delta。
+    int best_profit = 0;
+    double best_score = 0;
+    for (int p = 0; p <= P; ++p) {
+        if (!std::isfinite(previous[p]) || previous[p] > budget + budget_tol) continue;
+        const double residual = std::max(0.0, budget - previous[p]);
+        const double score = p * delta + solve_elastic(residual, nullptr);
+        if (!std::isfinite(score)) throw std::overflow_error("Better: combined score overflow");
+        if (score > best_score) { best_score = score; best_profit = p; }
+    }
+
+    // 最佳状态只回溯一次；每次退到上一用户，利润需求非正后其他用户均不服务。
+    map<int, double> bandwidths;
+    int required = best_profit;
+    long double recovered_bandwidth = 0;
+    for (size_t count = nH; count > 0 && required > 0; --count) {
+        const size_t i = count - 1;
+        const size_t level = choices[i * columns + required];
+        if (level == 0) continue;
+        const HardItem& item = hard[i];
+        if (level >= item.thresholds.size()) throw std::logic_error("Better: invalid backtracking level");
+        bandwidths.emplace(item.user->ID, item.thresholds[level]);
+        recovered_bandwidth += item.thresholds[level];
+        required = item.profits[level] >= required ? 0 : required - item.profits[level];
+    }
+    if (required > 0 || !allocation_near(static_cast<double>(recovered_bandwidth), previous[best_profit]))
+        throw std::logic_error("Better: backtracking does not match selected DP state");
+    vector<double> elastic_allocations;
+    solve_elastic(std::max(0.0, budget - previous[best_profit]), &elastic_allocations);
+    for (size_t i = 0; i < elastic.size(); ++i)
+        if (elastic_allocations[i] > 0) bandwidths.emplace(elastic[i].user->ID, elastic_allocations[i]);
+
+    // 按原实例计算真实绝对效用，map自然按内部ID排序；仅返回正带宽用户。
+    KnapsackResult result;
+    result.uav_id = uav.ID;
+    result.allocatedList.reserve(bandwidths.size());
+    for (const auto& entry : bandwidths) {
+        const User& user = sysModel.users[entry.first];
+        const double bandwidth = entry.second, cap = sysModel.cap_list[uav.ID][entry.first];
+        if (!std::isfinite(bandwidth) || bandwidth <= 0)
+            throw std::logic_error("Better: invalid output bandwidth");
+        double value;
+        if (user.uType == HARD_UTILITY) {
+            const int level = user.achieved_hard_level(bandwidth, cap);
+            if (level == 0) throw std::logic_error("Better: hard QoS not met");
+            const double threshold = (user.hard_rate_levels.empty() ? user.rMin : user.hard_rate_levels[level - 1]) / cap;
+            if (!allocation_near(bandwidth, threshold)) throw std::logic_error("Better: hard output not at level threshold");
+            value = user.hard_level_utility(level);
+            result.hardWeight += bandwidth; result.hardValue += value;
+        } else {
+            value = user.elastic_utility(bandwidth, cap);
+            result.elasticWeight += bandwidth; result.elasticValue += value;
+        }
+        if (!std::isfinite(value) || value <= 0) throw std::logic_error("Better: invalid real utility");
+        result.allocatedList.push_back(user.ID);
+        result.allocatedBandwidth.emplace_hint(result.allocatedBandwidth.end(), user.ID, bandwidth);
+        result.allocatedValue.emplace_hint(result.allocatedValue.end(), user.ID, value);
+        result.totalWeight += bandwidth; result.totalValue += value;
+    }
+    if (!std::isfinite(result.totalWeight) || result.totalWeight > budget + budget_tol ||
+        !std::isfinite(result.totalValue) || !allocation_near(result.totalWeight, result.hardWeight + result.elasticWeight) ||
+        !allocation_near(result.totalValue, result.hardValue + result.elasticValue))
+        throw std::logic_error("Better: exceeded budget or inconsistent result totals");
+    // 不与Fast再择优，不进行等级升级或额外剩余带宽分配；只返回论文选定状态的真实结果。
+    return result;
 }
 
-// ==================== Faster 单 UAV 公开入口结束 ====================
-
 /**
- * @brief 执行 ToN 多 UAV 固定状态贪心选择及残余带宽分配。
- *
- * 每轮让所有未选 UAV 在同一份冻结效用状态上计算候选边际增益。初步分配完成后，
- * 每个用户仅保留一架 owner UAV；随后按 UAV 的贪心选中顺序，把残余带宽只分给
- * 当前 owner（a 类）和全局尚未服务的用户（c 类），排除已由其他 UAV 服务的 b 类用户。
- * @param uavs 参与贪心选择的 UAV 集合。
- * @param users 当前系统模型中的完整用户集合。
- * @param used_single_alg 1 表示 AlgFast_singleUAV_ToN，2 表示 AlgBetter_singleUAV_ToN，
- *        3 表示 AlgBetter_singleUAV_ToN_faster。
- * @param epsilon 两种 AlgBetter 单 UAV 算法使用的近似参数，必须满足 0 < epsilon < 1/2。
- * @return 满足旧实验约定的最终绝对 UAV 结果，以及与其一致的逐用户结果。
+ * @brief 以单UAV绝对效用配置为候选，按真实网络增量选择，最后清除重复关联。
+ * @param uavs 当前实例的完整UAV集合，允许顺序不同，但ID与预算必须对应原模型。
+ * @param users 当前实例的完整用户集合，以内部ID访问原模型的完整等级和信道。
+ * @param used_single_alg 1调用新Fast，3调用最新版Better；旧选择器2明确拒绝。
+ * @param epsilon 单UAV Better的精度，须有限且在(0,0.5)内。
+ * @param reallocate_residual 是否冻结既有分配后，为未服务用户执行一次残余分配。
+ * @return 最终逐UAV绝对分配与逐用户投影；任何子程序或结果异常均向上抛出。
  */
 pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN(
-	const vector<Uav>& uavs,
-	const vector<User>& users,
-	int used_single_alg,
-	double epsilon)
+    const vector<Uav>& uavs, const vector<User>& users, int used_single_alg,
+    double epsilon, bool reallocate_residual)
 {
-	if (used_single_alg != 1 && used_single_alg != 2 && used_single_alg != 3)
-		throw std::invalid_argument("ToN single-UAV selector must be 1, 2 or 3");
-	if (!std::isfinite(epsilon) || epsilon <= 0.0 || epsilon >= 0.5)
-		throw std::invalid_argument("ToN epsilon must satisfy 0 < epsilon < 1/2");
-	const int user_count = static_cast<int>(sysModel.users.size());
-	const int model_uav_count = static_cast<int>(sysModel.uavs.size());
-	if (users.size() != sysModel.users.size())
-		throw std::invalid_argument("ToN users must match sysModel.users.size()");
+    if (used_single_alg != 1 && used_single_alg != 3)
+        throw std::invalid_argument("MultiUAV: selector must be 1 (Fast) or 3 (Better)");
+    if (!std::isfinite(epsilon) || epsilon <= 0 || epsilon >= 0.5)
+        throw std::invalid_argument("MultiUAV: epsilon must be finite and in (0,0.5)");
+    const size_t K = sysModel.uavs.size(), N = sysModel.users.size();
+    if (uavs.size() != K || users.size() != N || sysModel.cap_list.size() != K || sysModel.dis_list.size() != K)
+        throw std::invalid_argument("MultiUAV: incomplete instance or channel matrices");
 
-	// 该实现仍以 ID 直接索引系统向量，因此先验证用户和系统 UAV 的 ID 完整且唯一。
-	vector<char> seen_users(user_count, 0);
-	for (const User& user : users)
-	{
-		if (user.ID < 0 || user.ID >= user_count || seen_users[user.ID])
-			throw std::invalid_argument("ToN users must have unique in-range IDs");
-		seen_users[user.ID] = 1;
-	}
-	vector<char> seen_model_uavs(model_uav_count, 0);
-	vector<KnapsackResult> uav_results(model_uav_count);
-	for (const Uav& model_uav : sysModel.uavs)
-	{
-		if (model_uav.ID < 0 || model_uav.ID >= model_uav_count ||
-			seen_model_uavs[model_uav.ID])
-			throw std::invalid_argument("ToN system UAVs must have unique in-range IDs");
-		seen_model_uavs[model_uav.ID] = 1;
-		uav_results[model_uav.ID].uav_id = model_uav.ID;
-	}
+    // 校验完整ID集合；后续统一按原模型ID遍历，因此不受输入向量排列影响。
+    vector<bool> seen_uavs(K, false), seen_users(N, false);
+    for (const Uav& uav : uavs) {
+        const int k = uav.ID;
+        if (k < 0 || static_cast<size_t>(k) >= K || seen_uavs[k] || sysModel.uavs[k].ID != k ||
+            !std::isfinite(uav.total_bandwidth) || uav.total_bandwidth < 0 ||
+            uav.total_bandwidth != sysModel.uavs[k].total_bandwidth)
+            throw std::invalid_argument("MultiUAV: invalid UAV ID or inconsistent budget");
+        seen_uavs[k] = true;
+    }
+    for (const User& user : users) {
+        const int j = user.ID;
+        if (j < 0 || static_cast<size_t>(j) >= N || seen_users[j] || sysModel.users[j].ID != j)
+            throw std::invalid_argument("MultiUAV: invalid or duplicate user ID");
+        seen_users[j] = true;
+    }
+    vector<vector<User>> covered(K); // 每架UAV的完整覆盖集合；主循环中不排除已服务用户。
+    for (size_t k = 0; k < K; ++k) {
+        if (sysModel.cap_list[k].size() != N || sysModel.dis_list[k].size() != N)
+            throw std::invalid_argument("MultiUAV: incomplete channel row");
+        for (size_t j = 0; j < N; ++j) {
+            const double cap = sysModel.cap_list[k][j], distance = sysModel.dis_list[k][j];
+            if (!std::isfinite(cap) || cap < 0 || !std::isfinite(distance) || distance < 0)
+                throw std::invalid_argument("MultiUAV: invalid channel or distance");
+            if (distance <= max_coverage_distance && cap > 0) covered[k].push_back(sysModel.users[j]);
+        }
+    }
 
-	// participating 标记本次实际参与的 UAV；uav_by_id 保存其调用时预算，供残余阶段复用。
-	vector<Uav> uav_by_id(model_uav_count);
-	vector<char> participating(model_uav_count, 0);
-	for (const Uav& uav : uavs)
-	{
-		if (uav.ID < 0 || uav.ID >= model_uav_count || participating[uav.ID])
-			throw std::invalid_argument("ToN input UAVs must have unique in-range IDs");
-		if (!std::isfinite(uav.total_bandwidth) || uav.total_bandwidth < -EPS)
-			throw std::invalid_argument("ToN input UAV bandwidth must be nonnegative");
-		participating[uav.ID] = 1;
-		uav_by_id[uav.ID] = uav;
-	}
-	if (uavs.empty())
-		return { uav_results, construct_user_results(uav_results) };
+    // 所有候选与最终结果都按原模型重新计分；参数limit区分完整预算和残余预算。
+    // map天然保证输出ID升序；这里只核对必要的覆盖、等级、预算与分项。
+    // 接收可移动的容器，在已有节点上重新计分；保留全部原模型检查和ID累加顺序。
+    auto rebuild = [&](int k, KnapsackResult result, double limit) {
+        result.uav_id = k;
+        result.allocatedList.clear();
+        result.allocatedList.reserve(result.allocatedBandwidth.size());
+        result.totalWeight = result.totalValue = 0;
+        result.hardWeight = result.hardValue = 0;
+        result.elasticWeight = result.elasticValue = 0;
+        for (auto it = result.allocatedBandwidth.begin(); it != result.allocatedBandwidth.end(); ) {
+            const int j = it->first;
+            const double bandwidth = it->second;
+            if (j < 0 || static_cast<size_t>(j) >= N || !std::isfinite(bandwidth) || bandwidth < 0)
+                throw std::logic_error("MultiUAV: invalid allocation entry");
+            if (bandwidth == 0) {
+                result.allocatedValue.erase(j);
+                it = result.allocatedBandwidth.erase(it);
+                continue;
+            }
+            const double cap = sysModel.cap_list[k][j];
+            if (cap <= 0 || sysModel.dis_list[k][j] > max_coverage_distance)
+                throw std::logic_error("MultiUAV: allocation outside coverage");
+            const User& user = sysModel.users[j];
+            double value;
+            if (user.uType == HARD_UTILITY) {
+                const int level = user.achieved_hard_level(bandwidth, cap);
+                if (level == 0) throw std::logic_error("MultiUAV: hard QoS not met");
+                const double rate = user.hard_rate_levels.empty() ? user.rMin : user.hard_rate_levels[level - 1];
+                if (!allocation_near(bandwidth, rate / cap))
+                    throw std::logic_error("MultiUAV: hard allocation not at service threshold");
+                value = user.hard_level_utility(level);
+                result.hardWeight += bandwidth; result.hardValue += value;
+            } else if (user.uType == ELASTIC_UTILITY) {
+                value = user.elastic_utility(bandwidth, cap);
+                result.elasticWeight += bandwidth; result.elasticValue += value;
+            } else throw std::logic_error("MultiUAV: unsupported user type");
+            if (!std::isfinite(value) || value <= 0) throw std::logic_error("MultiUAV: invalid real utility");
+            result.allocatedList.push_back(j);
+            result.allocatedValue.insert_or_assign(result.allocatedValue.end(), j, value);
+            result.totalWeight += bandwidth; result.totalValue += value;
+            ++it;
+        }
+        if (!std::isfinite(result.totalWeight) || result.totalWeight > limit + allocation_tolerance(limit, limit) ||
+            !std::isfinite(result.totalValue) || !allocation_near(result.totalValue, result.hardValue + result.elasticValue) ||
+            !allocation_near(result.totalWeight, result.hardWeight + result.elasticWeight))
+            throw std::logic_error("MultiUAV: exceeded budget or inconsistent totals");
+        return result;
+    };
+    // 主阶段与残余阶段使用同一种单UAV算法；异常不捕获、不回退，也不跳过失败UAV。
+    auto solve = [&](const Uav& uav, const vector<User>& candidates) {
+        KnapsackResult candidate = used_single_alg == 1
+            ? AlgFast_singleUAV_ToN(uav, candidates)
+            : AlgBetter_singleUAV_ToN_faster(uav, candidates, epsilon);
+        return rebuild(uav.ID, std::move(candidate), uav.total_bandwidth);
+    };
 
-	// selected 防止同一 UAV 被重复选择；selection_order 同时决定后续平局和残余处理顺序。
-	vector<char> selected(model_uav_count, 0);
-	vector<int> selection_order;
-	selection_order.reserve(uavs.size());
-	vector<double> current_utilities(user_count, 0.0);
-	const vector<double> zero_base_bandwidths(user_count, 0.0);
-	const vector<User> empty_candidates;
+    vector<bool> selected(K, false);
+    vector<int> selection_order;
+    selection_order.reserve(K);
+    vector<double> current_utility(N, 0.0); // 本轮之前已选配置给每用户提供的最大真实效用。
+    vector<KnapsackResult> retained(K);     // 完整保留各UAV被选中时的配置，暂不删除重复关联。
+    for (size_t round = 0; round < K; ++round) {
+        int best_id = -1;
+        long double best_gain = -1;
+        KnapsackResult best_candidate;
+        // 按UAV ID升序评估，严格增量改善才替换，实现平局取较小ID。
+        for (size_t k = 0; k < K; ++k) {
+            if (selected[k]) continue;
+            KnapsackResult candidate = solve(sysModel.uavs[k], covered[k]);
+            long double gain = 0;
+            for (const auto& entry : candidate.allocatedValue)
+                gain += std::max(0.0, entry.second - current_utility[entry.first]);
+            if (!std::isfinite(gain)) throw std::overflow_error("MultiUAV: gain overflow");
+            if (gain > best_gain) {
+                best_id = static_cast<int>(k); best_gain = gain;
+                best_candidate = std::move(candidate);
+            }
+        }
+        if (best_id < 0) throw std::logic_error("MultiUAV: no unselected UAV found");
+        // 整轮候选比较完毕后才更新状态；零增量也正常选取，直至每架UAV处理一次。
+        selected[best_id] = true;
+        selection_order.push_back(best_id);
+        retained[best_id] = std::move(best_candidate);
+        for (const auto& entry : retained[best_id].allocatedValue)
+            current_utility[entry.first] = std::max(current_utility[entry.first], entry.second);
+    }
 
-	// 将三种单 UAV oracle 统一为相同的“当前绝对效用 + 基准带宽”调用接口。
-	auto solve_single_uav = [&](const Uav& candidate_uav,
-		const vector<User>& candidates,
-		const vector<double>& state,
-		const vector<double>& bases) {
-		if (used_single_alg == 1)
-			return AlgFast_singleUAV_ToN(candidate_uav, candidates, state, bases);
-		if (used_single_alg == 2)
-			return AlgBetter_singleUAV_ToN(
-				candidate_uav, candidates, state, bases, epsilon);
-		return AlgBetter_singleUAV_ToN_faster(
-			candidate_uav, candidates, state, bases, epsilon);
-		};
+    // 确定唯一关联：按ID升序扫描，等效用时保留较小UAV ID，不能跨UAV累加效用。
+    vector<int> owner(N, -1);
+    vector<double> owner_utility(N, 0.0);
+    for (size_t k = 0; k < K; ++k)
+        for (const auto& entry : retained[k].allocatedValue)
+            if (entry.second > owner_utility[entry.first]) {
+                owner[entry.first] = static_cast<int>(k);
+                owner_utility[entry.first] = entry.second;
+            }
+    vector<KnapsackResult> results(K);
+    for (size_t k = 0; k < K; ++k) {
+        map<int, double> unique_bandwidths;
+        for (const auto& entry : retained[k].allocatedBandwidth)
+            if (owner[entry.first] == static_cast<int>(k)) unique_bandwidths.emplace(entry);
+        KnapsackResult unique_result;
+        unique_result.allocatedBandwidth = std::move(unique_bandwidths);
+        results[k] = rebuild(static_cast<int>(k), std::move(unique_result), sysModel.uavs[k].total_bandwidth);
+    }
 
-	for (size_t round = 0; round < uavs.size(); ++round)
-	{
-		// frozen_state 是本轮所有候选共同看到的旧 m_j；候选评估期间严禁更新 current_utilities。
-		const vector<double> frozen_state = current_utilities;
-		int best_uav_id = -1;
-		double best_score = -INF;
-		KnapsackResult best_marginal_result;
-		// 分数使用单 UAV 返回的真实边际 totalValue；EPS 内平局选择较小 UAV ID 以保证复现。
-		for (const Uav& candidate_uav : uavs)
-		{
-			const int uav_id = candidate_uav.ID;
-			if (selected[uav_id])
-				continue;
-			auto service_it = sysModel.uav_serviceable_users_map.find(uav_id);
-			const vector<User>& candidates = service_it ==
-				sysModel.uav_serviceable_users_map.end()
-				? empty_candidates
-				: service_it->second;
-			KnapsackResult marginal_result = solve_single_uav(
-				candidate_uav, candidates, frozen_state, zero_base_bandwidths);
-			double score = marginal_result.totalValue;
-			if (best_uav_id < 0 || score > best_score + EPS ||
-				(std::abs(score - best_score) <= EPS && uav_id < best_uav_id))
-			{
-				best_uav_id = uav_id;
-				best_score = score;
-				best_marginal_result = std::move(marginal_result);
-			}
-		}
-		if (best_uav_id < 0)
-			throw std::logic_error("ToN greedy round could not select an unprocessed UAV");
+    // 可选后处理仅遍历一次：冻结已有带宽/关联，按主阶段选择顺序接纳仍未服务的用户。
+    if (reallocate_residual) {
+        for (int k : selection_order) {
+            double remaining = sysModel.uavs[k].total_bandwidth - results[k].totalWeight;
+            if (remaining < -allocation_tolerance(sysModel.uavs[k].total_bandwidth, results[k].totalWeight))
+                throw std::logic_error("MultiUAV: negative residual budget");
+            remaining = std::max(0.0, remaining);
+            if (remaining == 0) continue;
+            vector<User> unserved;
+            unserved.reserve(covered[k].size());
+            for (const User& user : covered[k]) if (owner[user.ID] < 0) unserved.push_back(user);
+            if (unserved.empty()) continue;
+            Uav residual_uav = sysModel.uavs[k];
+            residual_uav.total_bandwidth = remaining;
+            const KnapsackResult additional = solve(residual_uav, unserved);
+            map<int, double> merged = results[k].allocatedBandwidth;
+            for (const auto& entry : additional.allocatedBandwidth) {
+                if (owner[entry.first] >= 0 || !merged.emplace(entry).second)
+                    throw std::logic_error("MultiUAV: residual allocation changed an existing association");
+                owner[entry.first] = k; // 后续UAV立即排除本次新接纳用户。
+            }
+            KnapsackResult merged_result;
+            merged_result.allocatedBandwidth = std::move(merged);
+            results[k] = rebuild(k, std::move(merged_result), sysModel.uavs[k].total_bandwidth);
+        }
+    }
 
-		// 初始阶段 base=0，因此选中解的新增带宽就是该 UAV 的绝对总带宽；在写入
-		// 旧实验框架前仍统一重算绝对效用与聚合字段。
-		map<int, double> absolute_bandwidths;
-		for (int user_id : best_marginal_result.allocatedList)
-		{
-			auto bandwidth_it = best_marginal_result.allocatedBandwidth.find(user_id);
-			if (bandwidth_it == best_marginal_result.allocatedBandwidth.end())
-				throw std::logic_error("ToN marginal result is missing a bandwidth entry");
-			absolute_bandwidths[user_id] = bandwidth_it->second;
-		}
-		uav_results[best_uav_id] = ton_make_absolute_result(
-			sysModel, best_uav_id, absolute_bandwidths);
-		selected[best_uav_id] = 1;
-		selection_order.push_back(best_uav_id);
-
-		// 只有本轮真正选中的 UAV 才能在所有候选评估结束后更新网络状态 m_j。
-		for (int user_id : uav_results[best_uav_id].allocatedList)
-			current_utilities[user_id] = std::max(
-				current_utilities[user_id],
-				uav_results[best_uav_id].allocatedValue.at(user_id));
-	}
-
-	// selection_rank 用于绝对效用平局：保留更早选中的 UAV，维持贪心过程的确定性。
-	vector<int> selection_rank(model_uav_count, std::numeric_limits<int>::max());
-	for (size_t rank = 0; rank < selection_order.size(); ++rank)
-		selection_rank[selection_order[rank]] = static_cast<int>(rank);
-	// owner[j] 是冲突消解后唯一服务用户 j 的 UAV；owner_utility[j] 是其绝对效用。
-	vector<int> owner(user_count, -1);
-	vector<double> owner_utility(user_count, 0.0);
-	for (const KnapsackResult& result : uav_results)
-	{
-		const int uav_id = result.uav_id;
-		for (int user_id : result.allocatedList)
-		{
-			double value = result.allocatedValue.at(user_id);
-			if (value > owner_utility[user_id] + EPS ||
-				(std::abs(value - owner_utility[user_id]) <= EPS && value > EPS &&
-					(owner[user_id] < 0 ||
-						selection_rank[uav_id] < selection_rank[owner[user_id]])))
-			{
-				owner[user_id] = uav_id;
-				owner_utility[user_id] = value;
-			}
-		}
-	}
-
-	// 不能只从 allocatedList 删除重复关联：那会令带宽/效用映射和 totalValue 等聚合字段
-	// 残留旧值。这里从唯一 owner 的带宽映射出发，完整重建每个 KnapsackResult。
-	vector<map<int, double>> associated_bandwidths(model_uav_count);
-	for (const KnapsackResult& result : uav_results)
-	{
-		const int uav_id = result.uav_id;
-		for (int user_id : result.allocatedList)
-		{
-			if (owner[user_id] == uav_id)
-				associated_bandwidths[uav_id][user_id] =
-					result.allocatedBandwidth.at(user_id);
-		}
-	}
-	for (int uav_id = 0; uav_id < model_uav_count; ++uav_id)
-		uav_results[uav_id] = ton_make_absolute_result(
-			sysModel, uav_id, associated_bandwidths[uav_id]);
-	for (int user_id = 0; user_id < user_count; ++user_id)
-	{
-		if (owner[user_id] >= 0)
-			owner_utility[user_id] =
-				uav_results[owner[user_id]].allocatedValue.at(user_id);
-	}
-
-	// 冲突消解后每个用户最多有一个 owner，因此各 UAV totalValue 之和就是当前网络效用。
-	auto total_network_utility = [&]() {
-		double total = 0.0;
-		for (const KnapsackResult& result : uav_results)
-			total += result.totalValue;
-		return total;
-		};
-
-	// 按实际选中顺序使用残余带宽；先处理的 UAV 新接纳用户后，后续 UAV 会将其视为 b 类。
-	for (int uav_id : selection_order)
-	{
-		// Fast 在唯一关联完成后结束分配；两种 Better 保留残余带宽分配。
-		if (used_single_alg == 1)
-			break;
-		const Uav& original_uav = uav_by_id[uav_id];
-		double residual_bandwidth = original_uav.total_bandwidth -
-			uav_results[uav_id].totalWeight;
-		if (residual_bandwidth <= EPS)
-			continue;
-		if (residual_bandwidth < -1e-7 *
-			std::max(1.0, original_uav.total_bandwidth))
-			throw std::logic_error("ToN associated allocation exceeds the UAV budget");
-
-		auto service_it = sysModel.uav_serviceable_users_map.find(uav_id);
-		if (service_it == sysModel.uav_serviceable_users_map.end() ||
-			service_it->second.empty())
-			continue;
-		// residual_state/residual_bases 只为候选用户赋值：a 类带入现有 m_j 与 b_old，
-		// c 类保持 0；b 类不进入 residual_candidates。
-		vector<User> residual_candidates;
-		vector<double> residual_state(user_count, 0.0);
-		vector<double> residual_bases(user_count, 0.0);
-		for (const User& serviceable_user : service_it->second)
-		{
-			const int user_id = serviceable_user.ID;
-			if (user_id < 0 || user_id >= user_count)
-				throw std::invalid_argument("ToN serviceable-user map contains an invalid ID");
-			if (owner[user_id] == uav_id)
-			{
-				// a 类：保留本 UAV 的已有带宽和绝对效用，只优化其新增带宽。
-				residual_candidates.push_back(serviceable_user);
-				residual_bases[user_id] =
-					uav_results[uav_id].allocatedBandwidth.at(user_id);
-				residual_state[user_id] = owner_utility[user_id];
-			}
-			else if (owner[user_id] < 0)
-			{
-				// c 类：全局尚未服务，从零基准带宽和零当前效用开始。
-				residual_candidates.push_back(serviceable_user);
-			}
-			// b 类：已由其他 UAV 服务，明确排除，防止残余阶段再次形成重复关联。
-		}
-		if (residual_candidates.empty())
-			continue;
-
-		Uav residual_uav = original_uav;
-		residual_uav.total_bandwidth = residual_bandwidth;
-		// 残余带宽阶段统一使用 AlgFast，基于已有带宽和当前效用优化新增带宽。
-		KnapsackResult marginal_result = AlgFast_singleUAV_ToN(
-			residual_uav, residual_candidates, residual_state, residual_bases);
-		if (marginal_result.totalValue <= EPS)
-			continue;
-
-		// marginal_result 中仍是“新增带宽/边际效用”，合并时需叠加到 a 类的已有带宽。
-		double utility_before = total_network_utility();
-		map<int, double> merged_bandwidths =
-			uav_results[uav_id].allocatedBandwidth;
-		for (int user_id : marginal_result.allocatedList)
-		{
-			if (owner[user_id] >= 0 && owner[user_id] != uav_id)
-				throw std::logic_error("ToN residual solver selected a class-b user");
-			double additional = marginal_result.allocatedBandwidth.at(user_id);
-			double old_bandwidth = merged_bandwidths.count(user_id)
-				? merged_bandwidths.at(user_id)
-				: 0.0;
-			double new_bandwidth = old_bandwidth + additional;
-			double new_utility = ton_absolute_utility(
-				sysModel.users[user_id],
-				sysModel.cap_list[uav_id][user_id],
-				new_bandwidth);
-			if (new_utility <= EPS)
-				continue;
-			merged_bandwidths[user_id] = new_bandwidth;
-			// c 类一旦被接纳，立即登记 owner；后续 UAV 因而会把它归为 b 类并排除。
-			if (owner[user_id] < 0)
-				owner[user_id] = uav_id;
-			owner_utility[user_id] = new_utility;
-		}
-		// 每轮合并后重新物化绝对结果，随后检查预算和网络效用单调性。
-		uav_results[uav_id] = ton_make_absolute_result(
-			sysModel, uav_id, merged_bandwidths);
-		if (uav_results[uav_id].totalWeight > original_uav.total_bandwidth +
-			1e-7 * std::max(1.0, original_uav.total_bandwidth))
-			throw std::logic_error("ToN residual merge exceeds the UAV bandwidth budget");
-		for (int user_id : uav_results[uav_id].allocatedList)
-			owner_utility[user_id] = uav_results[uav_id].allocatedValue.at(user_id);
-		double utility_after = total_network_utility();
-		if (utility_after + 1e-7 * std::max(1.0, utility_before) < utility_before)
-			throw std::logic_error("ToN residual allocation decreased network utility");
-	}
-
-	map<int, UserResult> user_results = construct_user_results(uav_results);
-	return { uav_results, user_results };
+    // 核对最终唯一归属，再使用现有投影函数填充全用户结果；未服务者保持默认-1/0/0。
+    vector<bool> final_seen(N, false);
+    for (size_t k = 0; k < K; ++k)
+        for (int j : results[k].allocatedList) {
+            if (final_seen[j] || owner[j] != static_cast<int>(k))
+                throw std::logic_error("MultiUAV: inconsistent final association");
+            final_seen[j] = true;
+        }
+    for (size_t j = 0; j < N; ++j)
+        if (final_seen[j] != (owner[j] >= 0)) throw std::logic_error("MultiUAV: missing final user allocation");
+    return {results, construct_user_results(results)};
 }
 
 void BAProblem::PrintKnapsackResult(const KnapsackResult& result, int uav_id, int maxItemsToPrint, int indent)

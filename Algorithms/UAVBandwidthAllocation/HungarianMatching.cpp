@@ -1,8 +1,7 @@
 ﻿/// @file HungarianMatching.cpp
-/// @brief Youssef-inspired priority-aware subchannel DA with single-UAV association.
-/// Historical filename/API retained. Static normalized-demand hard preferences,
-/// finite recovery and elastic marginal preferences are adaptations, not a full
-/// DA/NOMA reproduction, classical stability proof or global-optimality claim.
+/// @brief hard优先子信道匹配、接纳/关联局部搜索及剩余资源的elastic分配。
+/// hard阶段以优先级匹配初始化并改进接纳和关联，elastic阶段只使用剩余资源。
+/// 本方法不宣称全局最优、DA稳定性或完整NOMA协议复现。
 #include "EntityDefinition.h"
 #include <set>
 #include <cstdint>
@@ -135,22 +134,31 @@ struct DACounters {
     uint64_t hard_passes = 0, recovery_rounds = 0, recovery_admissions = 0;
     uint64_t elastic_proposals = 0, elastic_replacements = 0, elastic_rounds = 0;
     uint64_t hard_proposal_bound = 0, elastic_proposal_bound = 0;
+    // 每轮完整评估邻域，至多接受一个操作；停止原因与改进次数分别记录。
+    uint64_t local_search_rounds = 0, local_search_improvements = 0;
+    uint64_t local_search_admissions = 0, local_search_replacements = 0;
+    uint64_t local_search_migrations = 0, local_search_swaps = 0;
+    std::string local_search_stop_reason = "no_improving_move";
     /// Serialize counters once through the existing diagnostics event channel.
     json to_json() const {
-        return {{"algorithm", "hardfirst-subchannel-da-v1"},
+        return {{"algorithm", "hardfirst-subchannel-da-ls-v1"},
             {"hard_proposals", hard_proposals}, {"hard_replacements", hard_replacements},
             {"hard_reactivations", hard_reactivations}, {"hard_switches", hard_switches},
             {"hard_released_slots", hard_released_slots}, {"hard_rounds", hard_rounds},
             {"hard_passes", hard_passes}, {"recovery_rounds", recovery_rounds},
             {"recovery_admissions", recovery_admissions}, {"elastic_proposals", elastic_proposals},
             {"elastic_replacements", elastic_replacements}, {"elastic_rounds", elastic_rounds},
-            {"hard_proposal_bound", hard_proposal_bound}, {"elastic_proposal_bound", elastic_proposal_bound}};
+            {"hard_proposal_bound", hard_proposal_bound}, {"elastic_proposal_bound", elastic_proposal_bound},
+            {"local_search_max_rounds", HARD_FIRST_LOCAL_SEARCH_MAX_ROUNDS},
+            {"local_search_rounds", local_search_rounds}, {"local_search_improvements", local_search_improvements},
+            {"local_search_admissions", local_search_admissions}, {"local_search_replacements", local_search_replacements},
+            {"local_search_migrations", local_search_migrations}, {"local_search_swaps", local_search_swaps},
+            {"local_search_stop_reason", local_search_stop_reason}};
     }
 };
 
-/// Engine for static-capacity, single-UAV, priority-aware subchannel DA.
-/// It stores real slot ownership and lazy per-UAV preference cursors; it does
-/// not reserve bundles, fabricate frequency variation, or perform global heap allocation.
+/// 跟踪真实槽归属、hard冻结状态和逐UAV匹配游标，保持每个用户只关联一架UAV。
+/// hard局部搜索以整数槽束评价候选，结束后重建槽状态，再执行elastic匹配。
 class SubchannelDA {
     const SystemMd& model;
     double width;
@@ -310,6 +318,157 @@ class SubchannelDA {
         return completed;
     }
 
+    /// 在hard恢复后搜索最佳接纳/关联改进；只用整数最小槽束检查预算，不调用elastic或重建信道。
+    /// 最多HARD_FIRST_LOCAL_SEARCH_MAX_ROUNDS轮；每轮只提交一次改进，无有效改进立即返回。
+    void improve_hard_allocation() {
+        const int hard_count = model.n1;
+        if (hard_count == 0) {
+            counters.local_search_stop_reason = "no_hard_users";
+            return;
+        }
+        for (int j = hard_count; j < n; ++j)
+            if (!held[j].empty()) throw std::logic_error("Hard local search must precede elastic allocation");
+
+        // need[k][j]=0表示不覆盖或整架UAV也无法满足最高等级；正值为最小有效槽数。
+        std::vector<int> budgets(m), used(m, 0), owner(hard_count, -1);
+        std::vector<std::vector<int>> need(m, std::vector<int>(hard_count, 0));
+        for (int k = 0; k < m; ++k) {
+            budgets[k] = hard_first_slot_count(model.uavs[k].total_bandwidth, width);
+            for (int j = 0; j < hard_count; ++j)
+                if (links[k][j]) need[k][j] = hard_first_min_slots(budgets[k], width,
+                    model.cap_list[k][j], model.users[j].rMin);
+        }
+        // 将已恢复的hard槽状态投影到紧凑归属数组；只接受完整的最小槽束。
+        for (int j = 0; j < hard_count; ++j) {
+            if (held[j].empty()) continue;
+            const int k = slots[*held[j].begin()].uav;
+            if (!frozen[j] || need[k][j] == 0 || held[j].size() != static_cast<size_t>(need[k][j]))
+                throw std::logic_error("Hard local search received a nonminimal or incomplete bundle");
+            for (int s : held[j])
+                if (slots[s].owner != j || slots[s].uav != k)
+                    throw std::logic_error("Hard local search received inconsistent slot ownership");
+            if (need[k][j] > budgets[k] - used[k]) throw std::logic_error("Hard local search input exceeds budget");
+            owner[j] = k;
+            used[k] += need[k][j];
+        }
+
+        enum class MoveKind { Admit, Replace, Relocate, Swap };
+        struct Move {
+            bool valid = false;
+            MoveKind kind = MoveKind::Admit;
+            int first = -1, second = -1, target = -1;
+            double utility_gain = 0;
+            int saved_slots = 0; // 正值减少资源，负值增加资源；仅在效用增量相同时比较。
+        };
+        uint64_t accepted = 0;
+        counters.local_search_stop_reason = "iteration_limit";
+        for (int round = 0; round < HARD_FIRST_LOCAL_SEARCH_MAX_ROUNDS; ++round) {
+            ++counters.local_search_rounds;
+            Move best;
+            // 不使用容差接受效用下降；同一轮状态冻结，相同评分保持先枚举的操作。
+            auto consider = [&](MoveKind kind, int first, int second, int target, double gain, int saving) {
+                if (!std::isfinite(gain)) throw std::overflow_error("Hard local search utility gain overflow");
+                if (!(gain > 0 || (gain == 0 && saving > 0))) return;
+                if (!best.valid || gain > best.utility_gain ||
+                    (gain == best.utility_gain && saving > best.saved_slots))
+                    best = {true, kind, first, second, target, gain, saving};
+            };
+
+            // 1. 新增接纳：未服务用户按ID升序，再按目标UAV ID升序。
+            for (int j = 0; j < hard_count; ++j) {
+                if (owner[j] >= 0) continue;
+                for (int k = 0; k < m; ++k)
+                    if (need[k][j] > 0 && need[k][j] <= budgets[k] - used[k])
+                        consider(MoveKind::Admit, j, -1, k, hard_value[j], -need[k][j]);
+            }
+            // 2. 同UAV替换：先枚举移除用户，再枚举新用户；检查先释放再接纳后的容量。
+            for (int a = 0; a < hard_count; ++a) {
+                const int k = owner[a];
+                if (k < 0) continue;
+                for (int b = 0; b < hard_count; ++b)
+                    if (owner[b] < 0 && need[k][b] > 0 && need[k][b] <= budgets[k] - used[k] + need[k][a])
+                        consider(MoveKind::Replace, a, b, k, hard_value[b] - hard_value[a], need[k][a] - need[k][b]);
+            }
+            // 3. 迁移：保留服务用户和效用，只有减少槽占用才可能被接受。
+            for (int j = 0; j < hard_count; ++j) {
+                const int old = owner[j];
+                if (old < 0) continue;
+                for (int k = 0; k < m; ++k)
+                    if (k != old && need[k][j] > 0 && need[k][j] <= budgets[k] - used[k])
+                        consider(MoveKind::Relocate, j, -1, k, 0.0, need[old][j] - need[k][j]);
+            }
+            // 4. 交换：仅枚举a<b，不同UAV同时释放旧槽后，两侧都必须放得下新槽束。
+            for (int a = 0; a < hard_count; ++a) {
+                const int ka = owner[a];
+                if (ka < 0) continue;
+                for (int b = a + 1; b < hard_count; ++b) {
+                    const int kb = owner[b];
+                    if (kb < 0 || ka == kb || need[ka][b] == 0 || need[kb][a] == 0) continue;
+                    if (need[ka][b] > budgets[ka] - used[ka] + need[ka][a] ||
+                        need[kb][a] > budgets[kb] - used[kb] + need[kb][b]) continue;
+                    consider(MoveKind::Swap, a, b, -1, 0.0,
+                        (need[ka][a] - need[ka][b]) + (need[kb][b] - need[kb][a]));
+                }
+            }
+            if (!best.valid) {
+                counters.local_search_stop_reason = "no_improving_move";
+                break;
+            }
+
+            // 提交唯一获选操作，仅更新涉及的归属和UAV槽计数；本轮不再评估其他操作。
+            const int a = best.first, b = best.second, target = best.target;
+            switch (best.kind) {
+            case MoveKind::Admit:
+                owner[a] = target; used[target] += need[target][a];
+                ++counters.local_search_admissions;
+                break;
+            case MoveKind::Replace:
+                used[target] = used[target] - need[target][a] + need[target][b];
+                owner[a] = -1; owner[b] = target;
+                ++counters.local_search_replacements;
+                break;
+            case MoveKind::Relocate:
+                used[owner[a]] -= need[owner[a]][a];
+                used[target] += need[target][a]; owner[a] = target;
+                ++counters.local_search_migrations;
+                break;
+            case MoveKind::Swap: {
+                const int ka = owner[a], kb = owner[b];
+                used[ka] = used[ka] - need[ka][a] + need[ka][b];
+                used[kb] = used[kb] - need[kb][b] + need[kb][a];
+                owner[a] = kb; owner[b] = ka;
+                ++counters.local_search_swaps;
+                break;
+            }
+            }
+            for (int k = 0; k < m; ++k)
+                if (used[k] < 0 || used[k] > budgets[k]) throw std::logic_error("Hard local search budget invariant failed");
+            ++accepted; ++counters.local_search_improvements;
+        }
+        if (accepted == 0) return; // 无改进时保留槽ID和冻结状态，不影响后续elastic的申请顺序。
+
+        // 仅在搜索结束时重建一次真实槽位；按用户ID与槽ID升序分配最小槽束。
+        std::vector<std::vector<int>> by_uav(m);
+        for (int s = 0; s < static_cast<int>(slots.size()); ++s) {
+            by_uav[slots[s].uav].push_back(s);
+            slots[s].owner = -1; slots[s].phase = DASlotPhase::Vacant;
+        }
+        for (int j = 0; j < hard_count; ++j) { held[j].clear(); frozen[j] = false; }
+        std::vector<int> cursor(m, 0);
+        for (int j = 0; j < hard_count; ++j) {
+            const int k = owner[j];
+            if (k < 0) continue;
+            for (int q = 0; q < need[k][j]; ++q) {
+                const int s = by_uav[k].at(cursor[k]++);
+                slots[s].owner = j; slots[s].phase = DASlotPhase::FrozenHard;
+                held[j].insert(s);
+            }
+            frozen[j] = true;
+        }
+        for (int k = 0; k < m; ++k)
+            if (cursor[k] != used[k]) throw std::logic_error("Hard local search slot reconstruction mismatch");
+    }
+
     /// Exact elastic utility gain using the frozen round-start count, excluding
     /// the contested slot for its incumbent. Zero-weight users never apply.
     double elastic_score(int j, int s, const std::vector<int>& counts) const {
@@ -411,12 +570,13 @@ public:
             for (int s = 0; s < budgets[k]; ++s) slots.push_back({k, s});
     }
 
-    /// Run main hard DA, finite recovery, elastic DA and project final effective
-    /// allocations. Append a single aggregate diagnostic event if requested.
+    /// 依次执行hard匹配/恢复、最佳改进局部搜索、elastic匹配，返回最终有效带宽与用户投影。
+    /// diagnostics非空时只追加一条汇总记录，不设置目标耗时或空转轮次。
     std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>> run(AllocationDiagnostics* diagnostics) {
         hard_pass(false);
         // A recovery continues only after a strict increase in frozen hard users.
         while (hard_pass(true) > 0) {}
+        improve_hard_allocation();
         elastic_pass();
         std::vector<KnapsackResult> results(m);
         std::map<int, UserResult> users;
@@ -444,14 +604,13 @@ public:
 } // namespace
 
 
-/// Source-compatible entry: perform subchannel DA without collecting diagnostics.
+/// 无诊断参数的HardFirst入口，返回匹配与局部搜索后的最终分配。
 std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 BAProblem::HardFirstPriorityMatchingAllocation() {
     return HardFirstPriorityMatchingAllocation(nullptr);
 }
 
-/// Diagnostic overload: real proposal/replacement counts accompany the unchanged
-/// allocation pair. No artificial delay, padding iterations or runtime target.
+/// 带诊断的HardFirst入口：返回最终分配并记录真实匹配/局部搜索工作量。
 std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 BAProblem::HardFirstPriorityMatchingAllocation(AllocationDiagnostics* diagnostics) {
     return SubchannelDA(sysModel).run(diagnostics);

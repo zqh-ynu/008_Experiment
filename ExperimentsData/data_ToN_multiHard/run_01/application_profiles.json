@@ -1,0 +1,31 @@
+{
+  "config_version": "multiHard_v1",
+  "profiles": {
+    "voice": {
+      "user_type": "hard",
+      "p_out": 0.01,
+      "rate_thresholds_mbps": [
+        0.032
+      ]
+    },
+    "video": {
+      "user_type": "hard",
+      "p_out": 0.001,
+      "rate_thresholds_mbps": [
+        1.2,
+        2.5,
+        5.0
+      ]
+    },
+    "remote_control": {
+      "user_type": "hard",
+      "p_out": 1e-05,
+      "rate_thresholds_mbps": [
+        0.08
+      ]
+    },
+    "elastic": {
+      "user_type": "elastic"
+    }
+  }
+}

@@ -23,7 +23,7 @@ inline const vector<string> method_name_list = {
 };
 inline const string TON_RESULT_VERSION_DIR = "ToN_simple/";
 inline const string SIMPLE_RUN_SCHEMA = "ton-simple-v1";
-inline const string SIMPLE_ALGORITHM_VERSION = "ton-proposed-fast-faster-v1";
+inline const string SIMPLE_ALGORITHM_VERSION = "ton-multihard-highest-baselines-v1";
 
 /// Record the actual proposed-method dispatch without changing labels or deterministic seeds.
 inline json proposed_algorithm_policy() {
@@ -31,13 +31,19 @@ inline json proposed_algorithm_policy() {
         {"ApproFast", {{"selector", 1}, {"entry", "AlgFast_singleUAV_ToN"}}}};
 }
 
-/// Immutable DA adaptation identity, compared by the existing lightweight run-info gate.
+/// HardFirst策略及局部搜索参数，由现有运行元数据比较防止不同机制的结果混用。
 inline json hard_first_da_policy() {
-    return {{"mechanism", "priority-aware-subchannel-da-v1"},
+    return {{"mechanism", "priority-aware-subchannel-da-ls-v1"},
         {"hard_preference", "zero-demand_then_slot-rate/min-rate_then_utility_then_ID"},
         {"user_preference", "slot-rate_desc_then_UAV-ID_then_slot-ID"},
         {"association", "single-UAV_release_failed_hard_then_next-UAV"},
         {"recovery", "freeze_completed_hard_repeat_only_after_new_admissions"},
+        {"hard_local_search", {
+            {"max_rounds", HARD_FIRST_LOCAL_SEARCH_MAX_ROUNDS},
+            {"objective", "maximize_hard_utility_then_minimize_occupied_slots"},
+            {"neighborhoods", {"admit", "same_uav_replace", "relocate", "swap"}},
+            {"selection", "best_improvement_then_operation_user_UAV_ID_order"},
+            {"stop", "no_improving_move_or_round_limit"}}},
         {"elastic_preference", "round-start_exact_log_increment_excluding_incumbent_slot"},
         {"effective_width", "common_User.BSub_MHz"}, {"slot_to_effective_ratio", 10.0 / 9.0},
         {"overhead_scope", "AlgHardFirst_only"}};
@@ -48,7 +54,8 @@ struct ExperimentRunOptions {
     int instance_count = 10;
     uint32_t master_seed = 20260905u;
     int rounding_trials = 2;
-    double ton_epsilon = 0.1;
+    double ton_epsilon = 0.083;
+    bool reallocate_residual = false; // 提出方法的唯一关联确定后，是否用剩余带宽接纳未服务用户。
     vector<string> conditions;       // Empty selects all standard conditions of this experiment.
     string output_name = "run_da_01"; // A single directory name, never an absolute/relative path.
     string reuse_exp1_root;          // Optional audited v1 source; ignored by EXP2--EXP4.
@@ -65,6 +72,9 @@ inline void validate_run_options(const ExperimentRunOptions& options) {
         throw invalid_argument("output_name must contain only letters, digits, underscores or hyphens");
     if (options.input_root.empty())
         throw invalid_argument("input_root must explicitly select an existing input directory");
+    // 旧复用来源包含旧ApproFast行，不能仅凭相同参数导入新算法批次。
+    if (!options.reuse_exp1_root.empty())
+        throw invalid_argument("Historical EXP1 result reuse is disabled for the new absolute-gain algorithms");
 }
 
 /// Return an absolute normalized path for input identities; this does not hash or copy file contents.
@@ -169,10 +179,11 @@ inline void require_allocation(bool condition, const string& message) {
     if (!condition) throw AllocationFailure(AlgorithmRunStatus::InvalidAllocation, message);
 }
 
-/// Check one physical allocation and compute the twelve metrics once; model was checked before the method loop.
-/// Cached utility totals and the unused UserResult projection do not participate in these statistics.
+/// 按原始完整实例计算真实指标，不使用算法内部缓存的效用；duration_ms仅为算法计时。
+/// highest_level_only=true用于最高等级基线，要求每个已服务hard用户达到原最高等级。
+/// 六方法统一使用原始完整模型评价；基线视图只参与求解，不能替代此处的model。
 inline EXPResult compute_single_EXPResult(const SystemMd& model,
-    const vector<KnapsackResult>& results, double duration_ms) {
+    const vector<KnapsackResult>& results, double duration_ms, bool highest_level_only = false) {
     require_allocation(std::isfinite(duration_ms) && duration_ms >= 0, "Invalid duration");
     require_allocation(results.size() == model.uavs.size(), "One result entry per UAV is required");
     EXPResult totals;
@@ -201,12 +212,20 @@ inline EXPResult compute_single_EXPResult(const SystemMd& model,
             const double rate = bw * cap;
             require_allocation(std::isfinite(rate), "Non-finite allocated rate");
             if (user.uType == HARD_UTILITY) {
-                require_allocation(hard_qos_satisfied(bw, cap, user.rMin),
+                // 先按可靠速率找原始等级；基线视图的唯一等级编号不进入最终统计。
+                const int level = user.achieved_hard_level(bw, cap);
+                const int highest_level = user.hard_rate_levels.empty() ? 1 :
+                    static_cast<int>(user.hard_rate_levels.size());
+                require_allocation(level > 0,
                     "Hard QoS not met: UAV " + to_string(k) + ", user " + to_string(i));
+                require_allocation(!highest_level_only || level == highest_level,
+                    "Baseline highest hard level not met: user " + to_string(i));
                 ++totals.hard_num;
-                local.hard_utility += user.weight * log2(1.0 + user.rMin);
+                local.hard_utility += user.hard_level_utility(level);
                 local.hard_bandwidth += bw;
-                totals.hard_throughput += user.rMin; // Guaranteed business rate, not excess physical rate.
+                // 保证业务吞吐量按实际等级阈值累计，而不是物理超额速率或固定最高阈值。
+                totals.hard_throughput += user.hard_rate_levels.empty() ? user.rMin :
+                    user.hard_rate_levels[level - 1];
             } else {
                 ++totals.elastic_num;
                 local.elastic_utility += user.elastic_utility(bw, cap);
@@ -232,13 +251,17 @@ inline EXPResult compute_single_EXPResult(const SystemMd& model,
     return totals;
 }
 
-/// Run solver on a private copy of an already checked model; return timing, metrics or an unwritten failure.
+/// 在私有求解模型上运行算法，始终以原始model检查并计分，返回状态/结果而不写文件。
+/// highest_level_only为基线选择最高等级视图；hard_first_check启用停表后的原专用检查。
+/// 两个选项默认关闭；模型构造、额外检查和真实结果整理均不计入算法时间。
 inline AlgorithmRunResult execute_allocation(const SystemMd& model, uint32_t seed,
-    const std::function<AllocationPair(BAProblem&, AllocationDiagnostics&)>& solver) {
+    const std::function<AllocationPair(BAProblem&, AllocationDiagnostics&)>& solver,
+    bool highest_level_only = false, bool hard_first_check = false) {
     AlgorithmRunResult run;
     run.seed = seed;
     try {
-        BAProblem problem(model);
+        // 最高等级视图复制用户及覆盖缓存、复用信道；原始完整model始终不变。
+        BAProblem problem(highest_level_only ? model.highest_level_view() : model);
         const auto start = std::chrono::steady_clock::now();
         try { run.allocation = solver(problem, run.diagnostics); }
         catch (...) {
@@ -248,7 +271,36 @@ inline AlgorithmRunResult execute_allocation(const SystemMd& model, uint32_t see
         }
         run.duration_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - start).count();
-        run.metrics = compute_single_EXPResult(model, run.allocation.first, run.duration_ms);
+        // 先检查结构、覆盖、预算与真实最高等级，避免无效分配进入后续专用检查。
+        run.metrics = compute_single_EXPResult(model, run.allocation.first, run.duration_ms, highest_level_only);
+        if (hard_first_check)
+            validate_hard_first_allocation(model, run.allocation.first);
+        if (highest_level_only) {
+            // 基线资源决策保持原样，只重建真实效用及冗余汇总，不能在此补做恢复或升级。
+            for (auto& allocation : run.allocation.first) {
+                allocation.allocatedValue.clear();
+                allocation.totalWeight = allocation.totalValue = 0;
+                allocation.hardWeight = allocation.hardValue = 0;
+                allocation.elasticWeight = allocation.elasticValue = 0;
+                for (int id : allocation.allocatedList) {
+                    const User& user = model.users[id];
+                    const double bw = allocation.allocatedBandwidth.at(id);
+                    const double cap = model.cap_list[allocation.uav_id][id];
+                    const double value = user.uType == HARD_UTILITY
+                        ? user.hard_level_utility(user.achieved_hard_level(bw, cap))
+                        : user.elastic_utility(bw, cap);
+                    allocation.allocatedValue.emplace(id, value);
+                    allocation.totalWeight += bw; allocation.totalValue += value;
+                    if (user.uType == HARD_UTILITY) {
+                        allocation.hardWeight += bw; allocation.hardValue += value;
+                    } else {
+                        allocation.elasticWeight += bw; allocation.elasticValue += value;
+                    }
+                }
+            }
+            // 求解视图与原模型的内部ID完全相同；该投影函数只读取ID及整理后的分配。
+            run.allocation.second = problem.construct_user_results(run.allocation.first);
+        }
         run.status = run.metrics.total_num == 0 ? AlgorithmRunStatus::ZeroAllocation : AlgorithmRunStatus::Success;
     } catch (const AllocationFailure& failure) {
         run.status = failure.status;
@@ -276,18 +328,14 @@ inline AlgorithmRunResult run_algorithm(const SystemMd& model, size_t method,
             return AllocationPair{empty, problem.construct_user_results(empty)};
         }
         switch (method) {
-        case 0: return problem.Appro_multiUAV_ToN(model.uavs, model.users, 3, options.ton_epsilon);
-        case 1: return problem.Appro_multiUAV_ToN(model.uavs, model.users, 1, options.ton_epsilon);
+        case 0: return problem.Appro_multiUAV_ToN(model.uavs, model.users, 3, options.ton_epsilon, options.reallocate_residual);
+        case 1: return problem.Appro_multiUAV_ToN(model.uavs, model.users, 1, options.ton_epsilon, options.reallocate_residual);
         case 2: return problem.ConvexRelaxationAndRounding_multiUAV(1e-4, seed, options.rounding_trials, &diagnostics);
         case 3: return problem.MatchingSQP_Allocation(MatchingSQPConfig(), &diagnostics);
-        case 4: {
-            auto allocation = problem.HardFirstPriorityMatchingAllocation(&diagnostics);
-            validate_hard_first_allocation(model, allocation.first);
-            return allocation;
-        }
+        case 4: return problem.HardFirstPriorityMatchingAllocation(&diagnostics);
         default: return problem.SADA_Allocation(SADAConfig(), &diagnostics);
         }
-    });
+    }, method >= 2, method == 4); // 四个基线只看最高等级；提出算法仍在完整模型上求解。
 }
 
 /// Derive an instance-local seed using specified FNV-1a/32 over UTF-8, independent of invocation order.
@@ -415,9 +463,9 @@ inline AlgorithmRunResult parse_run_result(const string& line) {
 using MethodRecords = map<int, AlgorithmRunResult>;
 using ConditionRecords = vector<MethodRecords>;
 
-/// Read one CSV into independent checkpoints; missing optional files are empty, malformed/duplicate/failed rows throw.
+/// 读取逐实例记录；旧调用默认拒绝失败，新五实验显式allow_failed=true，将失败视为已尝试。
 /// The required flag is used for explicitly requested legacy imports, never to repair an incomplete file.
-inline MethodRecords read_result_csv(const fs::path& path, bool required = false) {
+inline MethodRecords read_result_csv(const fs::path& path, bool required = false, bool allow_failed = false) {
     if (!fs::exists(path)) {
         if (required) throw runtime_error("Missing requested result CSV: " + path.string());
         return {};
@@ -434,7 +482,7 @@ inline MethodRecords read_result_csv(const fs::path& path, bool required = false
         try {
             if (input.eof()) throw runtime_error("Unterminated final record");
             auto row = parse_run_result(line);
-            if (!algorithm_status_valid(row.status)) throw runtime_error("Recorded failure is not a completed result");
+            if (!allow_failed && !algorithm_status_valid(row.status)) throw runtime_error("Recorded failure is not a completed result");
             const int id = row.instance_id;
             if (!rows.emplace(id, std::move(row)).second) throw runtime_error("Duplicate instance ID");
         } catch (const std::exception& error) {
@@ -461,10 +509,10 @@ inline ConditionRecords read_condition_records(const fs::path& directory, const 
     return result;
 }
 
-/// Append exactly one already checked successful result and close the stream; failures never get a numerical row.
+/// 追加一条记录并关闭文件；新五实验显式allow_failed=true时允许写失败状态，性能指标留空。
 /// The caller has read existing headers/IDs and created the condition directory; no serialize/parse round trip is done.
-inline void appendResult(const string& directory, size_t method, const AlgorithmRunResult& run) {
-    if (!algorithm_status_valid(run.status)) throw runtime_error("Refusing to write a failed algorithm result");
+inline void appendResult(const string& directory, size_t method, const AlgorithmRunResult& run, bool allow_failed = false) {
+    if (!allow_failed && !algorithm_status_valid(run.status)) throw runtime_error("Refusing to write a failed algorithm result");
     const fs::path path = fs::path(directory) / (method_name_list.at(method) + ".csv");
     const bool needs_header = !fs::exists(path);
     ofstream output(path, ios::app | ios::binary);

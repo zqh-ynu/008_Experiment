@@ -1,208 +1,256 @@
-"""EXP1_user_num：只读绘制最新完整批次的独立图及横向组图，输出至 summary/figs。
-保留旧图名称与统计口径，不修改算法、结果 CSV 或历史批次。
-"""
+"""新五组multi-hard实验的公共读取与绘图；直接运行本文件仅绘制EXP1主体请求用户数实验。
 
+只读四个结果文件，不聚合原始记录、不改CSV或元数据。未完成目标跳过，导入不出图。
+"""
 import json
 import math
-import pandas as pd
-import matplotlib.pyplot as plt
 from pathlib import Path
 
-# ==========================================
-# 1. 用户自定义配置区
-# ==========================================
+import pandas as pd
+import matplotlib.pyplot as plt
 
-# 全局 X 轴标签名
-X_LABEL_NAME = "Number of Users"
-
-# 算法名称映射：{"CSV中的原始列名": "想要显示的正式名称"}
-ALGO_NAME_MAP = {
-    "ApproBetter": "ApproBetter",
-    "ApproFast": "ApproFast",
-    "AlgDRL": "AlgDRL",
-    "AlgMatching": "AlgMatching",
-    "AlgHardFirst": "AlgHardFirst",
-    "AlgSADA": "AlgSADD",
-    # 仅恢复旧稿件显示名；AlgDRL 对应松弛舍入，不代表 DRL 实现。
-    "AlgRelaxRound": "AlgDRL",
-    "AlgSwapMatching": "AlgMatching",
-    "AlgSA-DD": "AlgSADD"
+# 手动选择结果批次，不自动发现“最新”目录；其余入口各自也显式配置此名称。
+BATCH_NAME = "run_01"
+TARGET_EXPERIMENTS = ("EXP1_user_num",)
+METHOD_ORDER = ["ApproBetter", "ApproFast", "AlgRelaxRound", "AlgSwapMatching", "AlgHardFirst", "AlgSA-DD"]
+# 仅作旧图例显示映射；AlgDRL实际对应松弛舍入，不表示新增/执行了DRL。
+ALGO_NAME_MAP = dict(zip(METHOD_ORDER, ["ApproBetter", "ApproFast", "AlgDRL", "AlgMatching", "AlgHardFirst", "AlgSADD"]))
+EXPECTED_ALGORITHM_VERSION = "ton-multihard-highest-baselines-v1"
+EXPERIMENTS = {
+    "EXP1_user_num": ([1000, 2000, 3000, 4000, 5000], "Number of Users", 1, "EXP1"),
+    "EXP2_uav_num": ([5, 10, 15, 20], "Number of UAVs", 1, "EXP2"),
+    "EXP3_hard_ratio": ([0, 2, 4, 6, 8, 10], "The Ratio of Users with Hard QoS Requirements ", 10, "EXP3"),
+    "EXP4_real_user_num": ([1000, 2000, 3000, 4000, 5000], "Number of Users", 1, "EXP4"),
+    "EXP5_real_uav_num": ([5, 10, 15, 20], "Number of UAVs", 1, "EXP5"),
 }
-
-# Y 轴标签映射：{"文件名": "Y轴显示的标题"}
-Y_LABEL_MAP = {
-    "Total_Utility": "Network Utility",
-    "Run_time_ms": "Running Time (ms)",
-    "Hard_Bandwidth": "Hard Bandwidth Allocation (Kbps)",
-    "Total_Throughput": "System Throughput (Kbps)",
-    # 如果没列出的文件，程序会自动处理文件名
-}
+Y_LABEL_MAP = {"Run_time_ms": "Running Time (ms)", "Total_Utility": "Network Utility"}
+MARKERS = ["o", "s", "^", "v", "D", "*"]
+COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
 
 
-# ==========================================
-# 2. 核心绘图逻辑
-# ==========================================
+def _read_info(path):
+    """以UTF-8读取运行元数据；坏JSON明确报错，不修复或回退旧数据。"""
+    with path.open(encoding="utf-8-sig") as handle:
+        value = json.load(handle)
+    if not isinstance(value, dict):
+        raise ValueError(f"元数据必须为对象：{path}")
+    return value
 
-METHOD_ORDER = [
-    "ApproBetter", "ApproFast", "AlgRelaxRound",
-    "AlgSwapMatching", "AlgHardFirst", "AlgSA-DD"
-]
-EXPECTED_CONDITIONS = [1000,2000,3000,4000,5000]
-EXPECTED_ALGORITHM_VERSION = "ton-proposed-fast-faster-v1"
 
-def plot_experiment_results_final(summary_dir):
-    """校验并绘制指定最新汇总目录的独立图及横向组图，返回 None。
+def _integer(value, label):
+    """校验非负整数计数，拒绝bool、空值、非有限值及小数；返回int。"""
+    if isinstance(value, bool):
+        raise ValueError(f"非法计数：{label}")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"非法计数：{label}") from None
+    if not math.isfinite(number) or number < 0 or number != math.floor(number):
+        raise ValueError(f"非法计数：{label}")
+    return int(number)
 
-    参数 summary_dir 为完整批次的 summary 目录；输出两个独立 PDF 和一个组图至 figs。
-    缺文件、版本不符、条件不全或数值非法时抛出异常，不回退到旧数据。
+
+def load_experiment_results(summary_dir):
+    """读取完成实验的两张均值表及成功率；返回(info, frames)，未完成返回None。
+
+    frames仅在内存中把零成功均值和零耗时置为NaN，以断开曲线；源文件不修改。
     """
-    base_path = Path(summary_dir)
-    with (base_path.parent / "run_info.json").open(encoding="utf-8-sig") as handle:
-        run_info = json.load(handle)
-    if (run_info.get("experiment") != "EXP1_user_num"
-            or run_info.get("algorithm_version") != EXPECTED_ALGORITHM_VERSION
-            or run_info.get("summary", {}).get("status") != "complete"
-            or run_info.get("instance_count") != 10
-            or run_info.get("summary", {}).get("instance_count") != 10
-            or run_info.get("methods") != METHOD_ORDER):
-        raise ValueError(f"结果批次不完整或与当前绘图设置不符：{base_path.parent}")
+    base = Path(summary_dir)
+    info_path = base.parent / "run_info.json"
+    if not base.parent.exists() or not info_path.exists():
+        print(f"[SKIP] {base.parent.name}：结果目录或元数据尚不存在")
+        return None
+    info = _read_info(info_path)
+    if info.get("summary", {}).get("status") != "complete":
+        print(f"[SKIP] {base.parent.name}：汇总尚未完成")
+        return None
+    experiment = info.get("experiment")
+    if (experiment not in EXPERIMENTS or experiment != base.parent.name
+            or info.get("schema") != "ton-multihard-run-v1"
+            or info.get("input_schema") != "ton-multihard-input-v1"
+            or info.get("algorithm_version") != EXPECTED_ALGORITHM_VERSION
+            or info.get("baseline_hard_policy") != "highest_level_only"
+            or info.get("utility_evaluation") != "original_model"
+            or info.get("methods") != METHOD_ORDER):
+        raise ValueError(f"实验身份、格式或算法策略不匹配：{base.parent}")
+    count = _integer(info.get("instance_count"), "instance_count")
+    if count < 1 or _integer(info["summary"].get("instance_count"), "summary.instance_count") != count:
+        raise ValueError(f"汇总实例数与当前批次不一致：{base.parent}")
+    conditions = EXPERIMENTS[experiment][0]
+    if [str(c) for c in conditions] != [c.get("key") for c in info.get("conditions", [])]:
+        raise ValueError(f"元数据条件网格不完整：{base.parent}")
 
-    # 先检查全部输入，避免在第二项指标缺失时已经发布第一张图。
+    # 按字符串读表以区分真正的空单元格和写入的NaN/Inf文本；后者属于非法非空值。
+    tables = {}
+    try:
+        for filename in ("Success_Rate", "Run_time_ms", "Total_Utility"):
+            tables[filename] = pd.read_csv(base / f"{filename}.csv", encoding="utf-8-sig",
+                                           dtype=str, keep_default_na=False)
+    except (OSError, ValueError, pd.errors.ParserError) as error:
+        # 若读取期间刚好启动扩跑，汇总可能暂时不可读；只在元数据确实变化时跳过。
+        try:
+            changed = _read_info(info_path) != info
+        except (OSError, ValueError):
+            changed = True
+        if changed:
+            print(f"[SKIP] {experiment}：汇总正在更新，请稍后手动重试")
+            return None
+        raise error
+    # 读取后再看元数据，拒绝在扩跑/重写过程中混用旧新汇总；不等待、不轮询。
+    try:
+        after = _read_info(info_path)
+    except (OSError, ValueError):
+        print(f"[SKIP] {experiment}：读取期间元数据不可用，请待汇总稳定后重试")
+        return None
+    if after != info:
+        print(f"[SKIP] {experiment}：读取期间运行状态或配置已变化")
+        return None
+
+    rates = tables["Success_Rate"]
+    rate_columns = ["condition", "method", "success_count", "attempt_count", "success_rate"]
+    if list(rates.columns) != rate_columns or len(rates) != len(conditions) * len(METHOD_ORDER):
+        raise ValueError(f"成功率表结构不完整：{base}")
+    successes = {}
+    for row in rates.to_dict("records"):
+        condition = _integer(row["condition"], "condition")
+        key = (condition, row["method"])
+        if condition not in conditions or row["method"] not in METHOD_ORDER or key in successes:
+            raise ValueError(f"成功率表条件/方法错误或重复：{key}")
+        success = _integer(row["success_count"], str(key))
+        attempts = _integer(row["attempt_count"], str(key))
+        rate = float(row["success_rate"])
+        if attempts != count or success > attempts or not math.isfinite(rate) or not math.isclose(rate, success / attempts, rel_tol=1e-10, abs_tol=1e-12):
+            raise ValueError(f"成功数、尝试数或成功率矛盾：{key}")
+        successes[key] = success
+        if success < attempts:
+            print(f"[WARN] {experiment}/{condition}/{row['method']}：成功 {success}/{attempts}，均值仅基于成功实例")
+    if (_integer(info["summary"].get("attempt_count"), "summary.attempt_count") != len(successes) * count
+            or _integer(info["summary"].get("success_count"), "summary.success_count") != sum(successes.values())):
+        raise ValueError(f"成功率表与元数据总计不符：{base}")
+
     frames = {}
-    for file_stem in ("Run_time_ms", "Total_Utility"):
-        file_path = base_path / f"{file_stem}.csv"
-        frame = pd.read_csv(file_path, encoding="utf-8-sig", float_precision="round_trip")
-        if (list(frame.columns) != ["User_Scale", *METHOD_ORDER]
-                or frame["User_Scale"].tolist() != EXPECTED_CONDITIONS):
-            raise ValueError(f"方法列或实验条件不完整：{file_path}")
-        values = frame[METHOD_ORDER].to_numpy(dtype=float)
-        if not all(math.isfinite(value) for value in values.flat):
-            raise ValueError(f"指标包含缺失或非有限值：{file_path}")
-        if file_stem == "Run_time_ms" and (values <= 0).any():
-            raise ValueError(f"对数时间轴要求所有耗时大于零：{file_path}")
-        frames[file_stem] = frame
+    for metric in Y_LABEL_MAP:
+        raw = tables[metric]
+        if list(raw.columns) != ["User_Scale", *METHOD_ORDER] or [_integer(v, "User_Scale") for v in raw["User_Scale"]] != conditions:
+            raise ValueError(f"指标表列名或条件网格错误：{base / (metric + '.csv')}")
+        frame = pd.DataFrame({"User_Scale": conditions})
+        for method in METHOD_ORDER:
+            values = []
+            for condition, cell in zip(conditions, raw[method]):
+                cell = cell.strip()
+                success = successes[(condition, method)]
+                if not cell:
+                    if success:
+                        raise ValueError(f"存在成功实例但均值缺失：{metric}/{condition}/{method}")
+                    values.append(float("nan"))
+                    continue
+                # if success == 0:
+                #     raise ValueError(f"零成功实例却有非空均值：{metric}/{condition}/{method}")
+                value = float(cell)
+                if not math.isfinite(value) or value < 0:
+                    raise ValueError(f"非法指标值：{metric}/{condition}/{method}")
+                if metric == "Run_time_ms" and value == 0:
+                    print(f"[WARN] {experiment}/{condition}/{method}：零耗时无法用于对数轴，仅屏蔽该耗时点")
+                    value = float("nan")
+                values.append(value)
+            frame[method] = values
+        frames[metric] = frame
+    return info, frames
 
-    save_dir = base_path / "figs"
-    save_dir.mkdir(exist_ok=True)
 
-    # 学术风格设置
+def set_plot_style():
+    """保留原Times New Roman、字号、网格和嵌入字体设置，不引入其他期刊样式。"""
     plt.rcParams.update({
-        'pdf.fonttype': 42,  # 关键：使用 Type 42 字体 (TrueType)，确保字体嵌入
-        'ps.fonttype': 42,  # 同样适用于 PostScript 格式
-        'mathtext.fontset': 'stix',  # 使科学计数法的指数部分也接近 Times 风格
-        'font.family': 'serif',  # 使用衬线字体
-        'font.serif': ['Times New Roman'],  # 指定主字体为 Times New Roman
-        'font.size': 24,
-        'axes.labelsize': 26,
-        'legend.fontsize': 16,
-        'figure.figsize': (8, 6),
-        'axes.grid': True,
-        'grid.linestyle': '--',
-        'grid.alpha': 0.6,
-        'savefig.dpi': 300,
-        'savefig.bbox': 'tight'
+        "pdf.fonttype": 42, "ps.fonttype": 42, "mathtext.fontset": "stix",
+        "font.family": "serif", "font.serif": ["Times New Roman"],
+        "font.size": 24, "axes.labelsize": 26, "legend.fontsize": 16,
+        "figure.figsize": (8, 6), "axes.grid": True,
+        "grid.linestyle": "--", "grid.alpha": 0.6,
+        "savefig.dpi": 300, "savefig.bbox": "tight",
     })
 
-    markers = ['o', 's', '^', 'v', 'D', '*', 'p', 'h', 'x']
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22']
 
-    for file_stem, df in frames.items():
-        print(f"Processing: {file_stem}.csv")
-        x_col = df.columns[0]
-        x_values = df[x_col]
-        algorithms = METHOD_ORDER
+def draw_metric(ax, frame, metric, experiment):
+    """绘制六方法及原图例样式；NaN直接传入matplotlib形成缺口，绝不删除中间行后跨缺口连线。"""
+    _, x_label, divisor, _ = EXPERIMENTS[experiment]
+    x = frame["User_Scale"].to_numpy(dtype=float) / divisor
+    for i, method in enumerate(METHOD_ORDER):
+        ax.plot(x, frame[method].to_numpy(dtype=float),
+                label=ALGO_NAME_MAP[method], marker=MARKERS[i], color=COLORS[i], linewidth=2,
+                linestyle="--" if method == "ApproFast" else "-",
+                markersize=10 if method == "ApproBetter" else (5 if method == "ApproFast" else 7),
+                markerfacecolor="none" if method == "ApproBetter" else COLORS[i],
+                markeredgewidth=1.5 if method == "ApproBetter" else 1,
+                zorder=4 if method == "ApproBetter" else (5 if method == "ApproFast" else 2))
+    ax.margins(x=0.03)
+    ax.set_xticks(x)
+    # 原比例图轴标签为24号，其他实验为26号；保留已有字号差异。
+    label_size = 24 if experiment == "EXP3_hard_ratio" else 26
+    ax.set_xlabel(x_label, fontsize=label_size)
+    ax.set_ylabel(Y_LABEL_MAP[metric], fontsize=label_size)
+    if metric == "Run_time_ms":
+        ax.set_yscale("log")
+    else:
+        ax.ticklabel_format(style="sci", axis="y", scilimits=(0, 4))
+        ax.yaxis.get_offset_text().set_family("serif")
 
-        plt.figure()
 
-        # 绘图
-        for i, alg in enumerate(algorithms):
-            display_name = ALGO_NAME_MAP.get(alg, alg)
-            plt.plot(x_values, df[alg],
-                     label=display_name,
-                     marker=markers[i % len(markers)],
-                     color=colors[i % len(colors)],
-                     linewidth=2,
-                     # 实心小方块叠在大空心圆内，重合点仍能辨识两种提出方法。
-                     linestyle='--' if alg == "ApproFast" else '-',
-                     markersize=10 if alg == "ApproBetter" else (5 if alg == "ApproFast" else 7),
-                     markerfacecolor='none' if alg == "ApproBetter" else colors[i % len(colors)],
-                     markeredgewidth=1.5 if alg == "ApproBetter" else 1,
-                     zorder=4 if alg == "ApproBetter" else (5 if alg == "ApproFast" else 2))
-
-        # 少量边距避免端点标记被裁切；刻度仍对应真实实验条件。
-        plt.margins(x=0.03)
-        plt.xticks(x_values)
-
-        # 设置标签
-        plt.xlabel(X_LABEL_NAME)
-        y_label = Y_LABEL_MAP.get(file_stem, file_stem.replace('_', ' '))
-        plt.ylabel(y_label)
-
-        # 先设置坐标尺度，再计算布局，避免对数轴使用线性格式器。
-        if file_stem == "Run_time_ms":
-            plt.yscale('log')
-        else:
-            plt.ticklabel_format(style='sci', axis='y', scilimits=(0, 4))
-            plt.gca().yaxis.get_offset_text().set_family('serif')
-
-        # 图例置于绘图区上方，避免遮挡数据；按行保持既有六方法顺序。
-        handles, labels = plt.gca().get_legend_handles_labels()
-        legend_order = [0, 3, 1, 4, 2, 5]
-        plt.legend([handles[index] for index in legend_order],
-                   [labels[index] for index in legend_order],
-                   loc='lower center', bbox_to_anchor=(0.5, 1.10),
-                   ncol=3, frameon=True, columnspacing=1.2)
-        plt.tight_layout()
-
-        # 保存
-        save_path = save_dir / f"{file_stem}.pdf"
-        plt.savefig(save_path)
-        plt.close()
-
-    # 复用已校验的两项数据绘制横向组图，不改变独立图的生成方式。
+def plot_experiment_results_final(summary_dir):
+    """沿用原函数名；校验完成后写两个独立PDF和一个横向组图，返回路径列表，跳过时返回空列表。"""
+    loaded = load_experiment_results(summary_dir)
+    if loaded is None:
+        return []
+    info, frames = loaded
+    experiment = info["experiment"]
+    set_plot_style()
+    save_dir = Path(summary_dir) / "figs"
+    save_dir.mkdir(exist_ok=True)
+    outputs = []
+    for metric, frame in frames.items():
+        fig, ax = plt.subplots(figsize=(8, 6))
+        try:
+            draw_metric(ax, frame, metric, experiment)
+            handles, labels = ax.get_legend_handles_labels()
+            order = [0, 3, 1, 4, 2, 5]
+            ax.legend([handles[i] for i in order], [labels[i] for i in order],
+                      loc="lower center", bbox_to_anchor=(0.5, 1.10), ncol=3,
+                      frameon=True, columnspacing=1.2)
+            fig.tight_layout()
+            path = save_dir / f"{metric}.pdf"
+            fig.savefig(path)
+            outputs.append(path)
+        finally:
+            plt.close(fig)
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-    for ax, file_stem in zip(axes, ("Run_time_ms", "Total_Utility")):
-        df = frames[file_stem]
-        x_col = df.columns[0]
-        x_values = df[x_col]
-
-        for i, alg in enumerate(METHOD_ORDER):
-            display_name = ALGO_NAME_MAP.get(alg, alg)
-            ax.plot(x_values, df[alg],
-                    label=display_name,
-                    marker=markers[i % len(markers)],
-                    color=colors[i % len(colors)],
-                    linewidth=2,
-                    linestyle='--' if alg == "ApproFast" else '-',
-                    markersize=10 if alg == "ApproBetter" else (5 if alg == "ApproFast" else 7),
-                    markerfacecolor='none' if alg == "ApproBetter" else colors[i % len(colors)],
-                    markeredgewidth=1.5 if alg == "ApproBetter" else 1,
-                    zorder=4 if alg == "ApproBetter" else (5 if alg == "ApproFast" else 2))
-
-        ax.margins(x=0.03)
-        ax.set_xticks(x_values)
-        ax.set_xlabel(X_LABEL_NAME)
-        ax.set_ylabel(Y_LABEL_MAP.get(file_stem, file_stem.replace('_', ' ')))
-        if file_stem == "Run_time_ms":
-            ax.set_yscale('log')
-        else:
-            ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 4))
-            ax.yaxis.get_offset_text().set_family('serif')
-
-    handles, labels = axes[0].get_legend_handles_labels()
-    # 单行图例直接使用 METHOD_ORDER 的绘制顺序，无需独立图的两行重排。
-    fig.legend(handles, labels,
-               loc="upper center", bbox_to_anchor=(0.5, 0.995),
-               ncol=len(METHOD_ORDER), frameon=True, columnspacing=1.2)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(save_dir / "EXP1_Combined.pdf")
-    plt.close(fig)
-
-    print(f"\n绘图完成：{save_dir}（两个独立图及一个横向组图）")
+    try:
+        for ax, metric in zip(axes, Y_LABEL_MAP):
+            draw_metric(ax, frames[metric], metric, experiment)
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.995),
+                   ncol=len(METHOD_ORDER), frameon=True, columnspacing=1.2)
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        path = save_dir / f"{EXPERIMENTS[experiment][3]}_Combined.pdf"
+        fig.savefig(path)
+        outputs.append(path)
+    finally:
+        plt.close(fig)
+    print(f"[DONE] {experiment}：N={info['instance_count']}，三个PDF -> {save_dir}")
+    return outputs
 
 
-# 从脚本位置定位当前批次；导入模块时不自动创建图片。
-if __name__ == '__main__':
-    target_dir = (Path(__file__).resolve().parent.parent
-                  / "ToN" / "EXP1_user_num" / "run_ton_01" / "summary")
-    plot_experiment_results_final(target_dir)
+def plot_targets(batch_name, experiments):
+    """手动入口的目标循环；未完成跳过，坏数据明确报告，其他完成目标仍处理，最终报错退出。"""
+    root = Path(__file__).resolve().parent.parent / "ToN_multiHard" / batch_name
+    errors = []
+    for experiment in experiments:
+        try:
+            plot_experiment_results_final(root / experiment / "summary")
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            errors.append(f"{experiment}: {error}")
+            print(f"[ERROR] {experiment}：{error}")
+    if errors:
+        raise RuntimeError("部分绘图目标失败；未回退旧数据：\n" + "\n".join(errors))
+
+
+if __name__ == "__main__":
+    plot_targets(BATCH_NAME, TARGET_EXPERIMENTS)

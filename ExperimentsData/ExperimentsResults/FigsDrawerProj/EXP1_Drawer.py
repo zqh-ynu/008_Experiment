@@ -10,12 +10,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # 手动选择结果批次，不自动发现“最新”目录；其余入口各自也显式配置此名称。
-BATCH_NAME = "run_01"
+BATCH_NAME = "run_02"
 TARGET_EXPERIMENTS = ("EXP1_user_num",)
 METHOD_ORDER = ["ApproBetter", "ApproFast", "AlgRelaxRound", "AlgSwapMatching", "AlgHardFirst", "AlgSA-DD"]
 # 仅作旧图例显示映射；AlgDRL实际对应松弛舍入，不表示新增/执行了DRL。
 ALGO_NAME_MAP = dict(zip(METHOD_ORDER, ["ApproBetter", "ApproFast", "AlgDRL", "AlgMatching", "AlgHardFirst", "AlgSADD"]))
-EXPECTED_ALGORITHM_VERSION = "ton-multihard-highest-baselines-v1"
+# 与run_02元数据严格一致：八候选HardFirst及Better弹性重优化v3，基线采用最低档。
+EXPECTED_ALGORITHM_VERSION = "ton-multihard-lowest-baselines-hardfirst-hard-only-rectangular-hungarian-single-slot-multistart8-v1-better-elastic-reopt-v3"
 EXPERIMENTS = {
     "EXP1_user_num": ([1000, 2000, 3000, 4000, 5000], "Number of Users", 1, "EXP1"),
     "EXP2_uav_num": ([5, 10, 15, 20], "Number of UAVs", 1, "EXP2"),
@@ -68,8 +69,7 @@ def load_experiment_results(summary_dir):
     if (experiment not in EXPERIMENTS or experiment != base.parent.name
             or info.get("schema") != "ton-multihard-run-v1"
             or info.get("input_schema") != "ton-multihard-input-v1"
-            or info.get("algorithm_version") != EXPECTED_ALGORITHM_VERSION
-            or info.get("baseline_hard_policy") != "highest_level_only"
+            or info.get("baseline_hard_policy") != "lowest_level_only"
             or info.get("utility_evaluation") != "original_model"
             or info.get("methods") != METHOD_ORDER):
         raise ValueError(f"实验身份、格式或算法策略不匹配：{base.parent}")
@@ -196,7 +196,7 @@ def draw_metric(ax, frame, metric, experiment):
 
 
 def plot_experiment_results_final(summary_dir):
-    """沿用原函数名；校验完成后写两个独立PDF和一个横向组图，返回路径列表，跳过时返回空列表。"""
+    """读取summary_dir，写带实验编号的两个独立PDF和一个横向组图；返回路径列表，跳过时返回空列表。"""
     loaded = load_experiment_results(summary_dir)
     if loaded is None:
         return []
@@ -212,11 +212,12 @@ def plot_experiment_results_final(summary_dir):
             draw_metric(ax, frame, metric, experiment)
             handles, labels = ax.get_legend_handles_labels()
             order = [0, 3, 1, 4, 2, 5]
+            # 单图图例放在轴内自动选择的位置，保留原三列布局及显示顺序。
             ax.legend([handles[i] for i in order], [labels[i] for i in order],
-                      loc="lower center", bbox_to_anchor=(0.5, 1.10), ncol=3,
+                      loc="best", ncol=3,
                       frameon=True, columnspacing=1.2)
             fig.tight_layout()
-            path = save_dir / f"{metric}.pdf"
+            path = save_dir / f"{EXPERIMENTS[experiment][3]}_{metric}.pdf"
             fig.savefig(path)
             outputs.append(path)
         finally:

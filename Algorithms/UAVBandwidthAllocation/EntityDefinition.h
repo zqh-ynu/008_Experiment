@@ -3,8 +3,22 @@
 #include "predefine.h"
 #include "allocation_contract.h"
 
-// HardFirst每次调用的局部搜索上限；每轮至多提交一个改进，无改进时立即结束。
+// HardFirst每个候选的局部搜索上限；每轮至多提交一个改进，无改进时立即结束。
 inline constexpr int HARD_FIRST_LOCAL_SEARCH_MAX_ROUNDS = 5000;
+// HardFirst 默认/最大八候选；仅 EXP3 调度器显式传入更小预算，候选编号和种子不变。
+inline constexpr int HARD_FIRST_CANDIDATE_COUNT = 8;
+inline constexpr uint32_t HARD_FIRST_CANDIDATE_BASE_SEED = 20260927u;
+inline constexpr const char* HARD_FIRST_MECHANISM =
+    "hardfirst-hard-only-rectangular-hungarian-single-slot-multistart8-ls-v1";
+
+/// 校验候选数为1--8并返回准确机制名；默认8与已有诊断/元数据字符串完全相同。
+inline std::string hard_first_mechanism(int candidate_count) {
+    if (candidate_count < 1 || candidate_count > HARD_FIRST_CANDIDATE_COUNT)
+        throw std::invalid_argument("HardFirst candidate_count must be in [1, 8]");
+    if (candidate_count == HARD_FIRST_CANDIDATE_COUNT) return HARD_FIRST_MECHANISM;
+    return "hardfirst-hard-only-rectangular-hungarian-single-slot-multistart" +
+        std::to_string(candidate_count) + "-ls-v1";
+}
 
 
 /// @brief AlgSA-DD 的连续近似、对偶带宽求解及现有后处理参数；不保证激活新的关联。
@@ -91,9 +105,12 @@ void add_KnapsackResult(KnapsackResult& result, User& user, double bandwidth, do
 
 /// Count guard-inclusive slots from total/effective bandwidth in internal units; invalid/overflow throws.
 int hard_first_slot_count(double total_bandwidth, double effective_bandwidth);
+
+/// 按统一有效槽宽和保护开销累计物理槽；无UAV/完整槽返回0，空用户沿用默认槽宽，非法宽度/溢出抛错。
+int hard_first_physical_slot_count(const SystemMd& model);
 /// Minimum positive slots meeting reliable QoS, or zero when no bundle fits max_slots.
 int hard_first_min_slots(int max_slots, double width, double capacity, double minimum_rate);
-/// Independently check integer effective slots, guard budgets and minimal hard bundles; never repair.
+/// 独立校验 hard 单槽合同、elastic 整槽、含保护开销的预算和唯一关联；只检查不修复。
 void validate_hard_first_allocation(const SystemMd& model, const std::vector<KnapsackResult>& results);
 
 /// Verify the relaxation/fixed-association objective, Jacobian and Hessian against finite differences.
@@ -189,7 +206,7 @@ public:
 	int uType = HARD_UTILITY; // 用户效用类型，默认硬效用
 	double weight = 1; // 用户权重，默认1
 	double rData = 0;		// 需求的最小数据量
-	double rMin = 0;		// 内部Kbps；多级hard为最高等级阈值，供单阈值基线使用。
+	double rMin = 0;		// 内部Kbps；完整多级hard模型为最高等级阈值，基线视图改为最低等级。
 	double pOut = 0;		// 需求的最大中断概率
 
 	// 源文件身份与业务信息；ID仍是重排后的连续数组下标。
@@ -441,7 +458,7 @@ public:
 	vector<vector<double>> SNRth_list;    // m*(n1+n2) 记录各个用户与无人机之间的信噪比
 	vector<vector<double>> M_list;      // m*(n1+n2) 记录各个用户与无人机之间的Nakagami-M参数
 	vector<vector<double>> cap_list;    // m*(n1+n2) 记录各个用户与无人机之间的信道容量
-	vector<vector<double>> Bth_list; // m*n1：rMin对应的带宽阈值；多级hard为最高等级，其他等级用rate/cap计算。
+	vector<vector<double>> Bth_list; // m*n1：当前视图rMin对应的带宽阈值；完整模型为最高等级。
 	map<int, vector<User>> uav_serviceable_users_map;	// 记录每个无人机可服务的用户列表，key为uav_id，value为该uav可服务的用户列表，分离硬效用用户和弹性效用用户
 
 	SystemMd() {}
@@ -460,8 +477,8 @@ public:
 	/// 读取新用户CSV、UAV CSV、物理配置和应用等级JSON；Mbps/MHz转为内部Kbps/kHz。
 	/// 验证输入后沿用原坐标转换并初始化信道；不自动兼容旧用户CSV。
 	SystemMd(string user_file, string uav_file, string config_file, string application_profiles_file);
-	/// 返回最高等级基线副本；不修改本实例、不重算信道，保留用户身份与原信道矩阵。
-	SystemMd highest_level_view() const;
+	/// 返回最低等级基线副本；同步hard阈值、带宽阈值与用户缓存，不重算原信道矩阵。
+	SystemMd lowest_level_view() const;
 	/// <summary>
 	/// Initializes the syetem model.
 	/// </summary>
@@ -733,7 +750,8 @@ public:
 
 	/// 新多UAV外循环：绝对效用候选按真实增量选取，最后保留唯一关联。
 	/// uavs/users须覆盖原实例全部ID；选择器1=Fast、3=最新版Better，其他值报错。
-	/// epsilon在(0,0.5)内；reallocate_residual默认关闭，开启后冻结旧分配并接纳未服务用户。
+	/// epsilon在(0,0.5)内；唯一关联后Fast停止，Better按UAV ID重优化已匹配/未匹配elastic。
+	/// reallocate_residual为历史兼容参数，不再决定上述策略；Better固定hard且释放零带宽elastic。
 	/// 返回按UAV ID排列的绝对结果和全用户投影，不修改原实例或跨UAV累加用户效用。
 	pair<vector<KnapsackResult>, map<int, UserResult>> Appro_multiUAV_ToN(
 		const vector<Uav>& uavs,
@@ -796,15 +814,20 @@ public:
 			AllocationDiagnostics* diagnostics = nullptr);
 
 
-	/// AlgHardFirst：hard优先匹配与恢复、有限最佳改进局部搜索，再执行elastic匹配。
-	/// BSub为有效MHz，每槽占用BSub*10/9以包含保护开销；返回有效带宽与逐用户分配。
-	/// 局部搜索优先提高hard总效用，其次减少槽占用，不保证全局最优或总网络效用提升。
+	/// HardFirst：默认八种行/槽组顺序，分别运行单槽矩形 Hungarian、hard 搜索和剩余槽 elastic 匹配。
+	/// 正式方法 4 由包装层先构造最低等级视图；直接调用时使用 sysModel 中的门槛。
+	/// BSub 为有效 MHz，每槽物理占用 BSub*10/9；hard 报告最低门槛带宽，槽内余量不可复用。
+	/// 各候选 hard 最优值须一致；按总效用择优并保留较小编号的平局解，返回逐 UAV 与逐用户结果。
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 		HardFirstPriorityMatchingAllocation();
-	/// 相同分配接口，diagnostics非空时附加一条匹配/局部搜索轮次、操作次数和停止原因记录。
+	/// 相同分配接口；diagnostics 非空时附加候选明细、获选编号、累计增广次数与三个阶段累计耗时。
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 		HardFirstPriorityMatchingAllocation(AllocationDiagnostics* diagnostics);
-	/// Compatibility alias only: forwards to HardFirstPriorityMatchingAllocation, not Hungarian/KM.
+	/// 显式预算入口：仅运行原序列前candidate_count个候选（1--8），返回同类型分配及实际累计诊断。
+	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
+		HardFirstPriorityMatchingAllocation(AllocationDiagnostics* diagnostics, int candidate_count);
+	/// 供历史复核的 Hungarian/KM：hard 与 elastic 同时匹配，每用户最多一个子信道。
+	/// 返回按 UAV 排列的分配及逐用户结果；不再参与正式六方法调度。
 	std::pair<std::vector<KnapsackResult>, std::map<int, UserResult>>
 		HungarianMatchingAllocation();
 };

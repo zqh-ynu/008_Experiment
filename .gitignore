@@ -65,6 +65,8 @@
 *.vsidx
 *.suo
 *.vcxproj.user
+*.zip
+
 
 # ---------------------------------------------------------------------------
 # Python and notebook caches

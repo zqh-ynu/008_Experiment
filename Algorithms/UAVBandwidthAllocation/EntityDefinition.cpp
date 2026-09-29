@@ -885,16 +885,23 @@ SystemMd::SystemMd(string user_file, string uav_file, string config_file, string
 	init_SystemModel();
 }
 
-/// 将完整实例复制为最高等级单阈值视图；刷新覆盖用户缓存，不重新构造信道矩阵。
-SystemMd SystemMd::highest_level_view() const
+/// 将完整实例复制为最低等级单阈值视图；更新阈值缓存，保留原信道和用户身份。
+/// 无参数；返回仅供四个基线求解的独立模型副本，不修改当前完整实例。
+SystemMd SystemMd::lowest_level_view() const
 {
 	SystemMd view = *this;
 	for (auto& user : view.users) {
 		if (user.uType != HARD_UTILITY || user.hard_rate_levels.empty()) continue;
-		user.rMin = user.hard_rate_levels.back();
+		user.rMin = user.hard_rate_levels.front();
 		user.hard_rate_levels = { user.rMin };
 	}
-	// 缓存中也包含User副本，必须一并换为新视图，防止基线从缓存读到中间等级。
+	// Bth_list只依赖当前等级阈值和已缓存的可靠容量；不重新构造信道。
+	for (int k = 0; k < view.m; ++k)
+		for (int j = 0; j < view.n1; ++j) {
+			const double cap = view.cap_list.at(k).at(j);
+			view.Bth_list.at(k).at(j) = cap > 0 ? view.users[j].rMin / cap : INFINITY;
+		}
+	// 可服务列表中也有User副本，必须与最低等级视图保持一致。
 	for (auto& entry : view.uav_serviceable_users_map)
 		for (auto& user : entry.second) user = view.users.at(user.ID);
 	return view;
@@ -966,7 +973,7 @@ void SystemMd::init_SystemModel()
 
 		for (int j = 0; j < n1; j++)
 		{
-			// 保存rMin对应的带宽阈值；多级hard为最高等级，供旧单阈值基线使用。
+			// 完整模型保存最高等级的带宽阈值；最低等级基线视图会按其rMin重建该缓存。
 			double cap = cap_list[i][j];
 			if (cap > 0)
 				Bth_list[i][j] = users[j].rMin / cap;
@@ -4989,13 +4996,14 @@ KnapsackResult BAProblem::AlgBetter_singleUAV_ToN_faster(
  * @param users 当前实例的完整用户集合，以内部ID访问原模型的完整等级和信道。
  * @param used_single_alg 1调用新Fast，3调用最新版Better；旧选择器2明确拒绝。
  * @param epsilon 单UAV Better的精度，须有限且在(0,0.5)内。
- * @param reallocate_residual 是否冻结既有分配后，为未服务用户执行一次残余分配。
+ * @param reallocate_residual 历史兼容参数；唯一关联后的Fast/Better策略由used_single_alg固定决定。
  * @return 最终逐UAV绝对分配与逐用户投影；任何子程序或结果异常均向上抛出。
  */
 pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN(
     const vector<Uav>& uavs, const vector<User>& users, int used_single_alg,
     double epsilon, bool reallocate_residual)
 {
+    (void)reallocate_residual; // 保留旧调用签名；此参数不再切换后续分配策略。
     if (used_single_alg != 1 && used_single_alg != 3)
         throw std::invalid_argument("MultiUAV: selector must be 1 (Fast) or 3 (Better)");
     if (!std::isfinite(epsilon) || epsilon <= 0 || epsilon >= 0.5)
@@ -5081,7 +5089,7 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
             throw std::logic_error("MultiUAV: exceeded budget or inconsistent totals");
         return result;
     };
-    // 主阶段与残余阶段使用同一种单UAV算法；异常不捕获、不回退，也不跳过失败UAV。
+    // 主阶段和Better的elastic重优化复用所选单UAV入口；异常不捕获、不跳过失败UAV。
     auto solve = [&](const Uav& uav, const vector<User>& candidates) {
         KnapsackResult candidate = used_single_alg == 1
             ? AlgFast_singleUAV_ToN(uav, candidates)
@@ -5090,8 +5098,6 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
     };
 
     vector<bool> selected(K, false);
-    vector<int> selection_order;
-    selection_order.reserve(K);
     vector<double> current_utility(N, 0.0); // 本轮之前已选配置给每用户提供的最大真实效用。
     vector<KnapsackResult> retained(K);     // 完整保留各UAV被选中时的配置，暂不删除重复关联。
     for (size_t round = 0; round < K; ++round) {
@@ -5114,7 +5120,6 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
         if (best_id < 0) throw std::logic_error("MultiUAV: no unselected UAV found");
         // 整轮候选比较完毕后才更新状态；零增量也正常选取，直至每架UAV处理一次。
         selected[best_id] = true;
-        selection_order.push_back(best_id);
         retained[best_id] = std::move(best_candidate);
         for (const auto& entry : retained[best_id].allocatedValue)
             current_utility[entry.first] = std::max(current_utility[entry.first], entry.second);
@@ -5139,30 +5144,66 @@ pair<vector<KnapsackResult>, map<int, UserResult>> BAProblem::Appro_multiUAV_ToN
         results[k] = rebuild(static_cast<int>(k), std::move(unique_result), sysModel.uavs[k].total_bandwidth);
     }
 
-    // 可选后处理仅遍历一次：冻结已有带宽/关联，按主阶段选择顺序接纳仍未服务的用户。
-    if (reallocate_residual) {
-        for (int k : selection_order) {
-            double remaining = sysModel.uavs[k].total_bandwidth - results[k].totalWeight;
-            if (remaining < -allocation_tolerance(sysModel.uavs[k].total_bandwidth, results[k].totalWeight))
-                throw std::logic_error("MultiUAV: negative residual budget");
+    // Fast到此结束；Better按UAV ID重优化elastic，冻结每架UAV已有的hard带宽和等级。
+    if (used_single_alg == 3) {
+        for (size_t index = 0; index < K; ++index) {
+            const int k = static_cast<int>(index);
+            const KnapsackResult& current = results[k];
+            const double budget = sysModel.uavs[k].total_bandwidth;
+            double remaining = budget - current.totalWeight;
+            if (remaining < -allocation_tolerance(budget, current.totalWeight))
+                throw std::logic_error("MultiUAV: negative residual budget before elastic reoptimization");
             remaining = std::max(0.0, remaining);
-            if (remaining == 0) continue;
-            vector<User> unserved;
-            unserved.reserve(covered[k].size());
-            for (const User& user : covered[k]) if (owner[user.ID] < 0) unserved.push_back(user);
-            if (unserved.empty()) continue;
-            Uav residual_uav = sysModel.uavs[k];
-            residual_uav.total_bandwidth = remaining;
-            const KnapsackResult additional = solve(residual_uav, unserved);
-            map<int, double> merged = results[k].allocatedBandwidth;
-            for (const auto& entry : additional.allocatedBandwidth) {
-                if (owner[entry.first] >= 0 || !merged.emplace(entry).second)
-                    throw std::logic_error("MultiUAV: residual allocation changed an existing association");
-                owner[entry.first] = k; // 后续UAV立即排除本次新接纳用户。
+            // 已匹配elastic原带宽加剩余带宽，恰为固定hard后可用的资源。
+            const double elastic_budget = current.elasticWeight + remaining;
+            if (!std::isfinite(elastic_budget) || elastic_budget > budget + allocation_tolerance(budget, budget))
+                throw std::logic_error("MultiUAV: invalid elastic reoptimization budget");
+
+            vector<User> elastic_candidates;
+            elastic_candidates.reserve(covered[k].size());
+            for (const User& user : covered[k])
+                if (user.uType == ELASTIC_UTILITY && (owner[user.ID] == k || owner[user.ID] < 0))
+                    elastic_candidates.push_back(user);
+            if (elastic_candidates.empty()) {
+                if (current.elasticWeight != 0)
+                    throw std::logic_error("MultiUAV: matched elastic user missing from UAV candidate set");
+                continue;
             }
-            KnapsackResult merged_result;
-            merged_result.allocatedBandwidth = std::move(merged);
-            results[k] = rebuild(k, std::move(merged_result), sysModel.uavs[k].total_bandwidth);
+
+            Uav elastic_uav = sysModel.uavs[k];
+            elastic_uav.total_bandwidth = elastic_budget;
+            // 纯elastic时Better单UAV入口返回Fast的精确连续解；不改当前hard分配。
+            const KnapsackResult optimized = solve(elastic_uav, elastic_candidates);
+            if (optimized.totalValue + allocation_tolerance(optimized.totalValue, current.elasticValue)
+                < current.elasticValue)
+                throw std::logic_error("MultiUAV: elastic reoptimization reduced true utility");
+
+            map<int, double> merged;
+            vector<int> old_elastic;
+            for (const auto& entry : current.allocatedBandwidth) {
+                const int j = entry.first;
+                if (owner[j] != k) throw std::logic_error("MultiUAV: inconsistent prior user owner");
+                if (sysModel.users[j].uType == HARD_UTILITY) merged.emplace(entry);
+                else if (sysModel.users[j].uType == ELASTIC_UTILITY) old_elastic.push_back(j);
+                else throw std::logic_error("MultiUAV: unsupported prior user type");
+            }
+            for (const auto& entry : optimized.allocatedBandwidth) {
+                const int j = entry.first;
+                if (sysModel.users[j].uType != ELASTIC_UTILITY || (owner[j] != k && owner[j] >= 0) ||
+                    !merged.emplace(entry).second)
+                    throw std::logic_error("MultiUAV: invalid elastic reoptimization candidate");
+            }
+            KnapsackResult updated;
+            updated.allocatedBandwidth = std::move(merged);
+            updated = rebuild(k, std::move(updated), budget);
+            if (!allocation_near(updated.hardWeight, current.hardWeight) ||
+                !allocation_near(updated.hardValue, current.hardValue))
+                throw std::logic_error("MultiUAV: frozen hard allocation changed");
+
+            // 旧elastic若获零带宽就解除关联；新接纳用户只对后续UAV不可用。
+            for (int j : old_elastic) owner[j] = -1;
+            for (const auto& entry : optimized.allocatedBandwidth) owner[entry.first] = k;
+            results[k] = std::move(updated);
         }
     }
 

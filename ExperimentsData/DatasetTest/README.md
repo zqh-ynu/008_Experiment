@@ -1,5 +1,77 @@
 # `DatasetTest`：实验实例数据生成项目说明
 
+## 新五组multi-hard实验：手动生成与执行
+
+正式输入和结果与旧批次隔离：
+
+- 输入：`ExperimentsData/data_ToN_multiHard/run_01/`。
+- 结果：`ExperimentsData/ExperimentsResults/ToN_multiHard/run_01/`。
+- 两处均按 `EXP1_user_num`、`EXP2_uav_num`、`EXP3_hard_ratio`、`EXP4_real_user_num`、`EXP5_real_uav_num` 分目录。
+
+在安装了NumPy和pandas的Python环境中，手动运行现有入口：
+
+```powershell
+python ExperimentsData/DatasetTest/instance_generator/generate_instances_ToN.py
+```
+
+默认一次生成50个实例，会执行真实网格部署，因此可能耗时。脚本只在直接运行时生成，导入不产生正式数据；已存在的批次会被拒绝，不自动覆盖、删除或追加。失败时保留目录供检查，若要重新生成，请在入口中选择新的批次名，不手动将未完成标记改成完成。
+
+前30个实例从旧批次的5000用户文件读取源ID及坐标顺序，不继承请求属性；其余20个从排除这些县区后的已有空间池中固定抽取。生成记录保存全部来源和随机流规则，不保存文件哈希。每实例只计算8种不同的用户数/UAV数部署，其他条件复用几何结果。
+
+Python完成后，在C++现有 `main.cpp` 中确认 `input_root` 和 `output_name`，仅取消需要的一个实验调用注释。五个调用默认全部关闭：
+
+```cpp
+// exp1_different_user_number(options);
+// exp2_different_uav_number(options);
+// exp3_different_hard_user_ratio(options);
+// exp4_real_requests_user_number(options);
+// exp5_real_requests_uav_number(options);
+```
+
+默认先运行10个实例；同一输入和参数下将 `instance_count` 改为50即可跳过已有记录、追加剩余实例。成功和失败都视为已尝试，不自动重试。每个条件每方法调用一次，AlgRelaxRound内部舍入次数仍为2，epsilon=0.083，残余分配默认关闭。旧带宽和定位误差函数保留，但须显式使用旧输入路径和独立新结果名，不能传入新格式数据。
+
+### 结果解释和恢复边界
+
+- 每实验一个 `run_info.json`，每条件六个逐方法CSV；算法失败的性能指标列留空，状态和诊断保留。
+- 输入错误为各未记录方法写 `input_error`；其 `elapsed_ms=0` 表示没有调用算法，不代表成功的零耗时实验。
+- 成功的逐用户文件在 `<条件>/users/<算法>/<实例ID>.csv`，包含 `instance_id,user_id,uav_id,bandwidth,level,utility`，带宽为kHz，用户ID来自原文件。hard等级按完整模型判定；elastic等级为空。
+- `summary/` 保留12张指标宽表，并增加 `Success_Rate.csv`。均值仅包含SUCCESS和ZERO_ALLOCATION；无成功样本留空。尝试数包含输入错误在内的已落盘处理记录，成功率为成功数/尝试数。
+- 先保存逐用户文件，再保存成功汇总；两者缺失或孤立时续跑明确停止，不覆盖或自动重算。写文件失败也立即停止。
+- 配置、版本、输入格式或已有输入路径变化时拒绝续写旧批次；不提供强制墙钟超时，不能自动中断一直不返回的算法函数。
+- 新五实验绘图路径与空均值处理留待后续接入，本阶段不生成图件。
+
+## multi-hard输入约定
+
+`application_profiles.json` 是新批次应用表的源模板，生成时复制到批次根目录。`physical_config.json` 从旧正式EXP1实际配置建立，补充40MHz的统一带宽。两份配置供新C++入口共同读取，旧配置文件不修改。
+
+新用户CSV表头为：
+
+```text
+user_id,longitude,latitude,user_type,user_weight,user_requirement_1,user_requirement_2,app_label,service_category,profile_id,config_version
+```
+
+两行格式示例（仅说明格式，不是正式实验实例）：
+
+```csv
+42,100.0,30.0,hard,3,,,Tencent Meeting,video,video,multiHard_v1
+900,100.0,30.0,elastic,2,0.0,0.0,Web,web-browsing,elastic,multiHard_v1
+```
+
+- `user_type` 仅为 `hard` 或 `elastic`；`app_label` 是应用标签，`service_category` 是业务大类。
+- hard 的两个 `user_requirement` 字段留空；等级、共享outage只从 `profile_id` 指向的配置读取。
+- elastic 保留原生成器的两个需求值（文件Mbps），不把它们当作hard等级；原真实效用不变。
+- 当前配置版本是 `multiHard_v1`，必须与用户行一致。等级数量由速率列表长度得出，不存储重复的等级数或效用。
+- 输入速率为Mbps、UAV带宽为MHz；C++保持 `unit_para=1000`，转为Kbps/kHz。效用代入内部Kbps，例如语音32Kbps用 `w*log2(33)`。
+- 语音配置为32Kbps、outage=0.01；视频为1.2/2.5/5Mbps、outage=0.001；remote control为80Kbps、outage=0.00001。视频与游戏应用分别映射到video和remote_control，具体抽样仍在后续阶段实现。
+
+新C++入口为 `SystemMd(user_file, uav_file, physical_config_file, application_profiles_file)`；不会自动识别旧用户格式。UAV CSV沿用 `uav_id,longitude,latitude,bandwidth`。原三参数入口仍供未改动的旧实验使用。
+
+原文件 `user_id` 保存为 `User::source_user_id`（字符串，不因重排改变）；`User::ID` 继续是内部连续下标。`hard_rate_levels` 保存完整正等级，`rMin` 仅表示最高等级，单UAV算法的可行等级筛选不能修改这个全局列表。
+
+`SystemMd::highest_level_view()` 生成单阈值基线副本并复用信道，原实例不变。真实统计调用 `compute_single_EXPResult(original_model, results, duration_ms, highest_level_only)`：提出算法取false，最高等级基线取true；必须传原始完整实例，不能传基线副本。当前六方法及新五实验调度已接入该规则。视图构造、调度层的额外结果检查和真实计分不计入算法时间，算法内部原有检查/恢复仍属于函数调用时间。
+
+新公共物理配置以 `ExperimentsData/ExperimentsResults/EXP1_user_num/def_config.json` 为来源，不使用算法项目内数值不同的示例配置。下文描述旧生成链，保留供旧批次查阅，不作为新五实验的运行步骤。
+
 `DatasetTest` 是 `008_Experiment` 中用于构造实验输入实例的 Python 项目。它把行政区中心和人口密度栅格转换为用户空间位置，再为用户生成 Hard/Elastic 类型、权重、QoS 需求和业务标签，最后根据用户位置生成 UAV 部署文件。历史 user/UAV 配对实例由 `ExperimentsData/data` 管理；新的 ToN 扩展实例将在 `ExperimentsData/data_ToN/YYYY-MM-DD` 中按日期批次隔离。
 
 > [!IMPORTANT]

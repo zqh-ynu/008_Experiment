@@ -1,0 +1,1964 @@
+{
+  "ids": {
+    "1000": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "2000": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "3000": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "4000": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "5000": []
+  },
+  "phase": "migrated",
+  "published": {
+    "1000": true,
+    "2000": true,
+    "3000": true,
+    "4000": true,
+    "5000": true
+  },
+  "schema": "exp1-hardfirst-rectangular-hungarian-single-slot-multistart8-replacement-v1",
+  "source_info": {
+    "abs_tolerance": 1e-09,
+    "algorithm_version": "ton-multihard-lowest-baselines-hungarian-34d27a72-better-elastic-reopt-v2",
+    "application_profiles": {
+      "config_version": "multiHard_v1",
+      "profiles": {
+        "elastic": {
+          "user_type": "elastic"
+        },
+        "remote_control": {
+          "p_out": 1e-05,
+          "rate_thresholds_mbps": [
+            0.08
+          ],
+          "user_type": "hard"
+        },
+        "video": {
+          "p_out": 0.001,
+          "rate_thresholds_mbps": [
+            1.2,
+            2.5,
+            5.0
+          ],
+          "user_type": "hard"
+        },
+        "voice": {
+          "p_out": 0.01,
+          "rate_thresholds_mbps": [
+            0.032
+          ],
+          "user_type": "hard"
+        }
+      }
+    },
+    "application_profiles_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/application_profiles.json",
+    "baseline_hard_bandwidth_policy": "clamp_to_lowest_threshold_no_reallocation",
+    "baseline_hard_policy": "lowest_level_only",
+    "build_profile": "Release|x64",
+    "channel_config": {
+      "environmental_constants": {
+        "los_loss_db": 1,
+        "max_coverage_distance": 600,
+        "nlos_loss_db": 20,
+        "noise_dbm": -174,
+        "param_a": 9.611725,
+        "param_b": 0.156082,
+        "speed_light": 299792458
+      },
+      "uav_bandwidth_mhz": 40.0,
+      "uav_constants": {
+        "freq_ghz": 3.4,
+        "gain_uav_db": 2,
+        "trans_power": 10,
+        "uav_alt": 300
+      }
+    },
+    "conditions": [
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/1_1000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/2_1000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/3_1000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/4_1000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/5_1000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/6_1000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/7_1000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/8_1000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/9_1000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/10_1000users_data_510822.csv"
+          }
+        ],
+        "key": "1000"
+      },
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/1_2000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/2_2000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/3_2000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/4_2000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/5_2000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/6_2000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/7_2000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/8_2000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/9_2000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/10_2000users_data_510822.csv"
+          }
+        ],
+        "key": "2000"
+      },
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/1_3000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/2_3000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/3_3000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/4_3000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/5_3000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/6_3000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/7_3000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/8_3000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/9_3000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/10_3000users_data_510822.csv"
+          }
+        ],
+        "key": "3000"
+      },
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/1_4000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/2_4000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/3_4000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/4_4000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/5_4000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/6_4000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/7_4000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/8_4000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/9_4000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/10_4000users_data_510822.csv"
+          }
+        ],
+        "key": "4000"
+      },
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/1_5000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/2_5000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/3_5000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/4_5000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/5_5000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/6_5000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/7_5000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/8_5000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/9_5000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/10_5000users_data_510822.csv"
+          }
+        ],
+        "key": "5000"
+      }
+    ],
+    "config_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/physical_config.json",
+    "experiment": "EXP1_user_num",
+    "failure_policy": "record_and_continue_no_automatic_retry",
+    "hard_first_da_policy": {
+      "effective_width": "first_User.BSub_MHz",
+      "hard_edge": "single_slot_rate_at_least_rMin",
+      "matching": "joint_hard_elastic_maximum_weight",
+      "mechanism": "historical-hungarian-km-single-slot-v1",
+      "slot_count": "int(B_UAV/(20*unit_para))*100",
+      "slots_per_user": 1,
+      "source_commit": "34d27a72"
+    },
+    "input_generation": {
+      "batch_name": "run_01",
+      "conditions": [
+        {
+          "experiment": "EXP1_user_num",
+          "key": "1000",
+          "uav_count": 10,
+          "user_count": 1000
+        },
+        {
+          "experiment": "EXP1_user_num",
+          "key": "2000",
+          "uav_count": 10,
+          "user_count": 2000
+        },
+        {
+          "experiment": "EXP1_user_num",
+          "key": "3000",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP1_user_num",
+          "key": "4000",
+          "uav_count": 10,
+          "user_count": 4000
+        },
+        {
+          "experiment": "EXP1_user_num",
+          "key": "5000",
+          "uav_count": 10,
+          "user_count": 5000
+        },
+        {
+          "experiment": "EXP2_uav_num",
+          "key": "5",
+          "uav_count": 5,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP2_uav_num",
+          "key": "10",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP2_uav_num",
+          "key": "15",
+          "uav_count": 15,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP2_uav_num",
+          "key": "20",
+          "uav_count": 20,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "0",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "2",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "4",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "6",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "8",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "10",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "1000",
+          "uav_count": 10,
+          "user_count": 1000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "2000",
+          "uav_count": 10,
+          "user_count": 2000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "3000",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "4000",
+          "uav_count": 10,
+          "user_count": 4000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "5000",
+          "uav_count": 10,
+          "user_count": 5000
+        },
+        {
+          "experiment": "EXP5_real_uav_num",
+          "key": "5",
+          "uav_count": 5,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP5_real_uav_num",
+          "key": "10",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP5_real_uav_num",
+          "key": "15",
+          "uav_count": 15,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP5_real_uav_num",
+          "key": "20",
+          "uav_count": 20,
+          "user_count": 3000
+        }
+      ],
+      "deployment_reuse": "same spatial rows and (user_count,uav_count) reuse one deployment",
+      "generation_status": "complete",
+      "input_schema": "ton-multihard-input-v1",
+      "master_seed": 20260904,
+      "randomness": "SeedSequence([master_seed, instance_id, stream]); 0=locations,1=controlled,2=real",
+      "replicate_count": 50,
+      "replicates": [
+        {
+          "adcode": "500238",
+          "replicate_id": 1,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\1_5000users_data_500238.csv"
+        },
+        {
+          "adcode": "210211",
+          "replicate_id": 2,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\2_5000users_data_210211.csv"
+        },
+        {
+          "adcode": "230225",
+          "replicate_id": 3,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\3_5000users_data_230225.csv"
+        },
+        {
+          "adcode": "430923",
+          "replicate_id": 4,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\4_5000users_data_430923.csv"
+        },
+        {
+          "adcode": "422827",
+          "replicate_id": 5,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\5_5000users_data_422827.csv"
+        },
+        {
+          "adcode": "530922",
+          "replicate_id": 6,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\6_5000users_data_530922.csv"
+        },
+        {
+          "adcode": "140405",
+          "replicate_id": 7,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\7_5000users_data_140405.csv"
+        },
+        {
+          "adcode": "640122",
+          "replicate_id": 8,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\8_5000users_data_640122.csv"
+        },
+        {
+          "adcode": "350521",
+          "replicate_id": 9,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\9_5000users_data_350521.csv"
+        },
+        {
+          "adcode": "510822",
+          "replicate_id": 10,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\10_5000users_data_510822.csv"
+        },
+        {
+          "adcode": "542523",
+          "replicate_id": 11,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\11_5000users_data_542523.csv"
+        },
+        {
+          "adcode": "371324",
+          "replicate_id": 12,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\12_5000users_data_371324.csv"
+        },
+        {
+          "adcode": "532928",
+          "replicate_id": 13,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\13_5000users_data_532928.csv"
+        },
+        {
+          "adcode": "420302",
+          "replicate_id": 14,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\14_5000users_data_420302.csv"
+        },
+        {
+          "adcode": "420324",
+          "replicate_id": 15,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\15_5000users_data_420324.csv"
+        },
+        {
+          "adcode": "370832",
+          "replicate_id": 16,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\16_5000users_data_370832.csv"
+        },
+        {
+          "adcode": "140821",
+          "replicate_id": 17,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\17_5000users_data_140821.csv"
+        },
+        {
+          "adcode": "411202",
+          "replicate_id": 18,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\18_5000users_data_411202.csv"
+        },
+        {
+          "adcode": "540531",
+          "replicate_id": 19,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\19_5000users_data_540531.csv"
+        },
+        {
+          "adcode": "540424",
+          "replicate_id": 20,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\20_5000users_data_540424.csv"
+        },
+        {
+          "adcode": "420921",
+          "replicate_id": 21,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\21_5000users_data_420921.csv"
+        },
+        {
+          "adcode": "440983",
+          "replicate_id": 22,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\22_5000users_data_440983.csv"
+        },
+        {
+          "adcode": "230229",
+          "replicate_id": 23,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\23_5000users_data_230229.csv"
+        },
+        {
+          "adcode": "433130",
+          "replicate_id": 24,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\24_5000users_data_433130.csv"
+        },
+        {
+          "adcode": "540202",
+          "replicate_id": 25,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\25_5000users_data_540202.csv"
+        },
+        {
+          "adcode": "610503",
+          "replicate_id": 26,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\26_5000users_data_610503.csv"
+        },
+        {
+          "adcode": "630104",
+          "replicate_id": 27,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\27_5000users_data_630104.csv"
+        },
+        {
+          "adcode": "451221",
+          "replicate_id": 28,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\28_5000users_data_451221.csv"
+        },
+        {
+          "adcode": "522624",
+          "replicate_id": 29,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\29_5000users_data_522624.csv"
+        },
+        {
+          "adcode": "431227",
+          "replicate_id": 30,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\30_5000users_data_431227.csv"
+        },
+        {
+          "adcode": "371322",
+          "replicate_id": 31,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\371322.csv"
+        },
+        {
+          "adcode": "230230",
+          "replicate_id": 32,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\230230.csv"
+        },
+        {
+          "adcode": "441223",
+          "replicate_id": 33,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\441223.csv"
+        },
+        {
+          "adcode": "540523",
+          "replicate_id": 34,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\540523.csv"
+        },
+        {
+          "adcode": "510104",
+          "replicate_id": 35,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\510104.csv"
+        },
+        {
+          "adcode": "431003",
+          "replicate_id": 36,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\431003.csv"
+        },
+        {
+          "adcode": "140403",
+          "replicate_id": 37,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\140403.csv"
+        },
+        {
+          "adcode": "510921",
+          "replicate_id": 38,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\510921.csv"
+        },
+        {
+          "adcode": "540227",
+          "replicate_id": 39,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\540227.csv"
+        },
+        {
+          "adcode": "140802",
+          "replicate_id": 40,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\140802.csv"
+        },
+        {
+          "adcode": "370829",
+          "replicate_id": 41,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\370829.csv"
+        },
+        {
+          "adcode": "440106",
+          "replicate_id": 42,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\440106.csv"
+        },
+        {
+          "adcode": "540627",
+          "replicate_id": 43,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\540627.csv"
+        },
+        {
+          "adcode": "610602",
+          "replicate_id": 44,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\610602.csv"
+        },
+        {
+          "adcode": "210204",
+          "replicate_id": 45,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\210204.csv"
+        },
+        {
+          "adcode": "420923",
+          "replicate_id": 46,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\420923.csv"
+        },
+        {
+          "adcode": "429004",
+          "replicate_id": 47,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\429004.csv"
+        },
+        {
+          "adcode": "451226",
+          "replicate_id": 48,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\451226.csv"
+        },
+        {
+          "adcode": "532301",
+          "replicate_id": 49,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\532301.csv"
+        },
+        {
+          "adcode": "522629",
+          "replicate_id": 50,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\522629.csv"
+        }
+      ],
+      "request_rules": {
+        "controlled_elastic_profiles": [
+          {
+            "name": "Text_Msg",
+            "probability": 0.5,
+            "r_max_range": [
+              0.008,
+              0.016
+            ],
+            "r_min_range": [
+              0.001,
+              0.002
+            ]
+          },
+          {
+            "name": "Email",
+            "probability": 0.1,
+            "r_max_range": [
+              0.256,
+              0.512
+            ],
+            "r_min_range": [
+              0.016,
+              0.032
+            ]
+          },
+          {
+            "name": "Offline_Map",
+            "probability": 0.1,
+            "r_max_range": [
+              1.0,
+              2.0
+            ],
+            "r_min_range": [
+              0.064,
+              0.128
+            ]
+          },
+          {
+            "name": "Social_Media",
+            "probability": 0.2,
+            "r_max_range": [
+              0.512,
+              1.0
+            ],
+            "r_min_range": [
+              0.032,
+              0.064
+            ]
+          },
+          {
+            "name": "Sensor_Log",
+            "probability": 0.1,
+            "r_max_range": [
+              0.01,
+              0.02
+            ],
+            "r_min_range": [
+              0.0005,
+              0.001
+            ]
+          }
+        ],
+        "controlled_hard_probabilities": [
+          0.3,
+          0.6,
+          0.1
+        ],
+        "controlled_hard_profile_order": [
+          "voice",
+          "video",
+          "remote_control"
+        ],
+        "instant_message_hard_voice_probability": 0.5,
+        "integer_weight_ranges": {
+          "elastic": [
+            1,
+            5
+          ],
+          "hard": [
+            1,
+            10
+          ]
+        },
+        "real_category_session_counts": {
+          "game": 14434,
+          "instant-message": 57234,
+          "mail-service": 73224,
+          "network-storage": 37236,
+          "network-transmission": 57827,
+          "video": 11525,
+          "web-browsing": 74142
+        },
+        "real_hard_rule": "all_video_all_game_and_20_percent_instant_message",
+        "within_category_sampling": "uniform"
+      }
+    },
+    "input_schema": "ton-multihard-input-v1",
+    "instance_count": 10,
+    "master_seed": 20260905,
+    "methods": [
+      "ApproBetter",
+      "ApproFast",
+      "AlgRelaxRound",
+      "AlgSwapMatching",
+      "AlgHardFirst",
+      "AlgSA-DD"
+    ],
+    "proposed_algorithms": {
+      "ApproBetter": {
+        "entry": "AlgBetter_singleUAV_ToN_faster",
+        "post_association": "uav_id_order_matched_or_unassigned_elastic_reoptimization",
+        "selector": 3
+      },
+      "ApproFast": {
+        "entry": "AlgFast_singleUAV_ToN",
+        "post_association": "stop_after_unique_association",
+        "selector": 1
+      }
+    },
+    "reallocate_residual": false,
+    "rel_tolerance": 1e-08,
+    "reuse_methods": [],
+    "reuse_source": "",
+    "rounding_trials": 2,
+    "schema": "ton-multihard-run-v1",
+    "smawk_verification": false,
+    "summary": {
+      "instance_count": 0,
+      "status": "stale"
+    },
+    "ton_epsilon": 0.083,
+    "unit_para": 1000,
+    "user_result_bandwidth_unit": "kHz",
+    "utility_evaluation": "original_model"
+  },
+  "staged": {
+    "1000": true,
+    "2000": true,
+    "3000": true,
+    "4000": true,
+    "5000": true
+  },
+  "target_info": {
+    "abs_tolerance": 1e-09,
+    "algorithm_version": "ton-multihard-lowest-baselines-hardfirst-hard-only-rectangular-hungarian-single-slot-multistart8-v1-better-elastic-reopt-v3",
+    "application_profiles": {
+      "config_version": "multiHard_v1",
+      "profiles": {
+        "elastic": {
+          "user_type": "elastic"
+        },
+        "remote_control": {
+          "p_out": 1e-05,
+          "rate_thresholds_mbps": [
+            0.08
+          ],
+          "user_type": "hard"
+        },
+        "video": {
+          "p_out": 0.001,
+          "rate_thresholds_mbps": [
+            1.2,
+            2.5,
+            5.0
+          ],
+          "user_type": "hard"
+        },
+        "voice": {
+          "p_out": 0.01,
+          "rate_thresholds_mbps": [
+            0.032
+          ],
+          "user_type": "hard"
+        }
+      }
+    },
+    "application_profiles_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/application_profiles.json",
+    "baseline_hard_bandwidth_policy": {
+      "AlgHardFirst": "reserve_one_integer_slot_report_lowest_threshold",
+      "AlgRelaxRound": "clamp_to_lowest_threshold_no_reallocation",
+      "AlgSA-DD": "clamp_to_lowest_threshold_no_reallocation",
+      "AlgSwapMatching": "clamp_to_lowest_threshold_no_reallocation"
+    },
+    "baseline_hard_policy": "lowest_level_only",
+    "build_profile": "Release|x64",
+    "channel_config": {
+      "environmental_constants": {
+        "los_loss_db": 1,
+        "max_coverage_distance": 600,
+        "nlos_loss_db": 20,
+        "noise_dbm": -174,
+        "param_a": 9.611725,
+        "param_b": 0.156082,
+        "speed_light": 299792458
+      },
+      "uav_bandwidth_mhz": 40.0,
+      "uav_constants": {
+        "freq_ghz": 3.4,
+        "gain_uav_db": 2,
+        "trans_power": 10,
+        "uav_alt": 300
+      }
+    },
+    "conditions": [
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/1_1000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/2_1000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/3_1000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/4_1000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/5_1000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/6_1000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/7_1000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/8_1000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/9_1000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/1000/user_data/10_1000users_data_510822.csv"
+          }
+        ],
+        "key": "1000"
+      },
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/1_2000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/2_2000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/3_2000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/4_2000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/5_2000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/6_2000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/7_2000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/8_2000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/9_2000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/2000/user_data/10_2000users_data_510822.csv"
+          }
+        ],
+        "key": "2000"
+      },
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/1_3000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/2_3000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/3_3000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/4_3000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/5_3000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/6_3000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/7_3000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/8_3000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/9_3000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/3000/user_data/10_3000users_data_510822.csv"
+          }
+        ],
+        "key": "3000"
+      },
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/1_4000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/2_4000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/3_4000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/4_4000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/5_4000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/6_4000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/7_4000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/8_4000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/9_4000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/4000/user_data/10_4000users_data_510822.csv"
+          }
+        ],
+        "key": "4000"
+      },
+      {
+        "bandwidth_mhz": 40.0,
+        "inputs": [
+          {
+            "id": 1,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/1_10uavs_loc_500238.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/1_5000users_data_500238.csv"
+          },
+          {
+            "id": 2,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/2_10uavs_loc_210211.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/2_5000users_data_210211.csv"
+          },
+          {
+            "id": 3,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/3_10uavs_loc_230225.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/3_5000users_data_230225.csv"
+          },
+          {
+            "id": 4,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/4_10uavs_loc_430923.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/4_5000users_data_430923.csv"
+          },
+          {
+            "id": 5,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/5_10uavs_loc_422827.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/5_5000users_data_422827.csv"
+          },
+          {
+            "id": 6,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/6_10uavs_loc_530922.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/6_5000users_data_530922.csv"
+          },
+          {
+            "id": 7,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/7_10uavs_loc_140405.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/7_5000users_data_140405.csv"
+          },
+          {
+            "id": 8,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/8_10uavs_loc_640122.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/8_5000users_data_640122.csv"
+          },
+          {
+            "id": 9,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/9_10uavs_loc_350521.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/9_5000users_data_350521.csv"
+          },
+          {
+            "id": 10,
+            "uav_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/uav_data/10_10uavs_loc_510822.csv",
+            "user_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/EXP1_user_num/5000/user_data/10_5000users_data_510822.csv"
+          }
+        ],
+        "key": "5000"
+      }
+    ],
+    "config_path": "E:/Research/My_paper/2_Papers/008/008_Experiment/ExperimentsData/data_ToN_multiHard/run_01/physical_config.json",
+    "experiment": "EXP1_user_num",
+    "failure_policy": "record_and_continue_no_automatic_retry",
+    "hard_first_policy": {
+      "candidate_base_seed": 20260927,
+      "candidate_count": 8,
+      "candidate_order": "identity_then_mt19937_shuffle_hard_rows_then_uav_blocks",
+      "candidate_selection": "equal_optimal_hard_then_total_utility_then_lowest_id",
+      "degenerate_candidates": "one_when_no_positive_hard_edge",
+      "elastic": "remaining_slot_marginal_utility_matching",
+      "hard_edge": "covered_and_one_slot_meets_lowest_level",
+      "hard_level": "lowest_positive_only",
+      "hard_output": "reserve_one_integer_slot_report_lowest_threshold",
+      "hard_slots_per_user": 1,
+      "local_search": "hard_only_single_slot_best_improvement_max_5000",
+      "matching": "hard_only_rectangular_hungarian_maximum_weight",
+      "matching_shape": "H_by_max_H_S_real_hard_rows_only",
+      "mechanism": "hardfirst-hard-only-rectangular-hungarian-single-slot-multistart8-ls-v1",
+      "slot_width": "effective_BSub_physical_BSub_times_10_over_9"
+    },
+    "input_generation": {
+      "batch_name": "run_01",
+      "conditions": [
+        {
+          "experiment": "EXP1_user_num",
+          "key": "1000",
+          "uav_count": 10,
+          "user_count": 1000
+        },
+        {
+          "experiment": "EXP1_user_num",
+          "key": "2000",
+          "uav_count": 10,
+          "user_count": 2000
+        },
+        {
+          "experiment": "EXP1_user_num",
+          "key": "3000",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP1_user_num",
+          "key": "4000",
+          "uav_count": 10,
+          "user_count": 4000
+        },
+        {
+          "experiment": "EXP1_user_num",
+          "key": "5000",
+          "uav_count": 10,
+          "user_count": 5000
+        },
+        {
+          "experiment": "EXP2_uav_num",
+          "key": "5",
+          "uav_count": 5,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP2_uav_num",
+          "key": "10",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP2_uav_num",
+          "key": "15",
+          "uav_count": 15,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP2_uav_num",
+          "key": "20",
+          "uav_count": 20,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "0",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "2",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "4",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "6",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "8",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP3_hard_ratio",
+          "key": "10",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "1000",
+          "uav_count": 10,
+          "user_count": 1000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "2000",
+          "uav_count": 10,
+          "user_count": 2000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "3000",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "4000",
+          "uav_count": 10,
+          "user_count": 4000
+        },
+        {
+          "experiment": "EXP4_real_user_num",
+          "key": "5000",
+          "uav_count": 10,
+          "user_count": 5000
+        },
+        {
+          "experiment": "EXP5_real_uav_num",
+          "key": "5",
+          "uav_count": 5,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP5_real_uav_num",
+          "key": "10",
+          "uav_count": 10,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP5_real_uav_num",
+          "key": "15",
+          "uav_count": 15,
+          "user_count": 3000
+        },
+        {
+          "experiment": "EXP5_real_uav_num",
+          "key": "20",
+          "uav_count": 20,
+          "user_count": 3000
+        }
+      ],
+      "deployment_reuse": "same spatial rows and (user_count,uav_count) reuse one deployment",
+      "generation_status": "complete",
+      "input_schema": "ton-multihard-input-v1",
+      "master_seed": 20260904,
+      "randomness": "SeedSequence([master_seed, instance_id, stream]); 0=locations,1=controlled,2=real",
+      "replicate_count": 50,
+      "replicates": [
+        {
+          "adcode": "500238",
+          "replicate_id": 1,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\1_5000users_data_500238.csv"
+        },
+        {
+          "adcode": "210211",
+          "replicate_id": 2,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\2_5000users_data_210211.csv"
+        },
+        {
+          "adcode": "230225",
+          "replicate_id": 3,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\3_5000users_data_230225.csv"
+        },
+        {
+          "adcode": "430923",
+          "replicate_id": 4,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\4_5000users_data_430923.csv"
+        },
+        {
+          "adcode": "422827",
+          "replicate_id": 5,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\5_5000users_data_422827.csv"
+        },
+        {
+          "adcode": "530922",
+          "replicate_id": 6,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\6_5000users_data_530922.csv"
+        },
+        {
+          "adcode": "140405",
+          "replicate_id": 7,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\7_5000users_data_140405.csv"
+        },
+        {
+          "adcode": "640122",
+          "replicate_id": 8,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\8_5000users_data_640122.csv"
+        },
+        {
+          "adcode": "350521",
+          "replicate_id": 9,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\9_5000users_data_350521.csv"
+        },
+        {
+          "adcode": "510822",
+          "replicate_id": 10,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\10_5000users_data_510822.csv"
+        },
+        {
+          "adcode": "542523",
+          "replicate_id": 11,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\11_5000users_data_542523.csv"
+        },
+        {
+          "adcode": "371324",
+          "replicate_id": 12,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\12_5000users_data_371324.csv"
+        },
+        {
+          "adcode": "532928",
+          "replicate_id": 13,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\13_5000users_data_532928.csv"
+        },
+        {
+          "adcode": "420302",
+          "replicate_id": 14,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\14_5000users_data_420302.csv"
+        },
+        {
+          "adcode": "420324",
+          "replicate_id": 15,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\15_5000users_data_420324.csv"
+        },
+        {
+          "adcode": "370832",
+          "replicate_id": 16,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\16_5000users_data_370832.csv"
+        },
+        {
+          "adcode": "140821",
+          "replicate_id": 17,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\17_5000users_data_140821.csv"
+        },
+        {
+          "adcode": "411202",
+          "replicate_id": 18,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\18_5000users_data_411202.csv"
+        },
+        {
+          "adcode": "540531",
+          "replicate_id": 19,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\19_5000users_data_540531.csv"
+        },
+        {
+          "adcode": "540424",
+          "replicate_id": 20,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\20_5000users_data_540424.csv"
+        },
+        {
+          "adcode": "420921",
+          "replicate_id": 21,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\21_5000users_data_420921.csv"
+        },
+        {
+          "adcode": "440983",
+          "replicate_id": 22,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\22_5000users_data_440983.csv"
+        },
+        {
+          "adcode": "230229",
+          "replicate_id": 23,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\23_5000users_data_230229.csv"
+        },
+        {
+          "adcode": "433130",
+          "replicate_id": 24,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\24_5000users_data_433130.csv"
+        },
+        {
+          "adcode": "540202",
+          "replicate_id": 25,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\25_5000users_data_540202.csv"
+        },
+        {
+          "adcode": "610503",
+          "replicate_id": 26,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\26_5000users_data_610503.csv"
+        },
+        {
+          "adcode": "630104",
+          "replicate_id": 27,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\27_5000users_data_630104.csv"
+        },
+        {
+          "adcode": "451221",
+          "replicate_id": 28,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\28_5000users_data_451221.csv"
+        },
+        {
+          "adcode": "522624",
+          "replicate_id": 29,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\29_5000users_data_522624.csv"
+        },
+        {
+          "adcode": "431227",
+          "replicate_id": 30,
+          "source_kind": "legacy_5000_users",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\data_ToN\\2026-09-07\\variable_user_num\\5000u_num\\user_data\\30_5000users_data_431227.csv"
+        },
+        {
+          "adcode": "371322",
+          "replicate_id": 31,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\371322.csv"
+        },
+        {
+          "adcode": "230230",
+          "replicate_id": 32,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\230230.csv"
+        },
+        {
+          "adcode": "441223",
+          "replicate_id": 33,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\441223.csv"
+        },
+        {
+          "adcode": "540523",
+          "replicate_id": 34,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\540523.csv"
+        },
+        {
+          "adcode": "510104",
+          "replicate_id": 35,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\510104.csv"
+        },
+        {
+          "adcode": "431003",
+          "replicate_id": 36,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\431003.csv"
+        },
+        {
+          "adcode": "140403",
+          "replicate_id": 37,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\140403.csv"
+        },
+        {
+          "adcode": "510921",
+          "replicate_id": 38,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\510921.csv"
+        },
+        {
+          "adcode": "540227",
+          "replicate_id": 39,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\540227.csv"
+        },
+        {
+          "adcode": "140802",
+          "replicate_id": 40,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\140802.csv"
+        },
+        {
+          "adcode": "370829",
+          "replicate_id": 41,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\370829.csv"
+        },
+        {
+          "adcode": "440106",
+          "replicate_id": 42,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\440106.csv"
+        },
+        {
+          "adcode": "540627",
+          "replicate_id": 43,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\540627.csv"
+        },
+        {
+          "adcode": "610602",
+          "replicate_id": 44,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\610602.csv"
+        },
+        {
+          "adcode": "210204",
+          "replicate_id": 45,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\210204.csv"
+        },
+        {
+          "adcode": "420923",
+          "replicate_id": 46,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\420923.csv"
+        },
+        {
+          "adcode": "429004",
+          "replicate_id": 47,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\429004.csv"
+        },
+        {
+          "adcode": "451226",
+          "replicate_id": 48,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\451226.csv"
+        },
+        {
+          "adcode": "532301",
+          "replicate_id": 49,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\532301.csv"
+        },
+        {
+          "adcode": "522629",
+          "replicate_id": 50,
+          "source_kind": "location_pool",
+          "source_path": "E:\\Research\\My_paper\\2_Papers\\008\\008_Experiment\\ExperimentsData\\DatasetTest\\data\\generated_user_loc\\522629.csv"
+        }
+      ],
+      "request_rules": {
+        "controlled_elastic_profiles": [
+          {
+            "name": "Text_Msg",
+            "probability": 0.5,
+            "r_max_range": [
+              0.008,
+              0.016
+            ],
+            "r_min_range": [
+              0.001,
+              0.002
+            ]
+          },
+          {
+            "name": "Email",
+            "probability": 0.1,
+            "r_max_range": [
+              0.256,
+              0.512
+            ],
+            "r_min_range": [
+              0.016,
+              0.032
+            ]
+          },
+          {
+            "name": "Offline_Map",
+            "probability": 0.1,
+            "r_max_range": [
+              1.0,
+              2.0
+            ],
+            "r_min_range": [
+              0.064,
+              0.128
+            ]
+          },
+          {
+            "name": "Social_Media",
+            "probability": 0.2,
+            "r_max_range": [
+              0.512,
+              1.0
+            ],
+            "r_min_range": [
+              0.032,
+              0.064
+            ]
+          },
+          {
+            "name": "Sensor_Log",
+            "probability": 0.1,
+            "r_max_range": [
+              0.01,
+              0.02
+            ],
+            "r_min_range": [
+              0.0005,
+              0.001
+            ]
+          }
+        ],
+        "controlled_hard_probabilities": [
+          0.3,
+          0.6,
+          0.1
+        ],
+        "controlled_hard_profile_order": [
+          "voice",
+          "video",
+          "remote_control"
+        ],
+        "instant_message_hard_voice_probability": 0.5,
+        "integer_weight_ranges": {
+          "elastic": [
+            1,
+            5
+          ],
+          "hard": [
+            1,
+            10
+          ]
+        },
+        "real_category_session_counts": {
+          "game": 14434,
+          "instant-message": 57234,
+          "mail-service": 73224,
+          "network-storage": 37236,
+          "network-transmission": 57827,
+          "video": 11525,
+          "web-browsing": 74142
+        },
+        "real_hard_rule": "all_video_all_game_and_20_percent_instant_message",
+        "within_category_sampling": "uniform"
+      }
+    },
+    "input_schema": "ton-multihard-input-v1",
+    "instance_count": 10,
+    "master_seed": 20260905,
+    "methods": [
+      "ApproBetter",
+      "ApproFast",
+      "AlgRelaxRound",
+      "AlgSwapMatching",
+      "AlgHardFirst",
+      "AlgSA-DD"
+    ],
+    "proposed_algorithms": {
+      "ApproBetter": {
+        "entry": "AlgBetter_singleUAV_ToN_faster",
+        "post_association": "uav_id_order_matched_or_unassigned_elastic_reoptimization",
+        "selector": 3
+      },
+      "ApproFast": {
+        "entry": "AlgFast_singleUAV_ToN",
+        "post_association": "stop_after_unique_association",
+        "selector": 1
+      }
+    },
+    "reallocate_residual": false,
+    "rel_tolerance": 1e-08,
+    "reuse_methods": [],
+    "reuse_source": "",
+    "rounding_trials": 2,
+    "schema": "ton-multihard-run-v1",
+    "smawk_verification": false,
+    "summary": {
+      "instance_count": 0,
+      "status": "stale"
+    },
+    "ton_epsilon": 0.083,
+    "unit_para": 1000,
+    "user_result_bandwidth_unit": "kHz",
+    "utility_evaluation": "original_model"
+  }
+}

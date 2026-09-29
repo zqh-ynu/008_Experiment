@@ -189,6 +189,7 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>D:\Program Files\IBM\ILOG\CPLEX_Studio2211\concert\include;D:\Program Files\IBM\ILOG\CPLEX_Studio2211\cplex\include;E:\Mydvtools\boost_1_89_0\boost;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -216,6 +217,7 @@
     <ClInclude Include="test.h" />
     <ClInclude Include="allocation_contract.h" />
     <ClInclude Include="experiment_support.h" />
+    <ClInclude Include="localization_experiments.h" />
     <ClInclude Include="test_route_a.h" />
     <ClInclude Include="route_a_batch.h" />
   </ItemGroup>
